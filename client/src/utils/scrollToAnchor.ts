@@ -16,27 +16,7 @@ function getTargetScrollPosition(target: HTMLElement) {
   return Math.max(0, target.getBoundingClientRect().top + window.scrollY - scrollMarginTop)
 }
 
-export function handleAnchorNavigation(event: MouseEvent<HTMLAnchorElement>) {
-  if (
-    event.defaultPrevented ||
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.shiftKey ||
-    event.altKey
-  ) {
-    return
-  }
-
-  const hash = event.currentTarget.hash
-  const target = hash ? document.getElementById(hash.slice(1)) : null
-
-  if (!target) {
-    return
-  }
-
-  event.preventDefault()
-
+export function scrollToElement(target: HTMLElement) {
   if (activeAnimationFrame !== null) {
     cancelAnimationFrame(activeAnimationFrame)
     activeAnimationFrame = null
@@ -45,8 +25,6 @@ export function handleAnchorNavigation(event: MouseEvent<HTMLAnchorElement>) {
   const startPosition = window.scrollY
   const targetPosition = getTargetScrollPosition(target)
   const distance = targetPosition - startPosition
-
-  window.history.pushState(null, '', hash)
 
   if (
     window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
@@ -72,4 +50,29 @@ export function handleAnchorNavigation(event: MouseEvent<HTMLAnchorElement>) {
   }
 
   activeAnimationFrame = requestAnimationFrame(animateScroll)
+}
+
+export function handleAnchorNavigation(event: MouseEvent<HTMLAnchorElement>) {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return
+  }
+
+  const hash = event.currentTarget.hash
+  const target = hash ? document.getElementById(hash.slice(1)) : null
+
+  if (!target) {
+    return
+  }
+
+  event.preventDefault()
+
+  window.history.pushState(null, '', hash)
+  scrollToElement(target)
 }

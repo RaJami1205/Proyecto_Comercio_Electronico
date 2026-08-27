@@ -38,12 +38,18 @@ function ClearIcon() {
   )
 }
 
-function CatalogToolbar() {
+interface CatalogToolbarProps {
+  productCount: number
+  onSearchChange: () => void
+}
+
+function CatalogToolbar({ productCount, onSearchChange }: CatalogToolbarProps) {
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   function clearSearch() {
     setSearchValue('')
+    onSearchChange()
     searchInputRef.current?.focus()
   }
 
@@ -62,7 +68,10 @@ function CatalogToolbar() {
             id="catalog-search"
             type="search"
             value={searchValue}
-            onChange={(event) => setSearchValue(event.target.value)}
+            onChange={(event) => {
+              setSearchValue(event.target.value)
+              onSearchChange()
+            }}
             placeholder="Buscar laptops, componentes, accesorios..."
           />
           <button
@@ -101,7 +110,7 @@ function CatalogToolbar() {
 
         <p className={styles.status}>
           <span aria-hidden="true" />
-          Catálogo en preparación
+          {productCount} productos demo
         </p>
       </div>
     </div>

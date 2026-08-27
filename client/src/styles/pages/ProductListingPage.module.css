@@ -50,6 +50,10 @@
   line-height: 1.75;
 }
 
+.results {
+  scroll-margin-top: 6rem;
+}
+
 @media (max-width: 760px) {
   .catalog {
     padding-inline: 1rem;
@@ -67,5 +71,9 @@
 
   .description {
     font-size: 0.95rem;
+  }
+
+  .results {
+    scroll-margin-top: 8rem;
   }
 }
