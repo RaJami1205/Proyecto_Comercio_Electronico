@@ -4,9 +4,10 @@ import CatalogHero from '../components/catalog/CatalogHero'
 import CatalogToolbar from '../components/catalog/CatalogToolbar'
 import Pagination from '../components/catalog/Pagination'
 import ProductGrid from '../components/catalog/ProductGrid'
+import ProductQuickView from '../components/catalog/ProductQuickView'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
-import { products } from '../data/products'
+import { products, type Product } from '../data/products'
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 
@@ -23,6 +24,7 @@ function getPageSize() {
 function ProductListingPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(getPageSize)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
   const totalPages = Math.ceil(products.length / pageSize)
@@ -83,6 +85,7 @@ function ProductListingPage() {
                 products={visibleProducts}
                 currentPage={currentPage}
                 totalPages={totalPages}
+                onProductSelect={setSelectedProduct}
               />
               <Pagination
                 currentPage={currentPage}
@@ -96,6 +99,13 @@ function ProductListingPage() {
       </main>
 
       <Footer />
+
+      {selectedProduct ? (
+        <ProductQuickView
+          product={selectedProduct}
+          onClose={() => setSelectedProduct(null)}
+        />
+      ) : null}
     </div>
   )
 }

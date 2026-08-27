@@ -6,9 +6,15 @@ interface ProductGridProps {
   products: Product[]
   currentPage: number
   totalPages: number
+  onProductSelect: (product: Product) => void
 }
 
-function ProductGrid({ products, currentPage, totalPages }: ProductGridProps) {
+function ProductGrid({
+  products,
+  currentPage,
+  totalPages,
+  onProductSelect,
+}: ProductGridProps) {
   return (
     <section className={styles.section} aria-labelledby="product-results-title">
       <h3 className={styles.visuallyHidden} id="product-results-title">
@@ -17,7 +23,11 @@ function ProductGrid({ products, currentPage, totalPages }: ProductGridProps) {
 
       <div className={styles.grid}>
         {products.map((product) => (
-          <ProductCard key={product.id} product={product} />
+          <ProductCard
+            key={product.id}
+            product={product}
+            onProductSelect={onProductSelect}
+          />
         ))}
       </div>
     </section>

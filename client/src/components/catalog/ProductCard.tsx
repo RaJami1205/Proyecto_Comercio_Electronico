@@ -3,6 +3,7 @@ import styles from '../../styles/catalog/ProductCard.module.css'
 
 interface ProductCardProps {
   product: Product
+  onProductSelect: (product: Product) => void
 }
 
 const priceFormatter = new Intl.NumberFormat('es-US', {
@@ -20,11 +21,18 @@ function CartIcon() {
   )
 }
 
-function ProductCard({ product }: ProductCardProps) {
+function ProductCard({ product, onProductSelect }: ProductCardProps) {
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
 
   return (
     <article className={styles.card}>
+      <button
+        className={styles.detailsButton}
+        type="button"
+        aria-label={`Ver detalles de ${product.name}`}
+        onClick={() => onProductSelect(product)}
+      />
+
       <div className={styles.imageArea}>
         <img src={product.image} alt={product.name} loading="lazy" />
       </div>
