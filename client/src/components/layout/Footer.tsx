@@ -1,4 +1,5 @@
-import styles from './Footer.module.css'
+import styles from '../../styles/layout/Footer.module.css'
+import { handleAnchorNavigation } from '../../utils/scrollToAnchor'
 
 function Footer() {
   return (
@@ -29,10 +30,14 @@ function Footer() {
             <h3 id="footer-links">Explorar</h3>
             <ul>
               <li>
-                <a href="#top">Inicio</a>
+                <a href="#top" onClick={handleAnchorNavigation}>
+                  Inicio
+                </a>
               </li>
               <li>
-                <a href="#catalog">Catálogo</a>
+                <a href="#catalog" onClick={handleAnchorNavigation}>
+                  Catálogo
+                </a>
               </li>
               <li>Nosotros</li>
               <li>Contacto</li>

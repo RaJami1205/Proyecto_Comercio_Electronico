@@ -7,8 +7,8 @@
   position: relative;
   padding: clamp(4.5rem, 8vw, 7.5rem) 1.25rem clamp(5rem, 9vw, 8rem);
   background:
-    radial-gradient(circle at 92% 2%, rgba(47, 101, 245, 0.08), transparent 24rem),
-    linear-gradient(180deg, #fbfcff 0%, #f3f6fd 100%);
+    radial-gradient(circle at 92% 2%, rgba(31, 94, 255, 0.09), transparent 24rem),
+    linear-gradient(180deg, #f6f8fc 0%, #edf2fa 100%);
 }
 
 .container {
@@ -26,7 +26,7 @@
 
 .eyebrow {
   margin: 0 0 0.7rem;
-  color: var(--color-primary);
+  color: #164ed6;
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.14em;

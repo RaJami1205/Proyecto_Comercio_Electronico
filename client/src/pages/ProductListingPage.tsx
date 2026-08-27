@@ -3,7 +3,7 @@ import CatalogToolbar from '../components/catalog/CatalogToolbar'
 import ProductGridPlaceholder from '../components/catalog/ProductGridPlaceholder'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
-import styles from './ProductListingPage.module.css'
+import styles from '../styles/pages/ProductListingPage.module.css'
 
 function ProductListingPage() {
   return (

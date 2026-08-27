@@ -1,10 +1,16 @@
-import styles from './Header.module.css'
+import styles from '../../styles/layout/Header.module.css'
+import { handleAnchorNavigation } from '../../utils/scrollToAnchor'
 
 function Header() {
   return (
     <header className={styles.header}>
       <div className={styles.inner}>
-        <a className={styles.brand} href="#top" aria-label="CiberNova, ir al inicio">
+        <a
+          className={styles.brand}
+          href="#top"
+          aria-label="CiberNova, ir al inicio"
+          onClick={handleAnchorNavigation}
+        >
           <span>Ciber</span>
           <span className={styles.brandAccent}>Nova</span>
         </a>
@@ -12,10 +18,12 @@ function Header() {
         <nav className={styles.navigation} aria-label="Navegación principal">
           <ul>
             <li>
-              <a href="#top">Inicio</a>
+              <a href="#top" onClick={handleAnchorNavigation}>
+                Inicio
+              </a>
             </li>
             <li>
-              <a className={styles.active} href="#catalog" aria-current="page">
+              <a href="#catalog" aria-current="page" onClick={handleAnchorNavigation}>
                 Catálogo
               </a>
             </li>
@@ -25,12 +33,14 @@ function Header() {
               </span>
             </li>
             <li>
-              <a href="#about">Nosotros</a>
+              <a href="#about" onClick={handleAnchorNavigation}>
+                Nosotros
+              </a>
             </li>
           </ul>
         </nav>
 
-        <a className={styles.action} href="#catalog">
+        <a className={styles.action} href="#catalog" onClick={handleAnchorNavigation}>
           <span>Explorar</span>
           <svg viewBox="0 0 20 20" aria-hidden="true">
             <path d="M4 10h12m-5-5 5 5-5 5" />

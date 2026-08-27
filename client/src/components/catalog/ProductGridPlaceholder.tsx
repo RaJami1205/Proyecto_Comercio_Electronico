@@ -1,4 +1,4 @@
-import styles from './ProductGridPlaceholder.module.css'
+import styles from '../../styles/catalog/ProductGridPlaceholder.module.css'
 
 function ProductCardPlaceholder() {
   return (
