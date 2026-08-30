@@ -1,0 +1,122 @@
+.hero {
+  position: relative;
+  overflow: hidden;
+  color: #ffffff;
+  background:
+    radial-gradient(circle at 78% 18%, rgba(50, 72, 190, 0.3), transparent 30rem),
+    linear-gradient(118deg, #030817 6%, #071338 58%, #111344 100%),
+    var(--color-background-dark);
+}
+
+.ambientGlow {
+  position: absolute;
+  top: -12rem;
+  right: -8rem;
+  width: 44rem;
+  height: 44rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(75, 68, 236, 0.26), rgba(20, 211, 226, 0.1) 40%, transparent 67%);
+  filter: blur(2px);
+}
+
+.container {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(30rem, 1.05fr);
+  gap: clamp(2rem, 4vw, 4.5rem);
+  align-items: center;
+  width: min(calc(100% - 2.5rem), var(--content-max-width));
+  min-height: 570px;
+  margin: 0 auto;
+  padding: clamp(4.25rem, 7vw, 6rem) 0 clamp(4.75rem, 8vw, 6.5rem);
+}
+
+.content {
+  position: relative;
+  z-index: 2;
+  max-width: 700px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  gap: 0.65rem;
+  align-items: center;
+  margin: 0 0 1.25rem;
+  color: #8eeef4;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.eyebrow span {
+  width: 26px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-secondary));
+  box-shadow: 0 0 12px rgba(24, 213, 227, 0.48);
+}
+
+.content h1 {
+  max-width: 11.5ch;
+  margin: 0;
+  font-size: clamp(3rem, 6.5vw, 5.8rem);
+  line-height: 0.96;
+  letter-spacing: -0.065em;
+}
+
+.content h1 span {
+  color: transparent;
+  background: linear-gradient(105deg, #ffffff 3%, #54e5eb 45%, #8a74ff 96%);
+  background-clip: text;
+}
+
+.description {
+  max-width: 38rem;
+  margin: 1.65rem 0 0;
+  color: #aebddd;
+  font-size: clamp(1rem, 1.5vw, 1.12rem);
+  line-height: 1.7;
+}
+
+.visual {
+  position: relative;
+  display: grid;
+  min-height: 410px;
+  place-items: center;
+}
+
+@media (max-width: 960px) {
+  .container {
+    grid-template-columns: 1fr;
+    gap: 3rem;
+    min-height: auto;
+  }
+
+  .content {
+    max-width: 760px;
+  }
+
+  .content h1 {
+    max-width: 12ch;
+  }
+
+  .visual {
+    min-height: 330px;
+  }
+}
+
+@media (max-width: 560px) {
+  .container {
+    width: min(calc(100% - 2rem), var(--content-max-width));
+    gap: 2.5rem;
+    padding-top: 3.5rem;
+  }
+
+  .content h1 {
+    font-size: clamp(2.65rem, 14vw, 4rem);
+  }
+
+  .visual {
+    min-height: 270px;
+  }
+}

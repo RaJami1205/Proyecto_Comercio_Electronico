@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240">
+  <defs><linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#14295c"/><stop offset=".58" stop-color="#183f99"/><stop offset="1" stop-color="#45268e"/></linearGradient></defs>
+  <path d="M82 18h156c12 0 22 10 22 22v165c0 12-10 22-22 22H82c-12 0-22-10-22-22V40c0-12 10-22 22-22Z" fill="#091630" stroke="#638cf3" stroke-width="5"/>
+  <path d="M80 37h130v171H80z" fill="url(#glass)" stroke="#58d9e6" stroke-width="3"/>
+  <g fill="none" stroke="#69dfe9" stroke-width="5"><circle cx="126" cy="90" r="28"/><circle cx="164" cy="157" r="28"/></g>
+  <g fill="#182c5b"><circle cx="126" cy="90" r="11"/><circle cx="164" cy="157" r="11"/></g>
+  <circle cx="234" cy="48" r="5" fill="#6df1eb"/>
+  <path d="M224 75h16M224 88h16" stroke="#6d80a7" stroke-linecap="round" stroke-width="4"/>
+</svg>
