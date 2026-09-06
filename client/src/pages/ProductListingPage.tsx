@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 import CatalogHero from '../components/catalog/CatalogHero'
 import CatalogToolbar from '../components/catalog/CatalogToolbar'
@@ -7,42 +7,18 @@ import ProductGrid from '../components/catalog/ProductGrid'
 import ProductQuickView from '../components/catalog/ProductQuickView'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
-import { products, type Product } from '../data/products'
+import type { Product } from '../data/products'
+import { useProductCatalog } from '../hooks/useProductCatalog'
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 
-const DESKTOP_PAGE_SIZE = 12
-const COMPACT_PAGE_SIZE = 6
-const DESKTOP_MEDIA_QUERY = '(min-width: 1061px)'
-
-function getPageSize() {
-  return window.matchMedia(DESKTOP_MEDIA_QUERY).matches
-    ? DESKTOP_PAGE_SIZE
-    : COMPACT_PAGE_SIZE
-}
-
 function ProductListingPage() {
   const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(getPageSize)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
-  const totalPages = Math.ceil(products.length / pageSize)
-  const startIndex = (currentPage - 1) * pageSize
-  const visibleProducts = products.slice(startIndex, startIndex + pageSize)
-
-  useEffect(() => {
-    const desktopMedia = window.matchMedia(DESKTOP_MEDIA_QUERY)
-
-    function handleBreakpointChange(event: MediaQueryListEvent) {
-      setPageSize(event.matches ? DESKTOP_PAGE_SIZE : COMPACT_PAGE_SIZE)
-      setCurrentPage(1)
-    }
-
-    desktopMedia.addEventListener('change', handleBreakpointChange)
-
-    return () => desktopMedia.removeEventListener('change', handleBreakpointChange)
-  }, [])
+  const { products, totalPages, nbHits, isLoading, error } =
+    useProductCatalog(currentPage)
 
   function handleDirectionalPageChange(page: number) {
     setCurrentPage(page)
@@ -75,18 +51,32 @@ function ProductListingPage() {
             </header>
 
             <CatalogToolbar
-              productCount={products.length}
+              productCount={nbHits}
               onSearchChange={() => setCurrentPage(1)}
+              onProductSelect={setSelectedProduct}
             />
 
             <div className={styles.results} ref={resultsStartRef}>
-              <ProductGrid
-                key={`${currentPage}-${pageSize}`}
-                products={visibleProducts}
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onProductSelect={setSelectedProduct}
-              />
+              {error ? (
+                <p className={styles.description} role="alert">
+                  {error}
+                </p>
+              ) : (
+                <ProductGrid
+                  key={currentPage}
+                  products={products}
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onProductSelect={setSelectedProduct}
+                />
+              )}
+
+              {isLoading ? (
+                <p className={styles.description} aria-live="polite">
+                  Cargando productos…
+                </p>
+              ) : null}
+
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}

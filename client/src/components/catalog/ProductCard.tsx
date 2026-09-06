@@ -6,9 +6,10 @@ interface ProductCardProps {
   onProductSelect: (product: Product) => void
 }
 
-const priceFormatter = new Intl.NumberFormat('es-US', {
+const priceFormatter = new Intl.NumberFormat('es-CR', {
   style: 'currency',
-  currency: 'USD',
+  currency: 'CRC',
+  maximumFractionDigits: 0,
 })
 
 function CartIcon() {
