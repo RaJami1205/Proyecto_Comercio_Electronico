@@ -8,7 +8,7 @@ import ProductQuickView from '../components/catalog/ProductQuickView'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
 import type { Product } from '../data/products'
-import { useProductCatalog } from '../hooks/useProductCatalog'
+import { useProductCatalog } from '../../../hooks/useProductCatalog'
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 
@@ -55,6 +55,7 @@ function ProductListingPage() {
             <CatalogToolbar
               productCount={nbHits}
               onSearchChange={() => setCurrentPage(1)}
+              onProductSelect={setSelectedProduct}
             />
 
             <div className={styles.results} ref={resultsStartRef}>

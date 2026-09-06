@@ -22,5 +22,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "../mvc-catalog/useProductSearch.ts"]
+  "include": ["src", "../mvc-catalog/useProductSearch.ts", "../hooks", "../services"]
 }

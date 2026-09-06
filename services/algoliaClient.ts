@@ -1,6 +1,6 @@
 import { algoliasearch } from 'algoliasearch'
 
-// Estas variables se leen del archivo .env (ver .env.example).
+
 const APP_ID = import.meta.env.VITE_ALGOLIA_APP_ID
 const SEARCH_API_KEY = import.meta.env.VITE_ALGOLIA_SEARCH_API_KEY
 const INDEX_NAME = import.meta.env.VITE_ALGOLIA_INDEX_NAME
@@ -13,9 +13,13 @@ if (!APP_ID || !SEARCH_API_KEY || !INDEX_NAME) {
 
 const client = algoliasearch(APP_ID, SEARCH_API_KEY)
 
+interface HighlightedValue {
+  value: string
+  matchLevel: 'none' | 'partial' | 'full'
+}
+
 /**
  * Forma cruda de un registro tal como vive en el índice de Algolia.
- * Si agregas o renombras atributos en el índice, actualiza esta interfaz.
  */
 export interface ProductRecord {
   objectID: string
@@ -34,6 +38,13 @@ export interface ProductRecord {
     sedes?: Record<string, number>
   }
   specs?: Record<string, string | number | boolean>
+  // Algolia agrega esto automáticamente a cada resultado de búsqueda,
+  // con el texto que coincide envuelto en <em>...</em>.
+  _highlightResult?: {
+    name?: HighlightedValue
+    brand?: HighlightedValue
+    category?: HighlightedValue
+  }
 }
 
 interface CatalogPageResult {
@@ -43,12 +54,6 @@ interface CatalogPageResult {
   nbHits: number
 }
 
-/**
- * Trae una página del catálogo completo (sin filtro de búsqueda).
- * "page" es 0-indexado, como lo espera Algolia.
- * hitsPerPage usa el valor ya configurado en el dashboard (Pagination)
- * si no se pasa uno explícito.
- */
 export async function getCatalogPage(
   page: number,
   hitsPerPage = 20,
@@ -60,19 +65,23 @@ export async function getCatalogPage(
 
   return {
     hits: response.hits,
-    page: response.page,
-    nbPages: response.nbPages,
-    nbHits: response.nbHits,
+    page: response.page ?? page,
+    nbPages: response.nbPages ?? 0,
+    nbHits: response.nbHits ?? 0,
   }
 }
 
-/**
- * Búsqueda por texto libre, usada por el buscador del toolbar.
- */
 export async function searchProducts(query: string): Promise<ProductRecord[]> {
   const { hits } = await client.searchSingleIndex<ProductRecord>({
     indexName: INDEX_NAME,
-    searchParams: { query },
+    searchParams: {
+      query,
+      hitsPerPage: 8,
+      // Le pedimos explícitamente el resaltado, con las etiquetas que
+      // vamos a usar en el HTML del dropdown.
+      highlightPreTag: '<mark>',
+      highlightPostTag: '</mark>',
+    },
   })
 
   return hits

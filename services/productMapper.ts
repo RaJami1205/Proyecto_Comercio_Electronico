@@ -1,4 +1,4 @@
-import type { Product } from '../data/products'
+import type { Product, ProductCategory } from '../client/src/data/products'
 import type { ProductRecord } from './algoliaClient'
 
 // Imagen que se muestra mientras no subas imágenes reales al índice
@@ -39,7 +39,7 @@ export function mapRecordToProduct(record: ProductRecord): Product {
     name: record.name,
     price: record.price_CRC ?? 0,
     image: record.images?.[0] ?? PLACEHOLDER_IMAGE,
-    category: record.category,
+    category: record.category as ProductCategory,  
     description: record.description ?? '',
     inStock: (record.inventory?.totalStock ?? 0) > 0,
     specifications,

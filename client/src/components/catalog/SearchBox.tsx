@@ -1,4 +1,5 @@
-import type { ProductRecord } from '../../services/algoliaClient'
+import { useState, type KeyboardEvent } from 'react'
+import type { ProductRecord } from '../../../../services/algoliaClient'
 import styles from '../../styles/catalog/SearchBox.module.css'
 
 function SearchIcon() {
@@ -24,10 +25,50 @@ interface SearchBoxProps {
   results: ProductRecord[]
   isLoading: boolean
   error: string | null
+  onSelectResult: (record: ProductRecord) => void
 }
 
-function SearchBox({ query, onQueryChange, results, isLoading, error }: SearchBoxProps) {
+
+function renderHighlighted(value: string) {
+  return { __html: value }
+}
+
+function SearchBox({
+  query,
+  onQueryChange,
+  results,
+  isLoading,
+  error,
+  onSelectResult,
+}: SearchBoxProps) {
+  const [activeIndex, setActiveIndex] = useState(-1)
   const showPanel = query.trim().length > 0
+
+  function selectResult(record: ProductRecord) {
+    onSelectResult(record)
+    onQueryChange('')
+    setActiveIndex(-1)
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (!showPanel || results.length === 0) {
+      return
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setActiveIndex((current) => (current + 1) % results.length)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveIndex((current) => (current <= 0 ? results.length - 1 : current - 1))
+    } else if (event.key === 'Enter' && activeIndex >= 0) {
+      event.preventDefault()
+      selectResult(results[activeIndex])
+    } else if (event.key === 'Escape') {
+      onQueryChange('')
+      setActiveIndex(-1)
+    }
+  }
 
   return (
     <div className={styles.wrapper} role="search" aria-label="Búsqueda de productos">
@@ -40,9 +81,20 @@ function SearchBox({ query, onQueryChange, results, isLoading, error }: SearchBo
         </label>
         <input
           id="catalog-search"
-          type="search"
+          type="text"
           value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
+          role="combobox"
+          aria-expanded={showPanel}
+          aria-controls="catalog-search-results"
+          aria-activedescendant={
+            activeIndex >= 0 ? `search-result-${activeIndex}` : undefined
+          }
+          autoComplete="off"
+          onChange={(event) => {
+            onQueryChange(event.target.value)
+            setActiveIndex(-1)
+          }}
+          onKeyDown={handleKeyDown}
           placeholder="Buscar laptops, componentes, accesorios..."
         />
         <button
@@ -50,14 +102,17 @@ function SearchBox({ query, onQueryChange, results, isLoading, error }: SearchBo
           type="button"
           aria-label="Borrar búsqueda"
           disabled={!query}
-          onClick={() => onQueryChange('')}
+          onClick={() => {
+            onQueryChange('')
+            setActiveIndex(-1)
+          }}
         >
           <ClearIcon />
         </button>
       </div>
 
       {showPanel ? (
-        <div className={styles.panel}>
+        <div className={styles.panel} id="catalog-search-results" role="listbox">
           {isLoading ? <p className={styles.status}>Buscando…</p> : null}
 
           {error ? <p className={styles.error}>{error}</p> : null}
@@ -68,13 +123,34 @@ function SearchBox({ query, onQueryChange, results, isLoading, error }: SearchBo
 
           {results.length > 0 ? (
             <ul className={styles.results}>
-              {results.map((hit) => (
-                <li className={styles.resultItem} key={hit.objectID}>
-                  <p className={styles.resultCategory}>{hit.category}</p>
-                  <p className={styles.resultName}>{hit.name}</p>
-                  {hit.brand ? <p className={styles.resultBrand}>{hit.brand}</p> : null}
-                </li>
-              ))}
+              {results.map((hit, index) => {
+                const highlightedName = hit._highlightResult?.name?.value ?? hit.name
+
+                return (
+                  <li key={hit.objectID}>
+                    <button
+                      type="button"
+                      id={`search-result-${index}`}
+                      role="option"
+                      aria-selected={index === activeIndex}
+                      className={`${styles.resultItem} ${
+                        index === activeIndex ? styles.resultItemActive : ''
+                      }`}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      onClick={() => selectResult(hit)}
+                    >
+                      <p className={styles.resultCategory}>{hit.category}</p>
+                      <p
+                        className={styles.resultName}
+                        dangerouslySetInnerHTML={renderHighlighted(highlightedName)}
+                      />
+                      {hit.brand ? (
+                        <p className={styles.resultBrand}>{hit.brand}</p>
+                      ) : null}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           ) : null}
         </div>

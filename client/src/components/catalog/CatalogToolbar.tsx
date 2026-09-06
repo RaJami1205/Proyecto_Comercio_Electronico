@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
 
-import { useProductSearch } from '../../hooks/useProductSearch'
+import { useProductSearch } from '../../../../hooks/useProductSearch'
+import { mapRecordToProduct } from '../../../../services/productMapper'
 import styles from '../../styles/catalog/CatalogToolbar.module.css'
+import type { Product } from '../../data/products'
 import SearchBox from './SearchBox'
 
 function FilterIcon() {
@@ -26,15 +28,16 @@ function GridIcon() {
 interface CatalogToolbarProps {
   productCount: number
   onSearchChange: () => void
+  onProductSelect: (product: Product) => void
 }
 
-function CatalogToolbar({ productCount, onSearchChange }: CatalogToolbarProps) {
-  // Controlador: toda la lógica de búsqueda vive en este hook.
+function CatalogToolbar({
+  productCount,
+  onSearchChange,
+  onProductSelect,
+}: CatalogToolbarProps) {
   const { query, setQuery, results, isLoading, error } = useProductSearch()
 
-  // Cada vez que cambia el texto de búsqueda, avisamos al padre
-  // (ProductListingPage) para que resetee la paginación, igual que
-  // hacía el input original.
   const previousQueryRef = useRef(query)
   useEffect(() => {
     if (previousQueryRef.current !== query) {
@@ -52,6 +55,7 @@ function CatalogToolbar({ productCount, onSearchChange }: CatalogToolbarProps) {
           results={results}
           isLoading={isLoading}
           error={error}
+          onSelectResult={(record) => onProductSelect(mapRecordToProduct(record))}
         />
       </div>
 

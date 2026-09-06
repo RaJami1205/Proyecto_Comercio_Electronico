@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import type { Product } from '../data/products'
+import type { Product } from '../client/src/data/products'
 import { getCatalogPage } from '../services/algoliaClient'
 import { mapRecordToProduct } from '../services/productMapper'
 

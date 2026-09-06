@@ -117,3 +117,24 @@
   font-size: 0.8rem;
   color: var(--color-text-muted);
 }
+
+.resultItem {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  display: block;
+}
+
+.resultItemActive {
+  background: var(--color-surface);
+}
+
+.resultName mark {
+  background: transparent;
+  color: var(--color-primary);
+  font-weight: 700;
+}
