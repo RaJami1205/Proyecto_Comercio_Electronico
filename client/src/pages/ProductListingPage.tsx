@@ -8,7 +8,7 @@ import ProductQuickView from '../components/catalog/ProductQuickView'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
 import type { Product } from '../data/products'
-import { useProductCatalog } from '../../../hooks/useProductCatalog'
+import { useProductCatalog } from '../hooks/useProductCatalog'
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 
@@ -17,8 +17,6 @@ function ProductListingPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
-  // Controlador: la página completa (20 productos, según la
-  // paginación ya configurada en el índice de Algolia) viene de aquí.
   const { products, totalPages, nbHits, isLoading, error } =
     useProductCatalog(currentPage)
 

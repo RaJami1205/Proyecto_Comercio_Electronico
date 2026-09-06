@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent } from 'react'
-import type { ProductRecord } from '../../../../services/algoliaClient'
+import type { ProductSearchResult } from '../../services/productApi'
 import styles from '../../styles/catalog/SearchBox.module.css'
 
 function SearchIcon() {
@@ -22,15 +22,20 @@ function ClearIcon() {
 interface SearchBoxProps {
   query: string
   onQueryChange: (value: string) => void
-  results: ProductRecord[]
+  results: ProductSearchResult[]
   isLoading: boolean
   error: string | null
-  onSelectResult: (record: ProductRecord) => void
+  onSelectResult: (product: ProductSearchResult) => void
 }
 
-
 function renderHighlighted(value: string) {
-  return { __html: value }
+  return value.split(/(<mark>.*?<\/mark>)/g).map((part, index) => {
+    if (part.startsWith('<mark>') && part.endsWith('</mark>')) {
+      return <mark key={`${part}-${index}`}>{part.slice(6, -7)}</mark>
+    }
+
+    return part
+  })
 }
 
 function SearchBox({
@@ -44,8 +49,8 @@ function SearchBox({
   const [activeIndex, setActiveIndex] = useState(-1)
   const showPanel = query.trim().length > 0
 
-  function selectResult(record: ProductRecord) {
-    onSelectResult(record)
+  function selectResult(product: ProductSearchResult) {
+    onSelectResult(product)
     onQueryChange('')
     setActiveIndex(-1)
   }
@@ -124,10 +129,10 @@ function SearchBox({
           {results.length > 0 ? (
             <ul className={styles.results}>
               {results.map((hit, index) => {
-                const highlightedName = hit._highlightResult?.name?.value ?? hit.name
+                const highlightedName = hit.highlightedName ?? hit.name
 
                 return (
-                  <li key={hit.objectID}>
+                  <li key={hit.id}>
                     <button
                       type="button"
                       id={`search-result-${index}`}
@@ -140,10 +145,9 @@ function SearchBox({
                       onClick={() => selectResult(hit)}
                     >
                       <p className={styles.resultCategory}>{hit.category}</p>
-                      <p
-                        className={styles.resultName}
-                        dangerouslySetInnerHTML={renderHighlighted(highlightedName)}
-                      />
+                      <p className={styles.resultName}>
+                        {renderHighlighted(highlightedName)}
+                      </p>
                       {hit.brand ? (
                         <p className={styles.resultBrand}>{hit.brand}</p>
                       ) : null}

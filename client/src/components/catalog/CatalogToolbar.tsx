@@ -1,9 +1,8 @@
 import { useEffect, useRef } from 'react'
 
-import { useProductSearch } from '../../../../hooks/useProductSearch'
-import { mapRecordToProduct } from '../../../../services/productMapper'
 import styles from '../../styles/catalog/CatalogToolbar.module.css'
 import type { Product } from '../../data/products'
+import { useProductSearch } from '../../hooks/useProductSearch'
 import SearchBox from './SearchBox'
 
 function FilterIcon() {
@@ -55,7 +54,7 @@ function CatalogToolbar({
           results={results}
           isLoading={isLoading}
           error={error}
-          onSelectResult={(record) => onProductSelect(mapRecordToProduct(record))}
+          onSelectResult={onProductSelect}
         />
       </div>
 

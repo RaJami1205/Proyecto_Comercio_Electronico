@@ -1,25 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { searchProducts, type ProductRecord } from '../services/algoliaClient'
+import {
+  searchProducts,
+  type ProductSearchResult,
+} from '../services/productApi'
 
 const DEBOUNCE_MS = 200
 
 interface UseProductSearchResult {
   query: string
   setQuery: (value: string) => void
-  results: ProductRecord[]
+  results: ProductSearchResult[]
   isLoading: boolean
   error: string | null
 }
 
-/**
- * Controlador: conecta la Vista (lo que el usuario escribe) con el
- * Modelo (searchProducts). Decide CUÁNDO buscar (debounce), maneja
- * el estado de carga/error, y no sabe nada de cómo se ve la UI.
- */
 export function useProductSearch(): UseProductSearchResult {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<ProductRecord[]>([])
+  const [results, setResults] = useState<ProductSearchResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -31,21 +29,16 @@ export function useProductSearch(): UseProductSearchResult {
     }
 
     if (!query.trim()) {
-      setResults([])
-      setError(null)
-      setIsLoading(false)
       return
     }
 
-    setIsLoading(true)
-
     debounceRef.current = setTimeout(() => {
-      const currentRequestId = ++requestIdRef.current
+      const currentRequestId = requestIdRef.current
 
       searchProducts(query)
-        .then((hits) => {
+        .then((products) => {
           if (currentRequestId === requestIdRef.current) {
-            setResults(hits)
+            setResults(products)
             setError(null)
           }
         })
@@ -69,5 +62,19 @@ export function useProductSearch(): UseProductSearchResult {
     }
   }, [query])
 
-  return { query, setQuery, results, isLoading, error }
+  function updateQuery(value: string) {
+    requestIdRef.current += 1
+    setQuery(value)
+    setError(null)
+
+    if (value.trim()) {
+      setIsLoading(true)
+      return
+    }
+
+    setResults([])
+    setIsLoading(false)
+  }
+
+  return { query, setQuery: updateQuery, results, isLoading, error }
 }
