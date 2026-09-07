@@ -19,9 +19,9 @@ function humanizeKey(key: string): string {
     .join(' ')
 }
 
-export function mapProductRecord(record: ProductRecord): ProductDto {
-  const specifications = record.specs
-    ? Object.entries(record.specs).map(([label, value]) => ({
+export function mapProductRecord(record: any): ProductDto {
+  const specifications = record.facets
+    ? Object.entries(record.facets).map(([label, value]) => ({
         label: humanizeKey(label),
         value: String(value),
       }))
@@ -29,20 +29,22 @@ export function mapProductRecord(record: ProductRecord): ProductDto {
 
   return {
     id: record.objectID,
-    name: record.name,
-    price: record.price_CRC ?? 0,
-    image: record.images?.[0] ?? PLACEHOLDER_IMAGE,
-    category: record.category,
+    name: record.title,
+    price: record.price ?? 0,
+    image: record.image_url ?? PLACEHOLDER_IMAGE,
+    category: Array.isArray(record.categories) && record.categories.length > 0 
+      ? record.categories[0] 
+      : 'Sin categoría',
     description: record.description ?? '',
-    inStock: (record.inventory?.totalStock ?? 0) > 0,
+    inStock: record.in_stock ?? false,
     specifications,
   }
 }
 
-export function mapSearchProductRecord(record: ProductRecord): ProductSearchDto {
+export function mapSearchProductRecord(record: any): ProductSearchDto {
   return {
     ...mapProductRecord(record),
     brand: record.brand,
-    highlightedName: record._highlightResult?.name?.value ?? record.name,
+    highlightedName: record._highlightResult?.title?.value ?? record.title,
   }
 }
