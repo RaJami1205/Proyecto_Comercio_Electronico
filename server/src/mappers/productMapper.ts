@@ -32,11 +32,11 @@ export function mapProductRecord(record: any): ProductDto {
     name: record.title,
     price: record.price ?? 0,
     image: record.image_url ?? PLACEHOLDER_IMAGE,
-    category: Array.isArray(record.categories) && record.categories.length > 0 
-      ? record.categories[0] 
+    category: Array.isArray(record.categories) && record.categories.length > 0
+      ? record.categories[0]
       : 'Sin categoría',
     description: record.description ?? '',
-    inStock: record.in_stock ?? false,
+    inStock: record.in_stock ?? (record.stock_quantity ? record.stock_quantity > 0 : false),
     specifications,
   }
 }

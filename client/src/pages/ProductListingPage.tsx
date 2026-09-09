@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 
+import CatalogFilters from '../components/catalog/CatalogFilters'
 import CatalogHero from '../components/catalog/CatalogHero'
 import CatalogToolbar from '../components/catalog/CatalogToolbar'
 import Pagination from '../components/catalog/Pagination'
@@ -9,16 +10,32 @@ import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
 import type { Product } from '../data/products'
 import { useProductCatalog } from '../hooks/useProductCatalog'
+import type { CatalogFilters as CatalogFiltersState } from '../services/productApi'
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 
+const EMPTY_FILTERS: CatalogFiltersState = {
+  categories: [],
+  brands: [],
+  specifications: {},
+  minPrice: '',
+  maxPrice: '',
+}
+
 function ProductListingPage() {
   const [currentPage, setCurrentPage] = useState(1)
+  const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
-  const { products, totalPages, nbHits, isLoading, error } =
-    useProductCatalog(currentPage)
+  const { products, totalPages, nbHits, facets, isLoading, error } =
+    useProductCatalog(currentPage, filters)
+
+  function handleFiltersChange(nextFilters: CatalogFiltersState) {
+    setFilters(nextFilters)
+    setCurrentPage(1)
+  }
 
   function handleDirectionalPageChange(page: number) {
     setCurrentPage(page)
@@ -52,9 +69,19 @@ function ProductListingPage() {
 
             <CatalogToolbar
               productCount={nbHits}
+              isFiltersOpen={isFiltersOpen}
+              onToggleFilters={() => setIsFiltersOpen((open) => !open)}
               onSearchChange={() => setCurrentPage(1)}
               onProductSelect={setSelectedProduct}
             />
+
+            {isFiltersOpen ? (
+              <CatalogFilters
+                facets={facets}
+                filters={filters}
+                onChange={handleFiltersChange}
+              />
+            ) : null}
 
             <div className={styles.results} ref={resultsStartRef}>
               {error ? (

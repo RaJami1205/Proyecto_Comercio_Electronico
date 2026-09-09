@@ -9,11 +9,20 @@ export interface ProductSearchResult extends Product {
   highlightedName?: string
 }
 
+export interface CatalogFilters {
+  categories: string[]
+  brands: string[]
+  specifications: Record<string, string[]>
+  minPrice: string
+  maxPrice: string
+}
+
 interface CatalogPageResponse {
   products: Product[]
   page: number
   totalPages: number
   totalProducts: number
+  facets: Record<string, Record<string, number>>
 }
 
 interface ProductSearchResponse {
@@ -37,11 +46,17 @@ async function request<T>(path: string): Promise<T> {
 export function getCatalogPage(
   page: number,
   productsPerPage = 20,
+  filters?: CatalogFilters,
 ): Promise<CatalogPageResponse> {
   const params = new URLSearchParams({
     page: String(page),
     perPage: String(productsPerPage),
   })
+
+  filters?.categories.forEach((category) => params.append('categories', category))
+  filters?.brands.forEach((brand) => params.append('brands', brand))
+  if (filters?.minPrice) params.set('minPrice', filters.minPrice)
+  if (filters?.maxPrice) params.set('maxPrice', filters.maxPrice)
 
   return request<CatalogPageResponse>(`/api/products?${params}`)
 }
@@ -53,4 +68,14 @@ export async function searchProducts(query: string): Promise<ProductSearchResult
   )
 
   return response.products
+}
+
+export interface CategoryTreeNode {
+  name: string
+  children: CategoryTreeNode[]
+}
+
+export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
+  const response = await request<{ tree: CategoryTreeNode[] }>('/api/products/categories/tree')
+  return response.tree
 }

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 
 import type { Product } from '../data/products'
-import { getCatalogPage } from '../services/productApi'
+import { getCatalogPage, type CatalogFilters } from '../services/productApi'
 
 interface UseProductCatalogResult {
   products: Product[]
   totalPages: number
   nbHits: number
+  facets: Record<string, Record<string, number>>
   isLoading: boolean
   error: string | null
 }
@@ -15,17 +16,22 @@ interface ProductCatalogState {
   products: Product[]
   totalPages: number
   nbHits: number
+  facets: Record<string, Record<string, number>>
   loadedPage: number | null
   error: string | null
 }
 
 const PRODUCTS_PER_PAGE = 20
 
-export function useProductCatalog(page: number): UseProductCatalogResult {
+export function useProductCatalog(
+  page: number,
+  filters?: CatalogFilters,
+): UseProductCatalogResult {
   const [state, setState] = useState<ProductCatalogState>({
     products: [],
     totalPages: 1,
     nbHits: 0,
+    facets: {},
     loadedPage: null,
     error: null,
   })
@@ -33,13 +39,14 @@ export function useProductCatalog(page: number): UseProductCatalogResult {
   useEffect(() => {
     let cancelled = false
 
-    getCatalogPage(page, PRODUCTS_PER_PAGE)
+    getCatalogPage(page, PRODUCTS_PER_PAGE, filters)
       .then((result) => {
         if (cancelled) return
         setState({
           products: result.products,
           totalPages: Math.max(result.totalPages, 1),
           nbHits: result.totalProducts,
+          facets: result.facets ?? {},
           loadedPage: page,
           error: null,
         })
@@ -57,12 +64,14 @@ export function useProductCatalog(page: number): UseProductCatalogResult {
     return () => {
       cancelled = true
     }
-  }, [page])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, JSON.stringify(filters)])
 
   return {
     products: state.products,
     totalPages: state.totalPages,
     nbHits: state.nbHits,
+    facets: state.facets,
     isLoading: state.loadedPage !== page,
     error: state.error,
   }

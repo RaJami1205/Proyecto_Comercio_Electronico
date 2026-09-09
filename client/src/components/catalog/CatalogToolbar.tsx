@@ -26,12 +26,16 @@ function GridIcon() {
 
 interface CatalogToolbarProps {
   productCount: number
+  isFiltersOpen: boolean
+  onToggleFilters: () => void
   onSearchChange: () => void
   onProductSelect: (product: Product) => void
 }
 
 function CatalogToolbar({
   productCount,
+  isFiltersOpen,
+  onToggleFilters,
   onSearchChange,
   onProductSelect,
 }: CatalogToolbarProps) {
@@ -60,7 +64,7 @@ function CatalogToolbar({
 
       <div className={styles.toolbar} aria-label="Controles visuales del catálogo">
         <div className={styles.controls}>
-          <button type="button" disabled title="Disponible próximamente">
+          <button type="button" onClick={onToggleFilters} aria-pressed={isFiltersOpen}>
             <FilterIcon />
             Filtros
           </button>
