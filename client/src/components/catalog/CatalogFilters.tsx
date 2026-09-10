@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { useCategoryTree } from '../../hooks/useCategoryTree'
 import type { CategoryTreeNode } from '../../services/productApi'
-import type { CatalogFilters as CatalogFiltersState } from '../../services/productApi'
+import type { CatalogFilters as CatalogFiltersState, SortOption } from '../../services/productApi'
 import type { ActivePanel } from './CatalogToolbar'
 import styles from '../../styles/catalog/CatalogFilters.module.css'
 
@@ -152,15 +152,12 @@ function CatalogFilters({
   isUpdating = false,
   activePanel,
 }: CatalogFiltersProps) {
-  // Estado para las entradas numéricas
   const [pendingMinPrice, setPendingMinPrice] = useState(filters.minPrice ?? '')
   const [pendingMaxPrice, setPendingMaxPrice] = useState(filters.maxPrice ?? '')
 
-  // 🔴 Estados requeridos para rastrear cambios en las props durante el render
   const [prevMin, setPrevMin] = useState(filters.minPrice)
   const [prevMax, setPrevMax] = useState(filters.maxPrice)
 
-  // Sincronización en render cuando las props cambian (ej. al presionar 'Limpiar filtros')
   if (filters.minPrice !== prevMin || filters.maxPrice !== prevMax) {
     setPrevMin(filters.minPrice)
     setPrevMax(filters.maxPrice)
@@ -190,6 +187,7 @@ function CatalogFilters({
       specifications: {},
       minPrice: '',
       maxPrice: '',
+      sort: 'relevance',
     })
   }
 
@@ -226,10 +224,14 @@ function CatalogFilters({
           <div className={styles.priceLayout}>
             <div className={styles.controlField}>
               <label htmlFor="catalog-sort">Ordenar por</label>
-              <select id="catalog-sort">
-                <option>Más relevantes</option>
-                <option>Menor precio</option>
-                <option>Mayor precio</option>
+              <select
+                id="catalog-sort"
+                value={filters.sort ?? 'relevance'}
+                onChange={(e) => update({ sort: e.target.value as SortOption })}
+              >
+                <option value="relevance">Más relevantes</option>
+                <option value="price_asc">Menor precio</option>
+                <option value="price_desc">Mayor precio</option>
               </select>
             </div>
 

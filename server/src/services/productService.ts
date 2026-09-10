@@ -2,11 +2,14 @@ import { getAlgoliaClient } from '../config/algolia.js'
 import { getAlgoliaConfig } from '../config/env.js'
 import type { ProductRecord } from '../types/product.js'
 
+type ProductRecordWithPrice = ProductRecord & { price?: number }
+
 export interface CatalogFilters {
   categories?: string[]
   brands?: string[]
   minPrice?: number
   maxPrice?: number
+  sort?: string
 }
 
 export interface CatalogPageResult {
@@ -25,6 +28,14 @@ export async function getCatalogPage(
 ): Promise<CatalogPageResult> {
   const { indexName } = getAlgoliaConfig()
 
+  // Determinar si consultamos el índice principal o la réplica
+  let targetIndex = indexName
+  if (filters.sort === 'price_asc') {
+    targetIndex = `${indexName}_price_asc`
+  } else if (filters.sort === 'price_desc') {
+    targetIndex = `${indexName}_price_desc`
+  }
+
   const facetFilters: string[][] = []
   if (filters.categories?.length) {
     for (const category of filters.categories) {
@@ -36,7 +47,6 @@ export async function getCatalogPage(
   }
 
   const numericFilters: string[] = []
-  
   if (typeof filters.minPrice === 'number') {
     numericFilters.push(`price>=${filters.minPrice}`)
   }
@@ -44,27 +54,32 @@ export async function getCatalogPage(
     numericFilters.push(`price<=${filters.maxPrice}`)
   }
 
-  const response = await getAlgoliaClient().searchSingleIndex<ProductRecord>({
-    indexName,
-    searchParams: {
-      query,
-      page,
-      hitsPerPage: productsPerPage,
-      facets: ['categories', 'brand'],
-      ...(facetFilters.length ? { facetFilters } : {}),
-      ...(numericFilters.length ? { numericFilters } : {}),
-    },
-  })
+  // Algolia utiliza paginación basada en 0 (0 es la primera página)
+  const algoliaPage = Math.max(0, page - 1)
 
-  console.log('RAW HIT:', JSON.stringify(response.hits[0], null, 2))
-  console.log('FACETS DISPONIBLES:', JSON.stringify(response.facets, null, 2))
+  try {
+    const response = await getAlgoliaClient().searchSingleIndex<ProductRecordWithPrice>({
+      indexName: targetIndex,
+      searchParams: {
+        query,
+        page: algoliaPage,
+        hitsPerPage: productsPerPage,
+        facets: ['categories', 'brand'],
+        ...(facetFilters.length ? { facetFilters } : {}),
+        ...(numericFilters.length ? { numericFilters } : {}),
+      },
+    })
 
-  return {
-    hits: response.hits,
-    page: response.page ?? page,
-    totalPages: response.nbPages ?? 0,
-    totalProducts: response.nbHits ?? 0,
-    facets: response.facets ?? {},
+    return {
+      hits: response.hits,
+      page: (response.page ?? algoliaPage) + 1, // Convertimos de vuelta a base 1 para el cliente
+      totalPages: response.nbPages ?? 0,
+      totalProducts: response.nbHits ?? 0,
+      facets: response.facets ?? {},
+    }
+  } catch (error) {
+    console.error(`Error consultando el índice '${targetIndex}' en Algolia:`, error)
+    throw error
   }
 }
 

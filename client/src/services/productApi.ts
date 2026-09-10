@@ -3,6 +3,8 @@ import type { Product } from '../data/products'
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || ''
 const API_BASE_URL = configuredApiBaseUrl.replace(/\/+$/, '')
 
+export type SortOption = 'relevance' | 'price_asc' | 'price_desc'
+
 export interface ProductSearchResult extends Product {
   brand?: string
   highlightedName?: string
@@ -14,6 +16,7 @@ export interface CatalogFilters {
   specifications: Record<string, string[]>
   minPrice: string
   maxPrice: string
+  sort?: SortOption
 }
 
 interface CatalogPageResponse {
@@ -60,7 +63,6 @@ export function getCatalogPage(
   filters?.categories?.forEach((category) => params.append('categories', category))
   filters?.brands?.forEach((brand) => params.append('brands', brand))
 
-  // 🔴 Limpiamos espacios y validamos que no esté vacío antes de agregarlo
   const minPrice = filters?.minPrice?.trim()
   const maxPrice = filters?.maxPrice?.trim()
 
@@ -70,6 +72,10 @@ export function getCatalogPage(
 
   if (maxPrice && !isNaN(Number(maxPrice))) {
     params.set('maxPrice', maxPrice)
+  }
+
+  if (filters?.sort) {
+    params.set('sort', filters.sort)
   }
 
   return request<CatalogPageResponse>(`/api/products?${params.toString()}`)
