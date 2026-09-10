@@ -1,8 +1,7 @@
 import type { Product } from '../data/products'
 
-const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim()
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
-const API_BASE_URL = (configuredApiBaseUrl || DEFAULT_API_BASE_URL).replace(/\/+$/, '')
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || ''
+const API_BASE_URL = configuredApiBaseUrl.replace(/\/+$/, '')
 
 export interface ProductSearchResult extends Product {
   brand?: string
@@ -30,7 +29,9 @@ interface ProductSearchResponse {
 }
 
 async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`
+
+  const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
     },
@@ -53,18 +54,28 @@ export function getCatalogPage(
     perPage: String(productsPerPage),
   })
 
-  filters?.categories.forEach((category) => params.append('categories', category))
-  filters?.brands.forEach((brand) => params.append('brands', brand))
-  if (filters?.minPrice) params.set('minPrice', filters.minPrice)
-  if (filters?.maxPrice) params.set('maxPrice', filters.maxPrice)
+  filters?.categories?.forEach((category) => params.append('categories', category))
+  filters?.brands?.forEach((brand) => params.append('brands', brand))
 
-  return request<CatalogPageResponse>(`/api/products?${params}`)
+  // 🔴 Limpiamos espacios y validamos que no esté vacío antes de agregarlo
+  const minPrice = filters?.minPrice?.trim()
+  const maxPrice = filters?.maxPrice?.trim()
+
+  if (minPrice && !isNaN(Number(minPrice))) {
+    params.set('minPrice', minPrice)
+  }
+
+  if (maxPrice && !isNaN(Number(maxPrice))) {
+    params.set('maxPrice', maxPrice)
+  }
+
+  return request<CatalogPageResponse>(`/api/products?${params.toString()}`)
 }
 
 export async function searchProducts(query: string): Promise<ProductSearchResult[]> {
   const params = new URLSearchParams({ q: query })
   const response = await request<ProductSearchResponse>(
-    `/api/products/search?${params}`,
+    `/api/products/search?${params.toString()}`,
   )
 
   return response.products

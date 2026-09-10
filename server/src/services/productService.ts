@@ -35,13 +35,14 @@ export async function getCatalogPage(
   }
 
   const numericFilters: string[] = []
+  
   if (typeof filters.minPrice === 'number') {
-    numericFilters.push(`price_CRC>=${filters.minPrice}`)
+    numericFilters.push(`price>=${filters.minPrice}`)
   }
   if (typeof filters.maxPrice === 'number') {
-    numericFilters.push(`price_CRC<=${filters.maxPrice}`)
+    numericFilters.push(`price<=${filters.maxPrice}`)
   }
-  
+
   const response = await getAlgoliaClient().searchSingleIndex<ProductRecord>({
     indexName,
     searchParams: {
@@ -52,11 +53,11 @@ export async function getCatalogPage(
       ...(facetFilters.length ? { facetFilters } : {}),
       ...(numericFilters.length ? { numericFilters } : {}),
     },
-
-  
   })
+
   console.log('RAW HIT:', JSON.stringify(response.hits[0], null, 2))
   console.log('FACETS DISPONIBLES:', JSON.stringify(response.facets, null, 2))
+
   return {
     hits: response.hits,
     page: response.page ?? page,

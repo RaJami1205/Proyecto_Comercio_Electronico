@@ -150,8 +150,21 @@ function CatalogFilters({
   isUpdating = false,
   activePanel,
 }: CatalogFiltersProps) {
-  const [pendingMinPrice, setPendingMinPrice] = useState(filters.minPrice)
-  const [pendingMaxPrice, setPendingMaxPrice] = useState(filters.maxPrice)
+  // Estado para las entradas numéricas
+  const [pendingMinPrice, setPendingMinPrice] = useState(filters.minPrice ?? '')
+  const [pendingMaxPrice, setPendingMaxPrice] = useState(filters.maxPrice ?? '')
+
+  // 🔴 Estados requeridos para rastrear cambios en las props durante el render
+  const [prevMin, setPrevMin] = useState(filters.minPrice)
+  const [prevMax, setPrevMax] = useState(filters.maxPrice)
+
+  // Sincronización en render cuando las props cambian (ej. al presionar 'Limpiar filtros')
+  if (filters.minPrice !== prevMin || filters.maxPrice !== prevMax) {
+    setPrevMin(filters.minPrice)
+    setPrevMax(filters.maxPrice)
+    setPendingMinPrice(filters.minPrice ?? '')
+    setPendingMaxPrice(filters.maxPrice ?? '')
+  }
 
   if (!activePanel) return null
 
@@ -159,18 +172,32 @@ function CatalogFilters({
     onChange({ ...filters, ...patch })
   }
 
+  function handleApplyPrice() {
+    update({
+      minPrice: pendingMinPrice.trim(),
+      maxPrice: pendingMaxPrice.trim(),
+    })
+  }
+
   function clearAll() {
     setPendingMinPrice('')
     setPendingMaxPrice('')
-    onChange({ categories: [], brands: [], specifications: {}, minPrice: '', maxPrice: '' })
+    onChange({
+      categories: [],
+      brands: [],
+      specifications: {},
+      minPrice: '',
+      maxPrice: '',
+    })
   }
 
   return (
     <div
+      key={activePanel}
       className={`${styles.panel} ${isUpdating ? styles.isUpdating : ''}`}
       aria-label="Filtros de productos"
     >
-      {/* 1. Panel de MARCAS (se activa al pulsar 'Filtros') */}
+      {/* 1. Panel de MARCAS */}
       {activePanel === 'filters' && (
         <BrandFilter
           facets={facets}
@@ -180,7 +207,7 @@ function CatalogFilters({
         />
       )}
 
-      {/* 2. Panel de CATEGORÍAS (se activa al pulsar 'Categorías') */}
+      {/* 2. Panel de CATEGORÍAS */}
       {activePanel === 'categories' && (
         <CategoryTree
           facetCounts={facets.categories ?? {}}
@@ -189,7 +216,7 @@ function CatalogFilters({
         />
       )}
 
-      {/* 3. Panel de ORDENAR / PRECIO (se activa al pulsar 'Ordenar y Precio') */}
+      {/* 3. Panel de PRECIO / ORDEN */}
       {activePanel === 'price' && (
         <fieldset className={styles.group}>
           <legend>Precio y Orden</legend>
@@ -198,7 +225,7 @@ function CatalogFilters({
             <label className={styles.leafNote} style={{ display: 'block', marginBottom: '0.35rem' }}>
               Ordenar por
             </label>
-            <select style={{ padding: '0.35rem', borderRadius: '6px', border: '1px solid #cdd8ea' }}>
+            <select style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid #cdd8ea' }}>
               <option>Más relevantes</option>
               <option>Menor precio</option>
               <option>Mayor precio</option>
@@ -211,6 +238,7 @@ function CatalogFilters({
               <input
                 type="number"
                 min="0"
+                placeholder="0"
                 value={pendingMinPrice}
                 onChange={(event) => setPendingMinPrice(event.target.value)}
               />
@@ -220,6 +248,7 @@ function CatalogFilters({
               <input
                 type="number"
                 min="0"
+                placeholder="Máx"
                 value={pendingMaxPrice}
                 onChange={(event) => setPendingMaxPrice(event.target.value)}
               />
@@ -230,7 +259,7 @@ function CatalogFilters({
             className={styles.clearButton}
             type="button"
             style={{ marginTop: '0.75rem' }}
-            onClick={() => update({ minPrice: pendingMinPrice, maxPrice: pendingMaxPrice })}
+            onClick={handleApplyPrice}
           >
             Aplicar precio
           </button>
