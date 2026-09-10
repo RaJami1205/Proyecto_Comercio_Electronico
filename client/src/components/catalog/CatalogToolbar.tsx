@@ -108,7 +108,7 @@ function CatalogToolbar({
             aria-pressed={activePanel === 'price'}
           >
             <SortIcon />
-            Ordenar Por
+            Ordenar Por Precio
           </button>
         </div>
 
