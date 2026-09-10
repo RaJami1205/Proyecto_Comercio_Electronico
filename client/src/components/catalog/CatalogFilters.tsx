@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useCategoryTree } from '../../hooks/useCategoryTree'
 import type { CategoryTreeNode } from '../../services/productApi'
 import type { CatalogFilters as CatalogFiltersState } from '../../services/productApi'
+import type { ActivePanel } from './CatalogToolbar'
 import styles from '../../styles/catalog/CatalogFilters.module.css'
 
 interface CatalogFiltersProps {
@@ -10,6 +11,7 @@ interface CatalogFiltersProps {
   filters: CatalogFiltersState
   onChange: (filters: CatalogFiltersState) => void
   isUpdating?: boolean
+  activePanel: ActivePanel
 }
 
 const LEADING_BRANDS = [
@@ -107,13 +109,13 @@ function BrandFilter({
     .filter(([name]) => (categorySelected ? true : LEADING_BRANDS.includes(name)))
     .sort(([left], [right]) => left.localeCompare(right))
 
-  if (visibleEntries.length === 0) return null
+  if (visibleEntries.length === 0) return <p className={styles.leafNote}>No hay marcas disponibles.</p>
 
   const columns = chunk(visibleEntries, 10)
 
   return (
     <fieldset className={styles.group}>
-      <legend>Marca</legend>
+      <legend>Marcas</legend>
       <div className={styles.brandColumns}>
         {columns.map((column, columnIndex) => (
           <div className={styles.brandColumn} key={columnIndex}>
@@ -141,9 +143,17 @@ function BrandFilter({
   )
 }
 
-function CatalogFilters({ facets, filters, onChange, isUpdating = false }: CatalogFiltersProps) {
+function CatalogFilters({
+  facets,
+  filters,
+  onChange,
+  isUpdating = false,
+  activePanel,
+}: CatalogFiltersProps) {
   const [pendingMinPrice, setPendingMinPrice] = useState(filters.minPrice)
   const [pendingMaxPrice, setPendingMaxPrice] = useState(filters.maxPrice)
+
+  if (!activePanel) return null
 
   function update(patch: Partial<CatalogFiltersState>) {
     onChange({ ...filters, ...patch })
@@ -160,33 +170,79 @@ function CatalogFilters({ facets, filters, onChange, isUpdating = false }: Catal
       className={`${styles.panel} ${isUpdating ? styles.isUpdating : ''}`}
       aria-label="Filtros de productos"
     >
-      <div className={styles.mainRow}>
-        <CategoryTree
-          facetCounts={facets.categories ?? {}}
-          values={filters.categories}
-          onChange={(categories) => update({ categories })}
-        />
-
+      {/* 1. Panel de MARCAS (se activa al pulsar 'Filtros') */}
+      {activePanel === 'filters' && (
         <BrandFilter
           facets={facets}
           categorySelected={filters.categories.length > 0}
           values={filters.brands}
           onChange={(brands) => update({ brands })}
         />
+      )}
 
+      {/* 2. Panel de CATEGORÍAS (se activa al pulsar 'Categorías') */}
+      {activePanel === 'categories' && (
+        <CategoryTree
+          facetCounts={facets.categories ?? {}}
+          values={filters.categories}
+          onChange={(categories) => update({ categories })}
+        />
+      )}
+
+      {/* 3. Panel de ORDENAR / PRECIO (se activa al pulsar 'Ordenar y Precio') */}
+      {activePanel === 'price' && (
         <fieldset className={styles.group}>
-          <legend>Precio</legend>
-          <div className={styles.priceFields}>
-            <label>Desde<input type="number" min="0" value={pendingMinPrice} onChange={(event) => setPendingMinPrice(event.target.value)} /></label>
-            <label>Hasta<input type="number" min="0" value={pendingMaxPrice} onChange={(event) => setPendingMaxPrice(event.target.value)} /></label>
+          <legend>Precio y Orden</legend>
+
+          <div style={{ marginBottom: '1rem' }}>
+            <label className={styles.leafNote} style={{ display: 'block', marginBottom: '0.35rem' }}>
+              Ordenar por
+            </label>
+            <select style={{ padding: '0.35rem', borderRadius: '6px', border: '1px solid #cdd8ea' }}>
+              <option>Más relevantes</option>
+              <option>Menor precio</option>
+              <option>Mayor precio</option>
+            </select>
           </div>
-          <button className={styles.clearButton} type="button" onClick={() => update({ minPrice: pendingMinPrice, maxPrice: pendingMaxPrice })}>
+
+          <div className={styles.priceFields}>
+            <label>
+              Desde
+              <input
+                type="number"
+                min="0"
+                value={pendingMinPrice}
+                onChange={(event) => setPendingMinPrice(event.target.value)}
+              />
+            </label>
+            <label>
+              Hasta
+              <input
+                type="number"
+                min="0"
+                value={pendingMaxPrice}
+                onChange={(event) => setPendingMaxPrice(event.target.value)}
+              />
+            </label>
+          </div>
+
+          <button
+            className={styles.clearButton}
+            type="button"
+            style={{ marginTop: '0.75rem' }}
+            onClick={() => update({ minPrice: pendingMinPrice, maxPrice: pendingMaxPrice })}
+          >
             Aplicar precio
           </button>
         </fieldset>
-      </div>
+      )}
 
-      <button className={styles.clearButton} type="button" onClick={clearAll}>
+      <button
+        className={styles.clearButton}
+        type="button"
+        style={{ marginTop: '0.5rem' }}
+        onClick={clearAll}
+      >
         Limpiar filtros
       </button>
     </div>
