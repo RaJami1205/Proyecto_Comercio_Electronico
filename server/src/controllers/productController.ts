@@ -60,6 +60,7 @@ export async function getProducts(
     )
 
     const categories = parseArrayParam(request.query.categories)
+    const query = typeof request.query.q === 'string' ? request.query.q.trim() : ''
     const brands = parseArrayParam(request.query.brands)
     const minPrice = parseNonNegativeNumber(request.query.minPrice)
     const maxPrice = parseNonNegativeNumber(request.query.maxPrice)
@@ -69,7 +70,7 @@ export async function getProducts(
       brands,
       minPrice,
       maxPrice,
-    })
+    }, query)
 
     response.json({
       products: result.hits.map(mapProductRecord),

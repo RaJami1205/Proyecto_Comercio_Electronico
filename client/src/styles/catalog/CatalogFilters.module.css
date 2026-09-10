@@ -1,273 +1,346 @@
-/* Contenedor del panel principal */
 .panel {
   display: grid;
-  gap: 1rem;
-  margin-top: 0.75rem;
-  padding: 1.25rem;
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: var(--border-radius, 12px);
-  background: rgba(250, 252, 255, 0.95);
-  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
-
-  /* Animación de entrada al cambiar de panel */
-  animation: panelSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  will-change: transform, opacity;
+  gap: 1.1rem;
+  margin: 0 0 1.75rem;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border: 1px solid #cad8ed;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.96));
+  box-shadow:
+    0 14px 34px rgba(31, 56, 102, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
-/* Transición cuando se recargan los filtros */
 .panel.isUpdating {
-  opacity: 0.55;
   pointer-events: none;
   filter: blur(1px);
-  transition: opacity 0.25s ease, filter 0.25s ease;
+  opacity: 0.55;
+  transition:
+    opacity 180ms ease,
+    filter 180ms ease;
 }
 
-/* Animación de entrada: deslizamiento ligero + fade-in */
-@keyframes panelSlideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.99);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* Animación para los elementos dentro de cada sección */
 .group {
-  min-width: 10rem;
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
-  animation: fadeInContent 0.4s ease forwards;
-}
-
-@keyframes fadeInContent {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
 }
 
 .group legend {
-  margin-bottom: 0.45rem;
-  color: #354867;
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-
-.categorySearch {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  min-height: 2rem;
-  margin-bottom: 0.35rem;
-  padding: 0 0.45rem;
-  border: 1px solid #cdd8ea;
-  border-radius: 7px;
-  background: #ffffff;
-}
-
-.searchIcon {
-  color: #6c7b98;
-  font-size: 0.95rem;
-}
-
-.categorySearch input {
-  width: 8.5rem;
-  min-width: 0;
-  padding: 0.35rem 0;
-  color: var(--color-text-primary);
-  border: 0;
-  outline: 0;
-  background: transparent;
-  font-size: 0.78rem;
-}
-
-.categorySearch input::placeholder {
-  color: #6c7b98;
-}
-
-.option {
   width: 100%;
-  cursor: pointer;
-  text-align: left;
-  border: 0;
-  background: none;
-  font: inherit;
+  margin: 0 0 0.9rem;
+  padding: 0;
+  color: #152a50;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
-.option input {
-  width: 0.9rem;
-  height: 0.9rem;
+.brandGrid,
+.categoryGrid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.brandGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.categoryGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.categoryNode {
+  min-width: 0;
+}
+
+.categoryChildren {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  padding-left: 0.7rem;
+  border-left: 2px solid rgba(31, 94, 255, 0.13);
+}
+
+.checkOption {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  min-height: 46px;
+  padding: 0.62rem 0.72rem;
+  cursor: pointer;
+  color: #435676;
+  border: 1px solid #d5e0f0;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.86rem;
+  line-height: 1.25;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
+}
+
+.checkOption:hover {
+  color: #18345f;
+  border-color: #9db8e7;
+  background: #f0f6ff;
+  box-shadow: 0 5px 14px rgba(31, 94, 255, 0.08);
+}
+
+.checkOption:has(input:focus-visible) {
+  border-color: var(--color-primary);
+  outline: 2px solid rgba(31, 94, 255, 0.3);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(24, 213, 227, 0.1);
+}
+
+.checkOption.isSelected {
+  color: #132f5d;
+  border-color: #6f99ec;
+  background: linear-gradient(135deg, rgba(229, 240, 255, 0.98), rgba(231, 250, 252, 0.88));
+  box-shadow: 0 6px 16px rgba(31, 94, 255, 0.1);
+}
+
+.checkOption.isSelected span {
+  font-weight: 750;
+}
+
+.checkOption.isDisabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.checkOption input {
+  width: 1.08rem;
+  height: 1.08rem;
+  margin: 0;
   accent-color: var(--color-primary);
 }
 
-.option small {
-  margin-left: auto;
-  color: var(--color-text-muted);
+.checkOption input:focus-visible {
+  outline: none;
+}
+
+.checkOption span {
+  min-width: 0;
+}
+
+.checkOption small {
+  display: inline-grid;
+  min-width: 1.8rem;
+  min-height: 1.55rem;
+  padding: 0.18rem 0.42rem;
+  color: #60718f;
+  border-radius: 999px;
+  background: #edf3fb;
+  font-size: 0.72rem;
+  font-weight: 750;
+  place-items: center;
+}
+
+.isSelected small {
+  color: #174ab4;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.priceGroup {
+  width: 100%;
+}
+
+.priceLayout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.75fr) minmax(21rem, 1.35fr) minmax(9.5rem, auto);
+  gap: 1rem;
+  align-items: end;
+}
+
+.controlField,
+.priceRange,
+.priceFields label {
+  display: grid;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.controlField label,
+.controlLabel,
+.priceFields label {
+  color: #435676;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.controlField select,
+.priceFields input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0.7rem 0.8rem;
+  color: var(--color-text-primary);
+  border: 1px solid #bdcde5;
+  border-radius: 10px;
+  outline: 0;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.9rem;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.controlField select:hover,
+.priceFields input:hover {
+  border-color: #90addd;
+}
+
+.controlField select:focus-visible,
+.priceFields input:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow:
+    0 0 0 3px rgba(31, 94, 255, 0.13),
+    0 0 0 6px rgba(24, 213, 227, 0.06);
 }
 
 .priceFields {
-  display: flex;
-  gap: 0.45rem;
-}
-
-.priceFields label {
   display: grid;
-  gap: 0.25rem;
-  color: #5d6d88;
-  font-size: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
 }
 
-.priceFields input {
-  width: 6.5rem;
-  min-height: 2rem;
-  padding: 0.35rem;
-  color: var(--color-text-primary);
-  border: 1px solid #cdd8ea;
-  border-radius: 8px;
-  background: #ffffff;
+.applyButton,
+.clearButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.68rem 1rem;
+  cursor: pointer;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
+}
+
+.applyButton {
+  min-height: 48px;
+  color: #ffffff;
+  border: 1px solid #2f63dc;
+  background: linear-gradient(135deg, #1f5eff, #5356df);
+  box-shadow: 0 8px 18px rgba(31, 94, 255, 0.18);
+}
+
+.applyButton:hover {
+  border-color: #174bc3;
+  background: linear-gradient(135deg, #1855ec, #4749ca);
+  box-shadow: 0 10px 21px rgba(31, 94, 255, 0.24);
 }
 
 .clearButton {
   justify-self: start;
-  min-height: 2rem;
-  padding: 0.4rem 0.7rem;
-  cursor: pointer;
-  color: #354867;
-  border: 1px solid #cdd8ea;
-  border-radius: 8px;
-  background: #f3f6fc;
-  font-size: 0.78rem;
-  font-weight: 700;
+  color: #25466f;
+  border: 1px solid #adc2e3;
+  background: #f3f7fd;
 }
 
-.mainRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 1rem;
+.clearButton:hover {
+  color: #15365f;
+  border-color: #779ce0;
+  background: #eaf2ff;
+  box-shadow: 0 5px 14px rgba(31, 94, 255, 0.09);
 }
 
-@media (max-width: 860px) {
-  .mainRow {
-    grid-template-columns: 1fr;
-  }
+.applyButton:focus-visible,
+.clearButton:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
 }
 
-.breadcrumb {
-  margin-bottom: 0.5rem;
-  color: #5d6d88;
-  font-size: 0.78rem;
-}
-
-.crumb {
-  padding: 0;
-  cursor: pointer;
-  color: var(--color-primary);
-  border: 0;
-  background: none;
-  font: inherit;
-  text-decoration: underline;
+.applyButton:active,
+.clearButton:active {
+  box-shadow: none;
 }
 
 .leafNote {
+  margin: 0;
   color: #5d6d88;
-  font-size: 0.8rem;
-  font-style: italic;
+  font-size: 0.84rem;
 }
 
-.checkOption {
-  display: flex;
-  gap: 0.45rem;
-  align-items: center;
-  min-height: 1.8rem;
-  color: #5d6d88;
-  font-size: 0.8rem;
-}
-
-.checkOption input {
-  width: 0.9rem;
-  height: 0.9rem;
-  accent-color: var(--color-primary);
-}
-
-.checkOption small {
-  margin-left: auto;
-  color: var(--color-text-muted);
-}
-
-.expandToggle {
-  width: 1rem;
-  padding: 0;
-  cursor: pointer;
-  color: #5d6d88;
-  border: 0;
-  background: none;
-  font-size: 0.75rem;
-}
-
-.expandSpacer {
-  display: inline-block;
-  width: 1rem;
-}
-
-.brandColumns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.brandColumn {
-  display: flex;
-  flex-direction: column;
-  min-width: 8rem;
-}
-
-/* Animación suave para la entrada de nuevas opciones o cambios de estado */
-.checkOption {
-  display: flex;
-  gap: 0.45rem;
-  align-items: center;
-  min-height: 1.8rem;
-  color: #5d6d88;
-  font-size: 0.8rem;
-
-  /* Transición y animación exactamente de 1 segundo con la misma curva */
-  transition: opacity 1.5s ease, transform 2s ease;
-  animation: fadeInOption 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Transición suave para las columnas de marcas cuando cambian */
-.brandColumn {
-  display: flex;
-  flex-direction: column;
-  min-width: 8rem;
-
-  /* Se unifican los tiempos a 1 segundo y se corrige el bezier válido */
-  transition: opacity 1.5s ease, transform 1s ease;
-  animation: fadeInOption 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Animación clave de entrada cuando aparecen nuevas categorías o marcas */
-@keyframes fadeInOption {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
+@media (max-width: 1060px) {
+  .brandGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  .priceLayout {
+    grid-template-columns: minmax(12rem, 0.8fr) minmax(20rem, 1.2fr);
+  }
+
+  .applyButton {
+    justify-self: start;
+    min-width: 10rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .categoryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .brandGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .priceLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .applyButton {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .panel {
+    gap: 0.9rem;
+    padding: 0.85rem;
+    border-radius: 13px;
+  }
+
+  .brandGrid,
+  .categoryGrid,
+  .priceFields {
+    grid-template-columns: 1fr;
+  }
+
+  .checkOption {
+    min-height: 48px;
+    padding-inline: 0.68rem;
+  }
+
+  .clearButton {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel.isUpdating,
+  .checkOption,
+  .controlField select,
+  .priceFields input,
+  .applyButton,
+  .clearButton {
+    transition: none;
   }
 }

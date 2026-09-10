@@ -46,13 +46,16 @@ async function request<T>(path: string): Promise<T> {
 
 export function getCatalogPage(
   page: number,
-  productsPerPage = 20,
+  productsPerPage: number,
   filters?: CatalogFilters,
+  query = '',
 ): Promise<CatalogPageResponse> {
   const params = new URLSearchParams({
     page: String(page),
     perPage: String(productsPerPage),
   })
+
+  if (query.trim()) params.set('q', query.trim())
 
   filters?.categories?.forEach((category) => params.append('categories', category))
   filters?.brands?.forEach((brand) => params.append('brands', brand))

@@ -31,14 +31,6 @@ function collectDescendantNames(node: CategoryTreeNode): string[] {
   return node.children.flatMap((child) => [child.name, ...collectDescendantNames(child)])
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const groups: T[][] = []
-  for (let index = 0; index < items.length; index += size) {
-    groups.push(items.slice(index, index + size))
-  }
-  return groups
-}
-
 function CategoryTree({
   facetCounts,
   values,
@@ -63,14 +55,16 @@ function CategoryTree({
     onChange(values.filter((value) => value !== node.name && !descendants.includes(value)))
   }
 
-  function renderNodes(nodes: CategoryTreeNode[], depth: number) {
+  function renderNodes(nodes: CategoryTreeNode[]) {
     return nodes
       .filter((node) => isVisible(node.name))
       .map((node) => {
         const isChecked = values.includes(node.name)
         return (
-          <div key={node.name}>
-            <label className={styles.checkOption} style={{ paddingLeft: `${depth * 0.9}rem` }}>
+          <div className={styles.categoryNode} key={node.name}>
+            <label
+              className={`${styles.checkOption} ${isChecked ? styles.isSelected : ''}`}
+            >
               <input
                 type="checkbox"
                 checked={isChecked}
@@ -79,7 +73,9 @@ function CategoryTree({
               <span>{node.name}</span>
               {facetCounts[node.name] !== undefined ? <small>{facetCounts[node.name]}</small> : null}
             </label>
-            {isChecked && node.children.length > 0 ? renderNodes(node.children, depth + 1) : null}
+            {isChecked && node.children.length > 0 ? (
+              <div className={styles.categoryChildren}>{renderNodes(node.children)}</div>
+            ) : null}
           </div>
         )
       })
@@ -88,7 +84,11 @@ function CategoryTree({
   return (
     <fieldset className={styles.group}>
       <legend>Categorías</legend>
-      {isLoading ? <p className={styles.leafNote}>Cargando categorías…</p> : renderNodes(tree, 0)}
+      {isLoading ? (
+        <p className={styles.leafNote}>Cargando categorías…</p>
+      ) : (
+        <div className={styles.categoryGrid}>{renderNodes(tree)}</div>
+      )}
     </fieldset>
   )
 }
@@ -111,33 +111,35 @@ function BrandFilter({
 
   if (visibleEntries.length === 0) return <p className={styles.leafNote}>No hay marcas disponibles.</p>
 
-  const columns = chunk(visibleEntries, 10)
-
   return (
     <fieldset className={styles.group}>
       <legend>Marcas</legend>
-      <div className={styles.brandColumns}>
-        {columns.map((column, columnIndex) => (
-          <div className={styles.brandColumn} key={columnIndex}>
-            {column.map(([value, count]) => (
-              <label className={styles.checkOption} key={value}>
-                <input
-                  type="checkbox"
-                  checked={values.includes(value)}
-                  disabled={count === 0}
-                  onChange={(event) => {
-                    const nextValues = event.target.checked
-                      ? [...values, value]
-                      : values.filter((current) => current !== value)
-                    onChange(nextValues)
-                  }}
-                />
-                <span>{value}</span>
-                <small>{count}</small>
-              </label>
-            ))}
-          </div>
-        ))}
+      <div className={styles.brandGrid}>
+        {visibleEntries.map(([value, count]) => {
+          const isSelected = values.includes(value)
+          const isDisabled = count === 0
+
+          return (
+            <label
+              className={`${styles.checkOption} ${isSelected ? styles.isSelected : ''} ${isDisabled ? styles.isDisabled : ''}`}
+              key={value}
+            >
+              <input
+                type="checkbox"
+                checked={isSelected}
+                disabled={isDisabled}
+                onChange={(event) => {
+                  const nextValues = event.target.checked
+                    ? [...values, value]
+                    : values.filter((current) => current !== value)
+                  onChange(nextValues)
+                }}
+              />
+              <span>{value}</span>
+              <small>{count}</small>
+            </label>
+          )
+        })}
       </div>
     </fieldset>
   )
@@ -218,58 +220,59 @@ function CatalogFilters({
 
       {/* 3. Panel de PRECIO / ORDEN */}
       {activePanel === 'price' && (
-        <fieldset className={styles.group}>
-          <legend>Precio y Orden</legend>
+        <fieldset className={`${styles.group} ${styles.priceGroup}`}>
+          <legend>Precio y orden</legend>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label className={styles.leafNote} style={{ display: 'block', marginBottom: '0.35rem' }}>
-              Ordenar por
-            </label>
-            <select style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid #cdd8ea' }}>
-              <option>Más relevantes</option>
-              <option>Menor precio</option>
-              <option>Mayor precio</option>
-            </select>
+          <div className={styles.priceLayout}>
+            <div className={styles.controlField}>
+              <label htmlFor="catalog-sort">Ordenar por</label>
+              <select id="catalog-sort">
+                <option>Más relevantes</option>
+                <option>Menor precio</option>
+                <option>Mayor precio</option>
+              </select>
+            </div>
+
+            <div className={styles.priceRange}>
+              <span className={styles.controlLabel}>Rango de precio</span>
+              <div className={styles.priceFields}>
+                <label>
+                  Desde
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={pendingMinPrice}
+                    onChange={(event) => setPendingMinPrice(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Hasta
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Máx"
+                    value={pendingMaxPrice}
+                    onChange={(event) => setPendingMaxPrice(event.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <button
+              className={styles.applyButton}
+              type="button"
+              onClick={handleApplyPrice}
+            >
+              Aplicar precio
+            </button>
           </div>
-
-          <div className={styles.priceFields}>
-            <label>
-              Desde
-              <input
-                type="number"
-                min="0"
-                placeholder="0"
-                value={pendingMinPrice}
-                onChange={(event) => setPendingMinPrice(event.target.value)}
-              />
-            </label>
-            <label>
-              Hasta
-              <input
-                type="number"
-                min="0"
-                placeholder="Máx"
-                value={pendingMaxPrice}
-                onChange={(event) => setPendingMaxPrice(event.target.value)}
-              />
-            </label>
-          </div>
-
-          <button
-            className={styles.clearButton}
-            type="button"
-            style={{ marginTop: '0.75rem' }}
-            onClick={handleApplyPrice}
-          >
-            Aplicar precio
-          </button>
         </fieldset>
       )}
 
       <button
         className={styles.clearButton}
         type="button"
-        style={{ marginTop: '0.5rem' }}
         onClick={clearAll}
       >
         Limpiar filtros

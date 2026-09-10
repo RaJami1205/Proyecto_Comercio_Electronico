@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ProductSearchResult } from '../../services/productApi'
 import styles from '../../styles/catalog/SearchBox.module.css'
 
@@ -47,36 +47,71 @@ function SearchBox({
   onSelectResult,
 }: SearchBoxProps) {
   const [activeIndex, setActiveIndex] = useState(-1)
-  const showPanel = query.trim().length > 0
+  const [isOpen, setIsOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const showPanel = isOpen && query.trim().length > 0
 
-  function selectResult(product: ProductSearchResult) {
-    onSelectResult(product)
-    onQueryChange('')
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && !wrapperRef.current?.contains(event.target)) {
+        setIsOpen(false)
+        setActiveIndex(-1)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [])
+
+  function closeSuggestions() {
+    setIsOpen(false)
     setActiveIndex(-1)
   }
 
+  function selectResult(product: ProductSearchResult) {
+    onSelectResult(product)
+    closeSuggestions()
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (!showPanel || results.length === 0) {
+    if (isLoading || results.length === 0) {
       return
     }
 
     if (event.key === 'ArrowDown') {
       event.preventDefault()
+      setIsOpen(true)
       setActiveIndex((current) => (current + 1) % results.length)
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
+      setIsOpen(true)
       setActiveIndex((current) => (current <= 0 ? results.length - 1 : current - 1))
-    } else if (event.key === 'Enter' && activeIndex >= 0) {
+    } else if (event.key === 'Enter' && showPanel && activeIndex >= 0 && results[activeIndex]) {
       event.preventDefault()
       selectResult(results[activeIndex])
-    } else if (event.key === 'Escape') {
-      onQueryChange('')
-      setActiveIndex(-1)
     }
   }
 
   return (
-    <div className={styles.wrapper} role="search" aria-label="Búsqueda de productos">
+    <div
+      ref={wrapperRef}
+      className={styles.wrapper}
+      role="search"
+      aria-label="Búsqueda de productos"
+      onBlur={(event) => {
+        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+          closeSuggestions()
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          inputRef.current?.focus({ preventScroll: true })
+          closeSuggestions()
+        }
+      }}
+    >
       <div className={styles.inputRow}>
         <span className={styles.searchIcon}>
           <SearchIcon />
@@ -86,18 +121,21 @@ function SearchBox({
         </label>
         <input
           id="catalog-search"
+          ref={inputRef}
           type="text"
           value={query}
           role="combobox"
           aria-expanded={showPanel}
-          aria-controls="catalog-search-results"
+          aria-controls={showPanel ? 'catalog-search-results' : undefined}
+          aria-autocomplete="list"
           aria-activedescendant={
-            activeIndex >= 0 ? `search-result-${activeIndex}` : undefined
+            showPanel && !isLoading && results[activeIndex] ? `search-result-${activeIndex}` : undefined
           }
           autoComplete="off"
           onChange={(event) => {
             onQueryChange(event.target.value)
             setActiveIndex(-1)
+            setIsOpen(true)
           }}
           onKeyDown={handleKeyDown}
           placeholder="Buscar laptops, componentes, accesorios..."
@@ -109,7 +147,8 @@ function SearchBox({
           disabled={!query}
           onClick={() => {
             onQueryChange('')
-            setActiveIndex(-1)
+            closeSuggestions()
+            inputRef.current?.focus({ preventScroll: true })
           }}
         >
           <ClearIcon />
@@ -117,46 +156,68 @@ function SearchBox({
       </div>
 
       {showPanel ? (
-        <div className={styles.panel} id="catalog-search-results" role="listbox">
-          {isLoading ? <p className={styles.status}>Buscando…</p> : null}
+        <div className={styles.panel}>
+          <div className={styles.panelHeader}>
+            <span>Sugerencias</span>
+            <button
+              className={styles.closeSuggestions}
+              type="button"
+              aria-label="Cerrar sugerencias"
+              title="Cerrar sugerencias"
+              onClick={() => {
+                closeSuggestions()
+                inputRef.current?.focus({ preventScroll: true })
+              }}
+            >
+              <ClearIcon />
+            </button>
+          </div>
+          <div
+            id="catalog-search-results"
+            role="listbox"
+            aria-label="Sugerencias de productos"
+            aria-busy={isLoading}
+          >
+            {isLoading ? <p className={styles.status}>Buscando…</p> : null}
 
-          {error ? <p className={styles.error}>{error}</p> : null}
+            {error ? <p className={styles.error}>{error}</p> : null}
 
-          {!isLoading && !error && results.length === 0 ? (
-            <p className={styles.status}>No encontramos resultados para "{query}".</p>
-          ) : null}
+            {!isLoading && !error && results.length === 0 ? (
+              <p className={styles.status}>No encontramos resultados para "{query}".</p>
+            ) : null}
 
-          {results.length > 0 ? (
-            <ul className={styles.results}>
-              {results.map((hit, index) => {
-                const highlightedName = hit.highlightedName ?? hit.name
+            {!isLoading && !error && results.length > 0 ? (
+              <ul className={styles.results} role="presentation">
+                {results.map((hit, index) => {
+                  const highlightedName = hit.highlightedName ?? hit.name
 
-                return (
-                  <li key={hit.id}>
-                    <button
-                      type="button"
-                      id={`search-result-${index}`}
-                      role="option"
-                      aria-selected={index === activeIndex}
-                      className={`${styles.resultItem} ${
-                        index === activeIndex ? styles.resultItemActive : ''
-                      }`}
-                      onMouseEnter={() => setActiveIndex(index)}
-                      onClick={() => selectResult(hit)}
-                    >
-                      <p className={styles.resultCategory}>{hit.category}</p>
-                      <p className={styles.resultName}>
-                        {renderHighlighted(highlightedName)}
-                      </p>
-                      {hit.brand ? (
-                        <p className={styles.resultBrand}>{hit.brand}</p>
-                      ) : null}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : null}
+                  return (
+                    <li key={hit.id} role="presentation">
+                      <button
+                        type="button"
+                        id={`search-result-${index}`}
+                        role="option"
+                        aria-selected={index === activeIndex}
+                        className={`${styles.resultItem} ${
+                          index === activeIndex ? styles.resultItemActive : ''
+                        }`}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => selectResult(hit)}
+                      >
+                        <p className={styles.resultCategory}>{hit.category}</p>
+                        <p className={styles.resultName}>
+                          {renderHighlighted(highlightedName)}
+                        </p>
+                        {hit.brand ? (
+                          <p className={styles.resultBrand}>{hit.brand}</p>
+                        ) : null}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>

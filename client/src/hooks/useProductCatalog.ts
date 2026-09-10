@@ -18,14 +18,17 @@ interface ProductCatalogState {
   nbHits: number
   facets: Record<string, Record<string, number>>
   loadedPage: number | null
+  loadedPageSize: number | null
+  loadedQuery: string | null
+  loadedFilters: string | null
   error: string | null
 }
 
-const PRODUCTS_PER_PAGE = 20
-
 export function useProductCatalog(
   page: number,
+  pageSize: number,
   filters?: CatalogFilters,
+  query = '',
 ): UseProductCatalogResult {
   const [state, setState] = useState<ProductCatalogState>({
     products: [],
@@ -33,13 +36,17 @@ export function useProductCatalog(
     nbHits: 0,
     facets: {},
     loadedPage: null,
+    loadedPageSize: null,
+    loadedQuery: null,
+    loadedFilters: null,
     error: null,
   })
+  const filtersKey = JSON.stringify(filters) ?? ''
 
   useEffect(() => {
     let cancelled = false
 
-    getCatalogPage(page, PRODUCTS_PER_PAGE, filters)
+    getCatalogPage(page, pageSize, filters, query)
       .then((result) => {
         if (cancelled) return
         setState({
@@ -48,6 +55,9 @@ export function useProductCatalog(
           nbHits: result.totalProducts,
           facets: result.facets ?? {},
           loadedPage: page,
+          loadedPageSize: pageSize,
+          loadedQuery: query,
+          loadedFilters: filtersKey,
           error: null,
         })
       })
@@ -57,6 +67,9 @@ export function useProductCatalog(
           ...currentState,
           products: [],
           loadedPage: page,
+          loadedPageSize: pageSize,
+          loadedQuery: query,
+          loadedFilters: filtersKey,
           error: 'No se pudieron cargar los productos del catálogo.',
         }))
       })
@@ -65,14 +78,17 @@ export function useProductCatalog(
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, JSON.stringify(filters)])
+  }, [page, pageSize, filtersKey, query])
+
+  const isLoading = state.loadedPage !== page || state.loadedPageSize !== pageSize
+    || state.loadedQuery !== query || state.loadedFilters !== filtersKey
 
   return {
     products: state.products,
     totalPages: state.totalPages,
     nbHits: state.nbHits,
     facets: state.facets,
-    isLoading: state.loadedPage !== page,
-    error: state.error,
+    isLoading,
+    error: isLoading ? null : state.error,
   }
 }

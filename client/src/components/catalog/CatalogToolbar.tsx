@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 
 import styles from '../../styles/catalog/CatalogToolbar.module.css'
 import type { Product } from '../../data/products'
@@ -44,7 +44,7 @@ interface CatalogToolbarProps {
   productCount: number
   activePanel: ActivePanel
   onTogglePanel: (panel: ActivePanel) => void
-  onSearchChange: () => void
+  onSearchChange: (query: string) => void
   onProductSelect: (product: Product) => void
 }
 
@@ -57,12 +57,9 @@ function CatalogToolbar({
 }: CatalogToolbarProps) {
   const { query, setQuery, results, isLoading, error } = useProductSearch()
 
-  const previousQueryRef = useRef(query)
   useEffect(() => {
-    if (previousQueryRef.current !== query) {
-      previousQueryRef.current = query
-      onSearchChange()
-    }
+    const timeout = setTimeout(() => onSearchChange(query.trim()), 250)
+    return () => clearTimeout(timeout)
   }, [query, onSearchChange])
 
   function handlePanelClick(panel: ActivePanel) {
@@ -111,7 +108,7 @@ function CatalogToolbar({
             aria-pressed={activePanel === 'price'}
           >
             <SortIcon />
-            Ordenar Por
+            Ordenar Por Precio
           </button>
         </div>
 
