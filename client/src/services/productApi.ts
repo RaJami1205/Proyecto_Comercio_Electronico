@@ -1,12 +1,19 @@
 import type { Product } from '../data/products'
 
-const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim()
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
-const API_BASE_URL = (configuredApiBaseUrl || DEFAULT_API_BASE_URL).replace(/\/+$/, '')
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || ''
+const API_BASE_URL = configuredApiBaseUrl.replace(/\/+$/, '')
 
 export interface ProductSearchResult extends Product {
   brand?: string
   highlightedName?: string
+}
+
+export interface CatalogFilters {
+  categories: string[]
+  brands: string[]
+  specifications: Record<string, string[]>
+  minPrice: string
+  maxPrice: string
 }
 
 interface CatalogPageResponse {
@@ -14,6 +21,7 @@ interface CatalogPageResponse {
   page: number
   totalPages: number
   totalProducts: number
+  facets: Record<string, Record<string, number>>
 }
 
 interface ProductSearchResponse {
@@ -21,7 +29,9 @@ interface ProductSearchResponse {
 }
 
 async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`
+
+  const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
     },
@@ -37,20 +47,46 @@ async function request<T>(path: string): Promise<T> {
 export function getCatalogPage(
   page: number,
   productsPerPage = 20,
+  filters?: CatalogFilters,
 ): Promise<CatalogPageResponse> {
   const params = new URLSearchParams({
     page: String(page),
     perPage: String(productsPerPage),
   })
 
-  return request<CatalogPageResponse>(`/api/products?${params}`)
+  filters?.categories?.forEach((category) => params.append('categories', category))
+  filters?.brands?.forEach((brand) => params.append('brands', brand))
+
+  // 🔴 Limpiamos espacios y validamos que no esté vacío antes de agregarlo
+  const minPrice = filters?.minPrice?.trim()
+  const maxPrice = filters?.maxPrice?.trim()
+
+  if (minPrice && !isNaN(Number(minPrice))) {
+    params.set('minPrice', minPrice)
+  }
+
+  if (maxPrice && !isNaN(Number(maxPrice))) {
+    params.set('maxPrice', maxPrice)
+  }
+
+  return request<CatalogPageResponse>(`/api/products?${params.toString()}`)
 }
 
 export async function searchProducts(query: string): Promise<ProductSearchResult[]> {
   const params = new URLSearchParams({ q: query })
   const response = await request<ProductSearchResponse>(
-    `/api/products/search?${params}`,
+    `/api/products/search?${params.toString()}`,
   )
 
   return response.products
+}
+
+export interface CategoryTreeNode {
+  name: string
+  children: CategoryTreeNode[]
+}
+
+export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
+  const response = await request<{ tree: CategoryTreeNode[] }>('/api/products/categories/tree')
+  return response.tree
 }

@@ -1,0 +1,273 @@
+/* Contenedor del panel principal */
+.panel {
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--border-radius, 12px);
+  background: rgba(250, 252, 255, 0.95);
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+
+  /* Animación de entrada al cambiar de panel */
+  animation: panelSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* Transición cuando se recargan los filtros */
+.panel.isUpdating {
+  opacity: 0.55;
+  pointer-events: none;
+  filter: blur(1px);
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+/* Animación de entrada: deslizamiento ligero + fade-in */
+@keyframes panelSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Animación para los elementos dentro de cada sección */
+.group {
+  min-width: 10rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  animation: fadeInContent 0.4s ease forwards;
+}
+
+@keyframes fadeInContent {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.group legend {
+  margin-bottom: 0.45rem;
+  color: #354867;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.categorySearch {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  min-height: 2rem;
+  margin-bottom: 0.35rem;
+  padding: 0 0.45rem;
+  border: 1px solid #cdd8ea;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.searchIcon {
+  color: #6c7b98;
+  font-size: 0.95rem;
+}
+
+.categorySearch input {
+  width: 8.5rem;
+  min-width: 0;
+  padding: 0.35rem 0;
+  color: var(--color-text-primary);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 0.78rem;
+}
+
+.categorySearch input::placeholder {
+  color: #6c7b98;
+}
+
+.option {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  border: 0;
+  background: none;
+  font: inherit;
+}
+
+.option input {
+  width: 0.9rem;
+  height: 0.9rem;
+  accent-color: var(--color-primary);
+}
+
+.option small {
+  margin-left: auto;
+  color: var(--color-text-muted);
+}
+
+.priceFields {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.priceFields label {
+  display: grid;
+  gap: 0.25rem;
+  color: #5d6d88;
+  font-size: 0.75rem;
+}
+
+.priceFields input {
+  width: 6.5rem;
+  min-height: 2rem;
+  padding: 0.35rem;
+  color: var(--color-text-primary);
+  border: 1px solid #cdd8ea;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.clearButton {
+  justify-self: start;
+  min-height: 2rem;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  color: #354867;
+  border: 1px solid #cdd8ea;
+  border-radius: 8px;
+  background: #f3f6fc;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.mainRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 860px) {
+  .mainRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.breadcrumb {
+  margin-bottom: 0.5rem;
+  color: #5d6d88;
+  font-size: 0.78rem;
+}
+
+.crumb {
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-primary);
+  border: 0;
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.leafNote {
+  color: #5d6d88;
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.checkOption {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 1.8rem;
+  color: #5d6d88;
+  font-size: 0.8rem;
+}
+
+.checkOption input {
+  width: 0.9rem;
+  height: 0.9rem;
+  accent-color: var(--color-primary);
+}
+
+.checkOption small {
+  margin-left: auto;
+  color: var(--color-text-muted);
+}
+
+.expandToggle {
+  width: 1rem;
+  padding: 0;
+  cursor: pointer;
+  color: #5d6d88;
+  border: 0;
+  background: none;
+  font-size: 0.75rem;
+}
+
+.expandSpacer {
+  display: inline-block;
+  width: 1rem;
+}
+
+.brandColumns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.brandColumn {
+  display: flex;
+  flex-direction: column;
+  min-width: 8rem;
+}
+
+/* Animación suave para la entrada de nuevas opciones o cambios de estado */
+.checkOption {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 1.8rem;
+  color: #5d6d88;
+  font-size: 0.8rem;
+
+  /* Transición y animación exactamente de 1 segundo con la misma curva */
+  transition: opacity 1.5s ease, transform 2s ease;
+  animation: fadeInOption 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Transición suave para las columnas de marcas cuando cambian */
+.brandColumn {
+  display: flex;
+  flex-direction: column;
+  min-width: 8rem;
+
+  /* Se unifican los tiempos a 1 segundo y se corrige el bezier válido */
+  transition: opacity 1.5s ease, transform 1s ease;
+  animation: fadeInOption 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Animación clave de entrada cuando aparecen nuevas categorías o marcas */
+@keyframes fadeInOption {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
