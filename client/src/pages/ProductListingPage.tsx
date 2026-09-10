@@ -9,6 +9,7 @@ import ProductQuickView from '../components/catalog/ProductQuickView'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
 import type { Product } from '../data/products'
+import { useCatalogPagination } from '../hooks/useCatalogPagination'
 import { useProductCatalog } from '../hooks/useProductCatalog'
 import type { CatalogFilters as CatalogFiltersState } from '../services/productApi'
 import styles from '../styles/pages/ProductListingPage.module.css'
@@ -23,7 +24,7 @@ const EMPTY_FILTERS: CatalogFiltersState = {
 }
 
 function ProductListingPage() {
-  const [currentPage, setCurrentPage] = useState(1)
+  const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
   
   // Reemplazamos 'isFiltersOpen' por 'activePanel'
@@ -33,7 +34,7 @@ function ProductListingPage() {
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
   const { products, totalPages, nbHits, facets, isLoading, error } =
-    useProductCatalog(currentPage, filters)
+    useProductCatalog(currentPage, pageSize, filters)
 
   function handleFiltersChange(nextFilters: CatalogFiltersState) {
     setFilters(nextFilters)

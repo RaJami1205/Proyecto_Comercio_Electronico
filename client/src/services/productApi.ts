@@ -46,7 +46,7 @@ async function request<T>(path: string): Promise<T> {
 
 export function getCatalogPage(
   page: number,
-  productsPerPage = 20,
+  productsPerPage: number,
   filters?: CatalogFilters,
 ): Promise<CatalogPageResponse> {
   const params = new URLSearchParams({

@@ -18,13 +18,13 @@ interface ProductCatalogState {
   nbHits: number
   facets: Record<string, Record<string, number>>
   loadedPage: number | null
+  loadedPageSize: number | null
   error: string | null
 }
 
-const PRODUCTS_PER_PAGE = 20
-
 export function useProductCatalog(
   page: number,
+  pageSize: number,
   filters?: CatalogFilters,
 ): UseProductCatalogResult {
   const [state, setState] = useState<ProductCatalogState>({
@@ -33,13 +33,14 @@ export function useProductCatalog(
     nbHits: 0,
     facets: {},
     loadedPage: null,
+    loadedPageSize: null,
     error: null,
   })
 
   useEffect(() => {
     let cancelled = false
 
-    getCatalogPage(page, PRODUCTS_PER_PAGE, filters)
+    getCatalogPage(page, pageSize, filters)
       .then((result) => {
         if (cancelled) return
         setState({
@@ -48,6 +49,7 @@ export function useProductCatalog(
           nbHits: result.totalProducts,
           facets: result.facets ?? {},
           loadedPage: page,
+          loadedPageSize: pageSize,
           error: null,
         })
       })
@@ -57,6 +59,7 @@ export function useProductCatalog(
           ...currentState,
           products: [],
           loadedPage: page,
+          loadedPageSize: pageSize,
           error: 'No se pudieron cargar los productos del catálogo.',
         }))
       })
@@ -65,14 +68,14 @@ export function useProductCatalog(
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, JSON.stringify(filters)])
+  }, [page, pageSize, JSON.stringify(filters)])
 
   return {
     products: state.products,
     totalPages: state.totalPages,
     nbHits: state.nbHits,
     facets: state.facets,
-    isLoading: state.loadedPage !== page,
+    isLoading: state.loadedPage !== page || state.loadedPageSize !== pageSize,
     error: state.error,
   }
 }
