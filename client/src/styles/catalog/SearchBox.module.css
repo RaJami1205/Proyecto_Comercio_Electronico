@@ -24,6 +24,7 @@
 
 .inputRow input {
   flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   background: transparent;
@@ -72,6 +73,62 @@
   max-height: 360px;
   overflow-y: auto;
   z-index: 20;
+}
+
+.panelHeader {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.65rem 0.3rem 1rem;
+  color: var(--color-text-muted);
+  background: #ffffff;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.8rem;
+  font-weight: 600;
+  z-index: 1;
+}
+
+.closeSuggestions {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+
+.closeSuggestions svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.closeSuggestions:hover {
+  background: var(--color-surface);
+  color: var(--color-primary);
+}
+
+.closeSuggestions:focus-visible,
+.clearButton:focus-visible,
+.resultItem:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.inputRow:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.12);
+}
+
+.resultName {
+  overflow-wrap: anywhere;
 }
 
 .status,

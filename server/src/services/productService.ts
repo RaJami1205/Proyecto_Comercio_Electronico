@@ -21,6 +21,7 @@ export async function getCatalogPage(
   page: number,
   productsPerPage: number,
   filters: CatalogFilters = {},
+  query = '',
 ): Promise<CatalogPageResult> {
   const { indexName } = getAlgoliaConfig()
 
@@ -46,7 +47,7 @@ export async function getCatalogPage(
   const response = await getAlgoliaClient().searchSingleIndex<ProductRecord>({
     indexName,
     searchParams: {
-      query: '',
+      query,
       page,
       hitsPerPage: productsPerPage,
       facets: ['categories', 'brand'],

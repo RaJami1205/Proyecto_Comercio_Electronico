@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import CatalogFilters from '../components/catalog/CatalogFilters'
 import CatalogHero from '../components/catalog/CatalogHero'
@@ -26,6 +26,7 @@ const EMPTY_FILTERS: CatalogFiltersState = {
 function ProductListingPage() {
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
+  const [catalogQuery, setCatalogQuery] = useState('')
   
   // Reemplazamos 'isFiltersOpen' por 'activePanel'
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
@@ -34,7 +35,13 @@ function ProductListingPage() {
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
   const { products, totalPages, nbHits, facets, isLoading, error } =
-    useProductCatalog(currentPage, pageSize, filters)
+    useProductCatalog(currentPage, pageSize, filters, catalogQuery)
+
+  const handleSearchChange = useCallback((query: string) => {
+    if (query === catalogQuery) return
+    setCatalogQuery(query)
+    setCurrentPage(1)
+  }, [catalogQuery, setCurrentPage])
 
   function handleFiltersChange(nextFilters: CatalogFiltersState) {
     setFilters(nextFilters)
@@ -76,7 +83,7 @@ function ProductListingPage() {
               productCount={nbHits}
               activePanel={activePanel}
               onTogglePanel={setActivePanel}
-              onSearchChange={() => setCurrentPage(1)}
+              onSearchChange={handleSearchChange}
               onProductSelect={setSelectedProduct}
             />
 
@@ -92,6 +99,12 @@ function ProductListingPage() {
               {error ? (
                 <p className={styles.description} role="alert">
                   {error}
+                </p>
+              ) : !isLoading && products.length === 0 ? (
+                <p className={styles.description} role="status">
+                  {catalogQuery
+                    ? 'No encontramos productos para esta búsqueda.'
+                    : 'No encontramos productos con los filtros actuales.'}
                 </p>
               ) : (
                 <ProductGrid
