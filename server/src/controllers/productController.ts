@@ -64,22 +64,32 @@ export async function getProducts(
     const brands = parseArrayParam(request.query.brands)
     const minPrice = parseNonNegativeNumber(request.query.minPrice)
     const maxPrice = parseNonNegativeNumber(request.query.maxPrice)
+    const sort = typeof request.query.sort === 'string' ? request.query.sort : 'relevance'
 
-    const result = await getCatalogPage(requestedPage - 1, productsPerPage, {
-      categories,
-      brands,
-      minPrice,
-      maxPrice,
-    }, query)
+    // 🟢 Pasamos `requestedPage` (base 1). `productService` se encarga de adaptarlo a Algolia (base 0)
+    const result = await getCatalogPage(
+      requestedPage,
+      productsPerPage,
+      {
+        categories,
+        brands,
+        minPrice,
+        maxPrice,
+        sort,
+      },
+      query,
+    )
 
+    // 🟢 `result.page` ya viene devuelto en base 1 desde `productService`
     response.json({
       products: result.hits.map(mapProductRecord),
-      page: result.page + 1,
+      page: result.page,
       totalPages: Math.max(result.totalPages, 1),
       totalProducts: result.totalProducts,
       facets: result.facets,
     })
   } catch (error) {
+    console.error('Error procesando consulta de catálogo en getProducts:', error)
     next(error)
   }
 }
@@ -102,9 +112,9 @@ export async function searchProductCatalog(
     const hits = await searchProducts(query)
     response.json({ products: hits.map(mapSearchProductRecord) })
   } catch (error) {
+    console.error('Error procesando búsqueda en searchProductCatalog:', error)
     next(error)
   }
-  
 }
 
 export async function getCategoryTreeHandler(
@@ -116,6 +126,7 @@ export async function getCategoryTreeHandler(
     const tree = await getCategoryTree()
     response.json({ tree })
   } catch (error) {
+    console.error('Error obteniendo árbol de categorías:', error)
     next(error)
   }
 }
