@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 // Define el límite máximo de búsquedas recientes a almacenar localmente
 const MAX_SEARCHES = 5
@@ -8,21 +8,22 @@ const STORAGE_KEY = 'cibernova_recent_searches'
 // Hook personalizado que maneja el almacenamiento persistente 
 // de las búsquedas recientes del usuario en la plataforma
 export function useRecentSearches() {
-  const [recentSearches, setRecentSearches] = useState<string[]>([])
-
-  // Efecto que lee el localStorage al montar el componente 
-  // para cargar el historial de búsquedas previas si existe
-  useEffect(() => {
+  // Inicialización perezosa (lazy initialization): Lee el localStorage
+  // de forma síncrona solo una vez durante el montaje inicial del componente.
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return []
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       try {
-        setRecentSearches(JSON.parse(stored))
+        return JSON.parse(stored) as string[]
       } catch (error) {
         console.error('Error al leer búsquedas recientes', error)
+        return []
       }
     }
-  }, [])
-  
+    return []
+  })
+
   // Agrega una nueva búsqueda al historial local de forma persistente
   // Evita entradas duplicadas y mantiene el límite máximo de elementos
   const addRecentSearch = (query: string) => {
@@ -36,7 +37,7 @@ export function useRecentSearches() {
       return updated
     })
   }
-  
+
   // Elimina una búsqueda específica del historial persistente, 
   // permitiendo al usuario gestionar sus sugerencias individuales
   const removeRecentSearch = (query: string) => {
