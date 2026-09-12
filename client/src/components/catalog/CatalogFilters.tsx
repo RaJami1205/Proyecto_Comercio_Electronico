@@ -6,6 +6,10 @@ import type { CatalogFilters as CatalogFiltersState, SortOption } from '../../se
 import type { ActivePanel } from './CatalogToolbar'
 import styles from '../../styles/catalog/CatalogFilters.module.css'
 
+
+// Define las propiedades del componente CatalogFilters,
+// incluyendo los conteos de facetas de Algolia, el estado actual,
+// la función para actualizarlos y el panel que está visible
 interface CatalogFiltersProps {
   facets: Record<string, Record<string, number>>
   filters: CatalogFiltersState
@@ -14,6 +18,9 @@ interface CatalogFiltersProps {
   activePanel: ActivePanel
 }
 
+// Lista de las marcas principales que se mostrarán por defecto
+// en el panel de marcas cuando el usuario no haya seleccionado
+// ninguna categoría específica
 const LEADING_BRANDS = [
   'Samsung',
   'ASUS',
@@ -27,10 +34,16 @@ const LEADING_BRANDS = [
   'Logitech',
 ]
 
+// Función recursiva que extrae y agrupa los nombres de todas
+// las subcategorías (nodos hijos) que pertenecen a un nodo de
+// categoría padre dentro del árbol
 function collectDescendantNames(node: CategoryTreeNode): string[] {
   return node.children.flatMap((child) => [child.name, ...collectDescendantNames(child)])
 }
 
+// Renderiza el árbol jerárquico de categorías con checkboxes
+// Filtra dinámicamente las categorías que no tienen resultados
+// y gestiona la selección recursiva de categorías y subcategorías
 function CategoryTree({
   facetCounts,
   values,
@@ -93,6 +106,9 @@ function CategoryTree({
   )
 }
 
+// Muestra la lista de marcas disponibles para filtrar
+// Si no hay categoría seleccionada, muestra solo las marcas principales;
+// de lo contrario, lista todas las marcas relevantes ordenadas alfabéticamente
 function BrandFilter({
   facets,
   categorySelected,
@@ -145,6 +161,9 @@ function BrandFilter({
   )
 }
 
+// Componente orquestador que renderiza el panel de filtros activo
+// (Marcas, Categorías o Precio/Orden). Maneja el estado temporal
+// de los rangos de precio y la lógica para limpiar todos los filtros
 function CatalogFilters({
   facets,
   filters,
