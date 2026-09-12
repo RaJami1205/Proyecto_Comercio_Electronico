@@ -1,0 +1,84 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate production API URL
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const value = process.env.VITE_API_BASE_URL?.trim() || '';
+          let valid = false;
+          try {
+            const url = new URL(value);
+            valid = value.startsWith('https://') && Boolean(url.hostname) &&
+              !url.username && !url.password &&
+              url.hostname !== 'localhost' && !url.hostname.endsWith('.localhost') &&
+              url.hostname !== '127.0.0.1' && url.hostname !== '[::1]';
+          } catch {}
+          if (!valid) {
+            console.error('::error::Configure the Repository Variable VITE_API_BASE_URL with a valid public HTTPS backend URL before deploying.');
+            process.exit(1);
+          }
+          NODE
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Build client
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: client/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
