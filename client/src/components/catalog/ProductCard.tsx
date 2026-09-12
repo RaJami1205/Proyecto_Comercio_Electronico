@@ -1,16 +1,25 @@
 import type { Product } from '../../data/products'
 import styles from '../../styles/catalog/ProductCard.module.css'
 
+// Define las propiedades esperadas por la tarjeta de producto,
+// incluyendo los datos del producto a mostrar y la función
+// a ejecutar cuando el usuario selecciona la tarjeta
 interface ProductCardProps {
   product: Product
   onProductSelect: (product: Product) => void
 }
 
-const priceFormatter = new Intl.NumberFormat('es-US', {
+// Instancia un formateador de moneda para convertir
+// valores numéricos a Colones Costarricenses (CRC)
+// sin mostrar decimales, según el requerimiento del proyecto
+const priceFormatter = new Intl.NumberFormat('es-CR', {
   style: 'currency',
-  currency: 'USD',
+  currency: 'CRC',
+  maximumFractionDigits: 0,
 })
 
+// Dibuja el icono vectorial de un carrito de compras
+// utilizado en el botón de acción principal de la tarjeta
 function CartIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -21,6 +30,9 @@ function CartIcon() {
   )
 }
 
+// Renderiza la tarjeta individual de un producto del catálogo
+// Muestra su imagen, precio formateado, estado de inventario
+// y maneja la interacción para ver detalles o simular la compra
 function ProductCard({ product, onProductSelect }: ProductCardProps) {
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
 

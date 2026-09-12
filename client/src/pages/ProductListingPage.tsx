@@ -1,48 +1,52 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
+import CatalogFilters from '../components/catalog/CatalogFilters'
 import CatalogHero from '../components/catalog/CatalogHero'
-import CatalogToolbar from '../components/catalog/CatalogToolbar'
+import CatalogToolbar, { type ActivePanel } from '../components/catalog/CatalogToolbar'
 import Pagination from '../components/catalog/Pagination'
 import ProductGrid from '../components/catalog/ProductGrid'
 import ProductQuickView from '../components/catalog/ProductQuickView'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
-import { products, type Product } from '../data/products'
+import type { Product } from '../data/products'
+import { useCatalogPagination } from '../hooks/useCatalogPagination'
+import { useProductCatalog } from '../hooks/useProductCatalog'
+import type { CatalogFilters as CatalogFiltersState } from '../services/productApi'
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 
-const DESKTOP_PAGE_SIZE = 12
-const COMPACT_PAGE_SIZE = 6
-const DESKTOP_MEDIA_QUERY = '(min-width: 1061px)'
-
-function getPageSize() {
-  return window.matchMedia(DESKTOP_MEDIA_QUERY).matches
-    ? DESKTOP_PAGE_SIZE
-    : COMPACT_PAGE_SIZE
+const EMPTY_FILTERS: CatalogFiltersState = {
+  categories: [],
+  brands: [],
+  specifications: {},
+  minPrice: '',
+  maxPrice: '',
 }
 
 function ProductListingPage() {
-  const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(getPageSize)
+  const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
+  const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
+  const [catalogQuery, setCatalogQuery] = useState('')
+  
+  // Reemplazamos 'isFiltersOpen' por 'activePanel'
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null)
+  
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
-  const totalPages = Math.ceil(products.length / pageSize)
-  const startIndex = (currentPage - 1) * pageSize
-  const visibleProducts = products.slice(startIndex, startIndex + pageSize)
+  const { products, totalPages, nbHits, facets, isLoading, error } =
+    useProductCatalog(currentPage, pageSize, filters, catalogQuery)
 
-  useEffect(() => {
-    const desktopMedia = window.matchMedia(DESKTOP_MEDIA_QUERY)
+  const handleSearchChange = useCallback((query: string) => {
+    if (query === catalogQuery) return
+    setCatalogQuery(query)
+    setCurrentPage(1)
+  }, [catalogQuery, setCurrentPage])
 
-    function handleBreakpointChange(event: MediaQueryListEvent) {
-      setPageSize(event.matches ? DESKTOP_PAGE_SIZE : COMPACT_PAGE_SIZE)
-      setCurrentPage(1)
-    }
-
-    desktopMedia.addEventListener('change', handleBreakpointChange)
-
-    return () => desktopMedia.removeEventListener('change', handleBreakpointChange)
-  }, [])
+  function handleFiltersChange(nextFilters: CatalogFiltersState) {
+    setFilters(nextFilters)
+    setCurrentPage(1)
+  }
 
   function handleDirectionalPageChange(page: number) {
     setCurrentPage(page)
@@ -74,19 +78,50 @@ function ProductListingPage() {
               </p>
             </header>
 
+            {/* Pasamos el estado del panel activo y la función para cambiarlo */}
             <CatalogToolbar
-              productCount={products.length}
-              onSearchChange={() => setCurrentPage(1)}
+              productCount={nbHits}
+              activePanel={activePanel}
+              onTogglePanel={setActivePanel}
+              onSearchChange={handleSearchChange}
+              onProductSelect={setSelectedProduct}
+            />
+
+            {/* CatalogFilters ahora renderiza internamente solo la sección según 'activePanel' */}
+            <CatalogFilters
+              facets={facets}
+              filters={filters}
+              onChange={handleFiltersChange}
+              activePanel={activePanel}
             />
 
             <div className={styles.results} ref={resultsStartRef}>
-              <ProductGrid
-                key={`${currentPage}-${pageSize}`}
-                products={visibleProducts}
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onProductSelect={setSelectedProduct}
-              />
+              {error ? (
+                <p className={styles.description} role="alert">
+                  {error}
+                </p>
+              ) : !isLoading && products.length === 0 ? (
+                <p className={styles.description} role="status">
+                  {catalogQuery
+                    ? 'No encontramos productos para esta búsqueda.'
+                    : 'No encontramos productos con los filtros actuales.'}
+                </p>
+              ) : (
+                <ProductGrid
+                  key={currentPage}
+                  products={products}
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onProductSelect={setSelectedProduct}
+                />
+              )}
+
+              {isLoading ? (
+                <p className={styles.description} aria-live="polite">
+                  Cargando productos…
+                </p>
+              ) : null}
+
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}

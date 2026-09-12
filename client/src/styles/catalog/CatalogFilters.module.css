@@ -1,0 +1,346 @@
+.panel {
+  display: grid;
+  gap: 1.1rem;
+  margin: 0 0 1.75rem;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border: 1px solid #cad8ed;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.96));
+  box-shadow:
+    0 14px 34px rgba(31, 56, 102, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.panel.isUpdating {
+  pointer-events: none;
+  filter: blur(1px);
+  opacity: 0.55;
+  transition:
+    opacity 180ms ease,
+    filter 180ms ease;
+}
+
+.group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.group legend {
+  width: 100%;
+  margin: 0 0 0.9rem;
+  padding: 0;
+  color: #152a50;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.brandGrid,
+.categoryGrid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.brandGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.categoryGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.categoryNode {
+  min-width: 0;
+}
+
+.categoryChildren {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  padding-left: 0.7rem;
+  border-left: 2px solid rgba(31, 94, 255, 0.13);
+}
+
+.checkOption {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  min-height: 46px;
+  padding: 0.62rem 0.72rem;
+  cursor: pointer;
+  color: #435676;
+  border: 1px solid #d5e0f0;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.86rem;
+  line-height: 1.25;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
+}
+
+.checkOption:hover {
+  color: #18345f;
+  border-color: #9db8e7;
+  background: #f0f6ff;
+  box-shadow: 0 5px 14px rgba(31, 94, 255, 0.08);
+}
+
+.checkOption:has(input:focus-visible) {
+  border-color: var(--color-primary);
+  outline: 2px solid rgba(31, 94, 255, 0.3);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(24, 213, 227, 0.1);
+}
+
+.checkOption.isSelected {
+  color: #132f5d;
+  border-color: #6f99ec;
+  background: linear-gradient(135deg, rgba(229, 240, 255, 0.98), rgba(231, 250, 252, 0.88));
+  box-shadow: 0 6px 16px rgba(31, 94, 255, 0.1);
+}
+
+.checkOption.isSelected span {
+  font-weight: 750;
+}
+
+.checkOption.isDisabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.checkOption input {
+  width: 1.08rem;
+  height: 1.08rem;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.checkOption input:focus-visible {
+  outline: none;
+}
+
+.checkOption span {
+  min-width: 0;
+}
+
+.checkOption small {
+  display: inline-grid;
+  min-width: 1.8rem;
+  min-height: 1.55rem;
+  padding: 0.18rem 0.42rem;
+  color: #60718f;
+  border-radius: 999px;
+  background: #edf3fb;
+  font-size: 0.72rem;
+  font-weight: 750;
+  place-items: center;
+}
+
+.isSelected small {
+  color: #174ab4;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.priceGroup {
+  width: 100%;
+}
+
+.priceLayout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.75fr) minmax(21rem, 1.35fr) minmax(9.5rem, auto);
+  gap: 1rem;
+  align-items: end;
+}
+
+.controlField,
+.priceRange,
+.priceFields label {
+  display: grid;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.controlField label,
+.controlLabel,
+.priceFields label {
+  color: #435676;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.controlField select,
+.priceFields input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0.7rem 0.8rem;
+  color: var(--color-text-primary);
+  border: 1px solid #bdcde5;
+  border-radius: 10px;
+  outline: 0;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.9rem;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.controlField select:hover,
+.priceFields input:hover {
+  border-color: #90addd;
+}
+
+.controlField select:focus-visible,
+.priceFields input:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow:
+    0 0 0 3px rgba(31, 94, 255, 0.13),
+    0 0 0 6px rgba(24, 213, 227, 0.06);
+}
+
+.priceFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.applyButton,
+.clearButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.68rem 1rem;
+  cursor: pointer;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
+}
+
+.applyButton {
+  min-height: 48px;
+  color: #ffffff;
+  border: 1px solid #2f63dc;
+  background: linear-gradient(135deg, #1f5eff, #5356df);
+  box-shadow: 0 8px 18px rgba(31, 94, 255, 0.18);
+}
+
+.applyButton:hover {
+  border-color: #174bc3;
+  background: linear-gradient(135deg, #1855ec, #4749ca);
+  box-shadow: 0 10px 21px rgba(31, 94, 255, 0.24);
+}
+
+.clearButton {
+  justify-self: start;
+  color: #25466f;
+  border: 1px solid #adc2e3;
+  background: #f3f7fd;
+}
+
+.clearButton:hover {
+  color: #15365f;
+  border-color: #779ce0;
+  background: #eaf2ff;
+  box-shadow: 0 5px 14px rgba(31, 94, 255, 0.09);
+}
+
+.applyButton:focus-visible,
+.clearButton:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+.applyButton:active,
+.clearButton:active {
+  box-shadow: none;
+}
+
+.leafNote {
+  margin: 0;
+  color: #5d6d88;
+  font-size: 0.84rem;
+}
+
+@media (max-width: 1060px) {
+  .brandGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .priceLayout {
+    grid-template-columns: minmax(12rem, 0.8fr) minmax(20rem, 1.2fr);
+  }
+
+  .applyButton {
+    justify-self: start;
+    min-width: 10rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .categoryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .brandGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .priceLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .applyButton {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .panel {
+    gap: 0.9rem;
+    padding: 0.85rem;
+    border-radius: 13px;
+  }
+
+  .brandGrid,
+  .categoryGrid,
+  .priceFields {
+    grid-template-columns: 1fr;
+  }
+
+  .checkOption {
+    min-height: 48px;
+    padding-inline: 0.68rem;
+  }
+
+  .clearButton {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel.isUpdating,
+  .checkOption,
+  .controlField select,
+  .priceFields input,
+  .applyButton,
+  .clearButton {
+    transition: none;
+  }
+}

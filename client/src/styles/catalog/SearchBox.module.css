@@ -1,0 +1,276 @@
+.wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  background: #ffffff;
+  padding: 0.6rem 0.9rem;
+}
+
+.inputRow input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.95rem;
+  color: var(--color-text-primary);
+}
+
+.searchIcon svg {
+  width: 18px;
+  height: 18px;
+  stroke: var(--color-text-muted);
+  fill: none;
+  stroke-width: 2;
+}
+
+.clearButton {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 999px;
+}
+
+.clearButton:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.clearButton svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--color-text-muted);
+  fill: none;
+  stroke-width: 2;
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  box-shadow: 0 12px 30px rgba(11, 27, 60, 0.12);
+  max-height: 360px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.panelHeader {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.65rem 0.3rem 1rem;
+  color: var(--color-text-muted);
+  background: #ffffff;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.8rem;
+  font-weight: 600;
+  z-index: 1;
+}
+
+.closeSuggestions {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+
+.closeSuggestions svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.closeSuggestions:hover {
+  background: var(--color-surface);
+  color: var(--color-primary);
+}
+
+.closeSuggestions:focus-visible,
+.clearButton:focus-visible,
+.resultItem:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.inputRow:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.12);
+}
+
+.resultName {
+  overflow-wrap: anywhere;
+}
+
+.status,
+.error {
+  padding: 0.9rem 1rem;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.error {
+  color: #c0392b;
+}
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem;
+}
+
+.resultItem {
+  padding: 0.6rem 0.75rem;
+  border-radius: 12px;
+}
+
+.resultItem:hover {
+  background: var(--color-surface);
+}
+
+.resultCategory {
+  margin: 0 0 0.15rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.resultName {
+  margin: 0;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.resultBrand {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.resultItem {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  display: block;
+}
+
+.resultItemActive {
+  background: var(--color-surface);
+}
+
+.resultName mark {
+  background: transparent;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.recentHeader {
+  padding: 0.8rem 1rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.recentList {
+  list-style: none;
+  margin: 0;
+  padding: 0 0.4rem 0.4rem;
+}
+
+.recentItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.recentItem:hover {
+  background: var(--color-surface);
+}
+
+.recentItemContent {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.recentItemContent svg {
+  width: 16px;
+  height: 16px;
+  stroke: #8da2c0;
+  fill: none;
+  flex-shrink: 0;
+}
+
+.recentItemContent span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.removeRecent {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: #8da2c0;
+  cursor: pointer;
+}
+
+.removeRecent:hover {
+  background: #e2e8f0;
+  color: #c0392b;
+}
+
+.removeRecent svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}

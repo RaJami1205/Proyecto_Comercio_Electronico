@@ -3,16 +3,25 @@ import { useEffect, useRef, type MouseEvent } from 'react'
 import type { Product } from '../../data/products'
 import styles from '../../styles/catalog/ProductQuickView.module.css'
 
+// Define las propiedades para la vista rápida de un producto,
+// recibiendo los datos del producto seleccionado y la función
+// para cerrar el modal o cuadro de diálogo
 interface ProductQuickViewProps {
   product: Product
   onClose: () => void
 }
 
-const priceFormatter = new Intl.NumberFormat('es-US', {
+// Instancia un formateador de moneda para convertir
+// valores numéricos a Colones Costarricenses (CRC)
+// sin mostrar decimales, según el requerimiento del proyecto
+const priceFormatter = new Intl.NumberFormat('es-CR', {
   style: 'currency',
-  currency: 'USD',
+  currency: 'CRC',
+  maximumFractionDigits: 0,
 })
 
+// Dibuja el icono vectorial de una "X"
+// utilizado en el botón para cerrar la vista rápida
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -21,6 +30,8 @@ function CloseIcon() {
   )
 }
 
+// Dibuja el icono vectorial de un carrito de compras
+// utilizado en el botón de acción para simular la compra
 function CartIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -31,6 +42,9 @@ function CartIcon() {
   )
 }
 
+// Renderiza un modal detallado del producto usando
+// Bloquea el scroll del fondo, atrapa el foco por accesibilidad
+// y permite cerrar la vista con la tecla Escape o un clic fuera
 function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
