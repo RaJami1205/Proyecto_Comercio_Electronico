@@ -1,6 +1,6 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 
-import type { Product } from '../../data/products'
+import type { Product } from '../../types/product'
 import styles from '../../styles/catalog/ProductQuickView.module.css'
 
 interface ProductQuickViewProps {

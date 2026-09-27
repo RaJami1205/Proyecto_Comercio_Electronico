@@ -1,4 +1,4 @@
-import type { Product } from '../data/products'
+import type { Product } from '../types/product'
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || ''
 const API_BASE_URL = configuredApiBaseUrl.replace(/\/+$/, '')

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 
 import styles from '../../styles/catalog/CatalogToolbar.module.css'
-import type { Product } from '../../data/products'
+import type { Product } from '../../types/product'
 import { useProductSearch } from '../../hooks/useProductSearch'
 import SearchBox from './SearchBox'
 
