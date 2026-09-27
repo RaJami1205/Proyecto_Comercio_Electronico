@@ -48,11 +48,13 @@ function SearchBox({
 }: SearchBoxProps) {
   const [activeIndex, setActiveIndex] = useState(-1)
   const [isOpen, setIsOpen] = useState(false)
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
   const wrapperRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const isDeletingRef = useRef(false)
   const predictionRef = useRef<{ start: number; value: string } | null>(null)
-  const showPanel = isOpen && query.trim().length > 0
+  const showRecents = query.trim().length === 0 && recentSearches.length > 0
+  const showPanel = isOpen && (query.trim().length > 0 || showRecents)
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -74,8 +76,18 @@ function SearchBox({
   }
 
   function selectResult(product: ProductSearchResult) {
+    addRecentSearch(query)
     onSelectResult(product)
     closeSuggestions()
+  }
+
+  function addRecentSearch(value: string) {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    setRecentSearches((current) => [
+      trimmed,
+      ...current.filter((recent) => recent.toLowerCase() !== trimmed.toLowerCase()),
+    ].slice(0, 5))
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -98,7 +110,18 @@ function SearchBox({
       return
     }
 
-    if (isLoading || results.length === 0) {
+    if (event.key === 'Enter' && query.trim()) {
+      event.preventDefault()
+      if (!isLoading && showPanel && activeIndex >= 0 && results[activeIndex]) {
+        selectResult(results[activeIndex])
+      } else {
+        addRecentSearch(query)
+        closeSuggestions()
+      }
+      return
+    }
+
+    if (isLoading || results.length === 0 || !query.trim()) {
       return
     }
 
@@ -110,9 +133,6 @@ function SearchBox({
       event.preventDefault()
       setIsOpen(true)
       setActiveIndex((current) => (current <= 0 ? results.length - 1 : current - 1))
-    } else if (event.key === 'Enter' && showPanel && activeIndex >= 0 && results[activeIndex]) {
-      event.preventDefault()
-      selectResult(results[activeIndex])
     }
   }
 
@@ -151,10 +171,20 @@ function SearchBox({
           aria-expanded={showPanel}
           aria-controls={showPanel ? 'catalog-search-results' : undefined}
           aria-autocomplete="list"
+          aria-haspopup={showRecents ? 'dialog' : 'listbox'}
           aria-activedescendant={
-            showPanel && !isLoading && results[activeIndex] ? `search-result-${activeIndex}` : undefined
+            showPanel && !showRecents && !isLoading && results[activeIndex] ? `search-result-${activeIndex}` : undefined
           }
           autoComplete="off"
+          onFocus={(event) => {
+            // Returning focus from clear/close must not reopen the panel.
+            if (showRecents && !wrapperRef.current?.contains(event.relatedTarget)) {
+              setIsOpen(true)
+            }
+          }}
+          onClick={() => {
+            if (showRecents) setIsOpen(true)
+          }}
           onChange={(event) => {
             const typedValue = event.target.value
             const nativeEvent = event.nativeEvent
@@ -207,7 +237,7 @@ function SearchBox({
       {showPanel ? (
         <div className={styles.panel}>
           <div className={styles.panelHeader}>
-            <span>Sugerencias</span>
+            <span>{showRecents ? 'Recientes' : 'Sugerencias'}</span>
             <button
               className={styles.closeSuggestions}
               type="button"
@@ -223,10 +253,44 @@ function SearchBox({
           </div>
           <div
             id="catalog-search-results"
-            role="listbox"
-            aria-label="Sugerencias de productos"
-            aria-busy={isLoading}
+            role={showRecents ? 'dialog' : 'listbox'}
+            aria-label={showRecents ? 'Búsquedas recientes' : 'Sugerencias de productos'}
+            aria-busy={!showRecents && isLoading}
           >
+            {showRecents ? (
+              <ul className={styles.recentList}>
+                {recentSearches.map((recent) => (
+                  <li key={recent} className={styles.recentItem}>
+                    <button
+                      type="button"
+                      className={styles.recentItemContent}
+                      onClick={() => {
+                        onQueryChange(recent)
+                        addRecentSearch(recent)
+                        inputRef.current?.focus({ preventScroll: true })
+                        closeSuggestions()
+                      }}
+                    >
+                      {recent}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.removeRecent}
+                      aria-label={`Eliminar búsqueda: ${recent}`}
+                      onClick={() => {
+                        setRecentSearches((current) => current.filter(
+                          (value) => value.toLowerCase() !== recent.toLowerCase(),
+                        ))
+                        inputRef.current?.focus({ preventScroll: true })
+                      }}
+                    >
+                      <ClearIcon />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <>
             {isLoading ? <p className={styles.status}>Buscando…</p> : null}
 
             {error ? <p className={styles.error}>{error}</p> : null}
@@ -266,6 +330,8 @@ function SearchBox({
                 })}
               </ul>
             ) : null}
+              </>
+            )}
           </div>
         </div>
       ) : null}
