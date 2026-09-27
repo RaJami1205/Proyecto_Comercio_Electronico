@@ -50,11 +50,14 @@ function SearchBox({
   const [isOpen, setIsOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const isDeletingRef = useRef(false)
+  const predictionRef = useRef<{ start: number; value: string } | null>(null)
   const showPanel = isOpen && query.trim().length > 0
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
       if (event.target instanceof Node && !wrapperRef.current?.contains(event.target)) {
+        predictionRef.current = null
         setIsOpen(false)
         setActiveIndex(-1)
       }
@@ -65,6 +68,7 @@ function SearchBox({
   }, [])
 
   function closeSuggestions() {
+    predictionRef.current = null
     setIsOpen(false)
     setActiveIndex(-1)
   }
@@ -75,6 +79,25 @@ function SearchBox({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    const input = event.currentTarget
+    const prediction = predictionRef.current
+    const hasPredictiveSelection = prediction !== null && input.value === prediction.value &&
+      input.selectionStart === prediction.start && input.selectionEnd === prediction.value.length
+
+    isDeletingRef.current = event.key === 'Backspace' || event.key === 'Delete'
+    if (hasPredictiveSelection && isDeletingRef.current) {
+      event.preventDefault()
+      predictionRef.current = null
+      onQueryChange(input.value.slice(0, prediction.start))
+      return
+    }
+    if (hasPredictiveSelection && (event.key === 'Tab' || event.key === 'ArrowRight')) {
+      input.setSelectionRange(input.value.length, input.value.length)
+      predictionRef.current = null
+      if (event.key === 'Tab') event.preventDefault()
+      return
+    }
+
     if (isLoading || results.length === 0) {
       return
     }
@@ -133,9 +156,35 @@ function SearchBox({
           }
           autoComplete="off"
           onChange={(event) => {
-            onQueryChange(event.target.value)
+            const typedValue = event.target.value
+            const nativeEvent = event.nativeEvent
+            const isDeleting = isDeletingRef.current ||
+              (nativeEvent instanceof InputEvent && nativeEvent.inputType.startsWith('delete'))
+            const isComposing = nativeEvent instanceof InputEvent && nativeEvent.isComposing
+            isDeletingRef.current = false
+            predictionRef.current = null
+
+            const match = !isDeleting && !isComposing && typedValue.length > 0
+              ? results.find((result) => result.name.toLowerCase().startsWith(typedValue.toLowerCase()))
+              : undefined
+            const newValue = match ? typedValue + match.name.slice(typedValue.length) : typedValue
+
+            onQueryChange(newValue)
             setActiveIndex(-1)
             setIsOpen(true)
+
+            if (newValue !== typedValue) {
+              const prediction = { start: typedValue.length, value: newValue }
+              predictionRef.current = prediction
+              setTimeout(() => {
+                const input = inputRef.current
+                // Ignore callbacks superseded by typing, clear/close, or loss of focus.
+                if (predictionRef.current === prediction && input &&
+                    document.activeElement === input && input.value === prediction.value) {
+                  input.setSelectionRange(prediction.start, prediction.value.length)
+                }
+              }, 0)
+            }
           }}
           onKeyDown={handleKeyDown}
           placeholder="Buscar laptops, componentes, accesorios..."
