@@ -195,3 +195,61 @@
   color: var(--color-primary);
   font-weight: 700;
 }
+
+.recentList {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem;
+}
+
+.recentItem {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.recentItemContent,
+.removeRecent {
+  min-height: 44px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.recentItemContent {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.removeRecent {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.removeRecent svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.recentItemContent:hover,
+.removeRecent:hover {
+  background: var(--color-surface);
+}
+
+.recentItemContent:focus-visible,
+.removeRecent:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
