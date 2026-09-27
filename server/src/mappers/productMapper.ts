@@ -19,7 +19,7 @@ function humanizeKey(key: string): string {
     .join(' ')
 }
 
-export function mapProductRecord(record: any): ProductDto {
+export function mapProductRecord(record: ProductRecord): ProductDto {
   const specifications = record.facets
     ? Object.entries(record.facets).map(([label, value]) => ({
         label: humanizeKey(label),
@@ -41,7 +41,7 @@ export function mapProductRecord(record: any): ProductDto {
   }
 }
 
-export function mapSearchProductRecord(record: any): ProductSearchDto {
+export function mapSearchProductRecord(record: ProductRecord): ProductSearchDto {
   return {
     ...mapProductRecord(record),
     brand: record.brand,
