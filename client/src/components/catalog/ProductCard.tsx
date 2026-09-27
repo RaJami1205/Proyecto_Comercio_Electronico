@@ -1,4 +1,4 @@
-import type { Product } from '../../data/products'
+import type { Product } from '../../types/product'
 import styles from '../../styles/catalog/ProductCard.module.css'
 
 interface ProductCardProps {

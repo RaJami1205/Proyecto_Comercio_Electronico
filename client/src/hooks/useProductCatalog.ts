@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import type { Product } from '../data/products'
+import type { Product } from '../types/product'
 import { getCatalogPage, type CatalogFilters } from '../services/productApi'
 
 interface UseProductCatalogResult {
