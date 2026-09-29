@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
+import CartFeedbackToast from '../components/catalog/CartFeedbackToast'
 import CatalogFilters from '../components/catalog/CatalogFilters'
 import CatalogHero from '../components/catalog/CatalogHero'
 import CatalogToolbar, { type ActivePanel } from '../components/catalog/CatalogToolbar'
@@ -8,6 +9,7 @@ import ProductGrid from '../components/catalog/ProductGrid'
 import ProductQuickView from '../components/catalog/ProductQuickView'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
+import CartPage from './CartPage'
 import type { Product } from '../types/product'
 import { useCatalogPagination } from '../hooks/useCatalogPagination'
 import { useProductCatalog } from '../hooks/useProductCatalog'
@@ -24,6 +26,7 @@ const EMPTY_FILTERS: CatalogFiltersState = {
 }
 
 function ProductListingPage() {
+  const [isCartPage, setIsCartPage] = useState(() => window.location.hash === '#cart-page')
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
   const [catalogQuery, setCatalogQuery] = useState('')
@@ -36,6 +39,43 @@ function ProductListingPage() {
 
   const { products, totalPages, nbHits, facets, isLoading, error } =
     useProductCatalog(currentPage, pageSize, filters, catalogQuery)
+
+  useEffect(() => {
+    function syncPageWithLocation() {
+      const shouldShowCart = window.location.hash === '#cart-page'
+      setIsCartPage(shouldShowCart)
+
+      if (!shouldShowCart) {
+        window.scrollTo({ top: 0, behavior: 'auto' })
+      }
+    }
+
+    window.addEventListener('popstate', syncPageWithLocation)
+    window.addEventListener('hashchange', syncPageWithLocation)
+
+    return () => {
+      window.removeEventListener('popstate', syncPageWithLocation)
+      window.removeEventListener('hashchange', syncPageWithLocation)
+    }
+  }, [])
+
+  function navigateToCart() {
+    if (window.location.hash !== '#cart-page') {
+      window.history.pushState({ view: 'cart' }, '', '#cart-page')
+    }
+    setIsCartPage(true)
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+
+  function navigateToCatalog() {
+    window.history.pushState(
+      { view: 'catalog' },
+      '',
+      `${window.location.pathname}${window.location.search}`,
+    )
+    setIsCartPage(false)
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
 
   const handleSearchChange = useCallback((query: string) => {
     if (query === catalogQuery) return
@@ -58,9 +98,14 @@ function ProductListingPage() {
     })
   }
 
+  if (isCartPage) {
+    return <CartPage onCartClick={navigateToCart} onContinueShopping={navigateToCatalog} />
+  }
+
   return (
     <div className={styles.page}>
-      <Header />
+      <CartFeedbackToast placement="catalog" />
+      <Header onCartClick={navigateToCart} />
 
       <main>
         <CatalogHero />
@@ -131,6 +176,7 @@ function ProductListingPage() {
             </div>
           </div>
         </section>
+
       </main>
 
       <Footer />

@@ -1,4 +1,5 @@
 import type { Product } from '../../types/product'
+import { useCart } from '../../hooks/useCart'
 import styles from '../../styles/catalog/ProductCard.module.css'
 
 interface ProductCardProps {
@@ -23,7 +24,17 @@ function CartIcon() {
 }
 
 function ProductCard({ product, onProductSelect }: ProductCardProps) {
+  const { addItem, cartAddFeedback } = useCart()
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
+
+  function handleAddToCart() {
+    addItem({
+      productId: product.id,
+      name: product.name,
+      price: product.price,
+      image: product.image,
+    }, 'catalog', product)
+  }
 
   return (
     <article className={styles.card}>
@@ -44,15 +55,18 @@ function ProductCard({ product, onProductSelect }: ProductCardProps) {
         <div className={styles.purchaseRow}>
           <p className={styles.price}>{priceFormatter.format(product.price)}</p>
           <button
-            className={styles.cartButton}
+            className={`${styles.cartButton} ${
+              cartAddFeedback?.productId === product.id ? styles.cartButtonAdded : ''
+            }`}
             type="button"
             disabled={!product.inStock}
             aria-label={
               product.inStock
-                ? `Agregar ${product.name} al carrito (disponible próximamente)`
+                ? `Agregar ${product.name} al carrito`
                 : `${product.name} está agotado`
             }
-            title={product.inStock ? 'Carrito disponible próximamente' : 'Producto agotado'}
+            title={product.inStock ? `Agregar ${product.name} al carrito` : 'Producto agotado'}
+            onClick={handleAddToCart}
           >
             <CartIcon />
           </button>
