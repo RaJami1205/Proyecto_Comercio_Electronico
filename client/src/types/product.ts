@@ -23,7 +23,7 @@ export interface Product {
   image: string
   price: number
   inStock: boolean
-  category: string
+  category: ProductCategory
   description: string
   specifications: ProductSpecification[]
 }

@@ -3,6 +3,8 @@ import styles from '../../styles/catalog/ProductGrid.module.css'
 import ProductCard from './ProductCard'
 
 interface ProductGridProps {
+  onProductAdded: (product: Pick<Product, 'id' | 'name'>) => void
+  addedProductId?: string
   products: Product[]
   currentPage: number
   totalPages: number
@@ -10,6 +12,8 @@ interface ProductGridProps {
 }
 
 function ProductGrid({
+  onProductAdded,
+  addedProductId,
   products,
   currentPage,
   totalPages,
@@ -26,6 +30,8 @@ function ProductGrid({
           <ProductCard
             key={product.id}
             product={product}
+            onProductAdded={onProductAdded}
+            addedProductId={addedProductId}
             onProductSelect={onProductSelect}
           />
         ))}

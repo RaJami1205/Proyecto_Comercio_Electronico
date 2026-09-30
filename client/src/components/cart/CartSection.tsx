@@ -5,7 +5,6 @@ import styles from '../../styles/cart/CartSection.module.css'
 
 interface CartSectionProps {
   onContinueShopping: () => void
-  onProductSelect: (productId: string) => void
 }
 
 const priceFormatter = new Intl.NumberFormat('es-CR', {
@@ -14,7 +13,7 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
   maximumFractionDigits: 0,
 })
 
-function CartSection({ onContinueShopping, onProductSelect }: CartSectionProps) {
+function CartSection({ onContinueShopping }: CartSectionProps) {
   const { items, incrementItem, decrementItem, removeItem, totalUnits } = useCart()
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
 
@@ -60,29 +59,14 @@ function CartSection({ onContinueShopping, onProductSelect }: CartSectionProps) 
                 return (
                   <article className={styles.item} key={item.productId} role="listitem">
                     <div className={styles.imagePanel}>
-                      <button
-                        className={styles.productImageButton}
-                        type="button"
-                        aria-label={`Ver detalles de ${item.name}`}
-                        aria-haspopup="dialog"
-                        onClick={() => onProductSelect(item.productId)}
-                      >
-                        <img src={item.image} alt="" loading="lazy" />
-                      </button>
+                      <img src={item.image} alt="" loading="lazy" />
                     </div>
 
                     <div className={styles.itemDetails}>
                       <div className={styles.itemHeading}>
                         <div>
                           <h3>
-                            <button
-                              className={styles.productNameButton}
-                              type="button"
-                              aria-haspopup="dialog"
-                              onClick={() => onProductSelect(item.productId)}
-                            >
-                              {item.name}
-                            </button>
+                            {item.name}
                           </h3>
                           <p className={styles.unitPrice}>
                             Precio unitario: {priceFormatter.format(item.price)}
@@ -141,7 +125,7 @@ function CartSection({ onContinueShopping, onProductSelect }: CartSectionProps) 
                 {totalUnits} {totalUnits === 1 ? 'producto' : 'productos'}
               </p>
               <div className={styles.summaryTotal}>
-                <span>Total</span>
+                <span>Subtotal</span>
                 <strong>{priceFormatter.format(subtotal)}</strong>
               </div>
               <a href="#catalog" onClick={handleContinueShopping}>

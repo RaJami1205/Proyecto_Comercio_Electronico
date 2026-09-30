@@ -7,8 +7,10 @@ import styles from '../../styles/catalog/ProductQuickView.module.css'
 
 interface ProductQuickViewProps {
   product: Product
+  onProductAdded: (product: Pick<Product, 'id' | 'name'>) => void
+  addedProductId?: string
   onClose: () => void
-  allowAddToCart?: boolean
+  feedbackProductName?: string
 }
 
 const priceFormatter = new Intl.NumberFormat('es-CR', {
@@ -35,8 +37,8 @@ function CartIcon() {
   )
 }
 
-function ProductQuickView({ product, onClose, allowAddToCart = true }: ProductQuickViewProps) {
-  const { addItem, cartAddFeedback } = useCart()
+function ProductQuickView({ product, onClose, onProductAdded, addedProductId, feedbackProductName }: ProductQuickViewProps) {
+  const { addItem } = useCart()
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
@@ -51,7 +53,8 @@ function ProductQuickView({ product, onClose, allowAddToCart = true }: ProductQu
       name: product.name,
       price: product.price,
       image: product.image,
-    }, 'quick-view', product)
+    })
+    onProductAdded({ id: product.id, name: product.name })
   }
 
   useEffect(() => {
@@ -137,7 +140,7 @@ function ProductQuickView({ product, onClose, allowAddToCart = true }: ProductQu
         onClose()
       }}
     >
-      {allowAddToCart ? <CartFeedbackToast placement="quick-view" /> : null}
+      {feedbackProductName ? <CartFeedbackToast productName={feedbackProductName} /> : null}
       <article className={styles.surface}>
         <button
           ref={closeButtonRef}
@@ -186,11 +189,10 @@ function ProductQuickView({ product, onClose, allowAddToCart = true }: ProductQu
             </dl>
           </section>
 
-          {allowAddToCart ? (
             <div className={styles.actions}>
               <button
                 className={`${styles.cartButton} ${
-                  cartAddFeedback?.productId === product.id ? styles.cartButtonAdded : ''
+                  addedProductId === product.id ? styles.cartButtonAdded : ''
                 }`}
                 type="button"
                 disabled={!product.inStock}
@@ -206,7 +208,6 @@ function ProductQuickView({ product, onClose, allowAddToCart = true }: ProductQu
                 {product.inStock ? 'Agregar al carrito' : 'Agotado'}
               </button>
             </div>
-          ) : null}
         </div>
       </article>
     </dialog>

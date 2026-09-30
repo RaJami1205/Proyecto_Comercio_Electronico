@@ -4,6 +4,8 @@ import styles from '../../styles/catalog/ProductCard.module.css'
 
 interface ProductCardProps {
   product: Product
+  onProductAdded: (product: Pick<Product, 'id' | 'name'>) => void
+  addedProductId?: string
   onProductSelect: (product: Product) => void
 }
 
@@ -23,8 +25,8 @@ function CartIcon() {
   )
 }
 
-function ProductCard({ product, onProductSelect }: ProductCardProps) {
-  const { addItem, cartAddFeedback } = useCart()
+function ProductCard({ product, onProductSelect, onProductAdded, addedProductId }: ProductCardProps) {
+  const { addItem } = useCart()
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
 
   function handleAddToCart() {
@@ -33,7 +35,8 @@ function ProductCard({ product, onProductSelect }: ProductCardProps) {
       name: product.name,
       price: product.price,
       image: product.image,
-    }, 'catalog', product)
+    })
+    onProductAdded({ id: product.id, name: product.name })
   }
 
   return (
@@ -56,7 +59,7 @@ function ProductCard({ product, onProductSelect }: ProductCardProps) {
           <p className={styles.price}>{priceFormatter.format(product.price)}</p>
           <button
             className={`${styles.cartButton} ${
-              cartAddFeedback?.productId === product.id ? styles.cartButtonAdded : ''
+              addedProductId === product.id ? styles.cartButtonAdded : ''
             }`}
             type="button"
             disabled={!product.inStock}

@@ -17,6 +17,12 @@ import type { CatalogFilters as CatalogFiltersState } from '../services/productA
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 
+interface CartFeedback {
+  productId: string
+  productName: string
+  source: 'catalog' | 'quick-view'
+}
+
 const EMPTY_FILTERS: CatalogFiltersState = {
   categories: [],
   brands: [],
@@ -35,6 +41,23 @@ function ProductListingPage() {
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
   
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  // El feedback es presentación temporal; no forma parte del dominio del Cart.
+  const [feedback, setFeedback] = useState<CartFeedback | null>(null)
+  const feedbackTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => () => {
+    if (feedbackTimeoutRef.current !== null) window.clearTimeout(feedbackTimeoutRef.current)
+  }, [])
+
+  function showCartFeedback(product: Pick<Product, 'id' | 'name'>, source: CartFeedback['source']) {
+    if (feedbackTimeoutRef.current !== null) window.clearTimeout(feedbackTimeoutRef.current)
+    setFeedback({ productId: product.id, productName: product.name, source })
+    feedbackTimeoutRef.current = window.setTimeout(() => {
+      setFeedback(null)
+      feedbackTimeoutRef.current = null
+    }, 2500)
+  }
+
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
   const { products, totalPages, nbHits, facets, isLoading, error } =
@@ -98,13 +121,11 @@ function ProductListingPage() {
     })
   }
 
-  if (isCartPage) {
-    return <CartPage onCartClick={navigateToCart} onContinueShopping={navigateToCatalog} />
-  }
-
   return (
-    <div className={styles.page}>
-      <CartFeedbackToast placement="catalog" />
+    <>
+    {/* Mantener mounted conserva búsqueda, historial y filtros; hidden/inert impiden interacción. */}
+    <div className={styles.page} hidden={isCartPage} inert={isCartPage}>
+      {!selectedProduct && feedback?.source === 'catalog' ? <CartFeedbackToast productName={feedback.productName} /> : null}
       <Header onCartClick={navigateToCart} />
 
       <main>
@@ -155,6 +176,8 @@ function ProductListingPage() {
                 <ProductGrid
                   key={currentPage}
                   products={products}
+                  onProductAdded={(product) => showCartFeedback(product, 'catalog')}
+                  addedProductId={feedback?.productId}
                   currentPage={currentPage}
                   totalPages={totalPages}
                   onProductSelect={setSelectedProduct}
@@ -181,13 +204,24 @@ function ProductListingPage() {
 
       <Footer />
 
-      {selectedProduct ? (
+      {selectedProduct && !isCartPage ? (
         <ProductQuickView
           product={selectedProduct}
+          onProductAdded={(product) => showCartFeedback(product, 'quick-view')}
+          addedProductId={feedback?.productId}
+          feedbackProductName={feedback?.source === 'quick-view' ? feedback.productName : undefined}
           onClose={() => setSelectedProduct(null)}
         />
       ) : null}
     </div>
+    {isCartPage ? (
+      <CartPage
+        onCartClick={navigateToCart}
+        onContinueShopping={navigateToCatalog}
+        feedbackProductName={feedback?.source === 'catalog' ? feedback.productName : undefined}
+      />
+    ) : null}
+    </>
   )
 }
 
