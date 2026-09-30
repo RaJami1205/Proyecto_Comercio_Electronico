@@ -289,6 +289,21 @@ main:has(> .section) {
   font-size: 0.9rem;
 }
 
+.summaryRow {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.summaryRow strong {
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
 .summaryTotal {
   display: flex;
   gap: 1rem;

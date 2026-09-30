@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react'
 
 import { useCart } from '../../hooks/useCart'
+import { calculateCartTotals, calculateLineSubtotal } from '../../utils/cartCalculations'
 import styles from '../../styles/cart/CartSection.module.css'
 
 interface CartSectionProps {
@@ -15,7 +16,7 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
 
 function CartSection({ onContinueShopping }: CartSectionProps) {
   const { items, incrementItem, decrementItem, removeItem, totalUnits } = useCart()
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const { subtotal, tax, shipping, total } = calculateCartTotals(items)
 
   function handleContinueShopping(event: MouseEvent<HTMLAnchorElement>) {
     event.preventDefault()
@@ -54,7 +55,7 @@ function CartSection({ onContinueShopping }: CartSectionProps) {
           <div className={styles.cartLayout}>
             <div className={styles.itemList} role="list" aria-label="Productos en el carrito">
               {items.map((item) => {
-                const itemSubtotal = item.price * item.quantity
+                const itemSubtotal = calculateLineSubtotal(item.price, item.quantity)
 
                 return (
                   <article className={styles.item} key={item.productId} role="listitem">
@@ -124,9 +125,21 @@ function CartSection({ onContinueShopping }: CartSectionProps) {
               <p className={styles.summaryUnits}>
                 {totalUnits} {totalUnits === 1 ? 'producto' : 'productos'}
               </p>
-              <div className={styles.summaryTotal}>
+              <div className={styles.summaryRow}>
                 <span>Subtotal</span>
                 <strong>{priceFormatter.format(subtotal)}</strong>
+              </div>
+              <div className={styles.summaryRow}>
+                <span>IVA (13%)</span>
+                <strong>{priceFormatter.format(tax)}</strong>
+              </div>
+              <div className={styles.summaryRow}>
+                <span>Envío</span>
+                <strong>{priceFormatter.format(shipping)}</strong>
+              </div>
+              <div className={styles.summaryTotal}>
+                <span>Total</span>
+                <strong>{priceFormatter.format(total)}</strong>
               </div>
               <a href="#catalog" onClick={handleContinueShopping}>
                 Seguir comprando
