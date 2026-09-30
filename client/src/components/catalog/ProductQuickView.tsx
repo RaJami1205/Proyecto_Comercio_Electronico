@@ -1,11 +1,16 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 
+import CartFeedbackToast from './CartFeedbackToast'
+import { useCart } from '../../hooks/useCart'
 import type { Product } from '../../types/product'
 import styles from '../../styles/catalog/ProductQuickView.module.css'
 
 interface ProductQuickViewProps {
   product: Product
+  onProductAdded: (product: Pick<Product, 'id' | 'name'>) => void
+  addedProductId?: string
   onClose: () => void
+  feedbackProductName?: string
 }
 
 const priceFormatter = new Intl.NumberFormat('es-CR', {
@@ -32,7 +37,8 @@ function CartIcon() {
   )
 }
 
-function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
+function ProductQuickView({ product, onClose, onProductAdded, addedProductId, feedbackProductName }: ProductQuickViewProps) {
+  const { addItem } = useCart()
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
@@ -40,6 +46,16 @@ function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
   const titleId = `quick-view-title-${product.id}`
   const descriptionId = `quick-view-description-${product.id}`
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
+
+  function handleAddToCart() {
+    addItem({
+      productId: product.id,
+      name: product.name,
+      price: product.price,
+      image: product.image,
+    })
+    onProductAdded({ id: product.id, name: product.name })
+  }
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -124,6 +140,7 @@ function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
         onClose()
       }}
     >
+      {feedbackProductName ? <CartFeedbackToast productName={feedbackProductName} /> : null}
       <article className={styles.surface}>
         <button
           ref={closeButtonRef}
@@ -172,23 +189,25 @@ function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
             </dl>
           </section>
 
-          <div className={styles.actions}>
-            <button
-              className={styles.cartButton}
-              type="button"
-              disabled={!product.inStock}
-              aria-label={
-                product.inStock
-                  ? `Agregar ${product.name} al carrito (disponible próximamente)`
-                  : `${product.name} está agotado`
-              }
-              title={product.inStock ? 'Carrito disponible próximamente' : 'Producto agotado'}
-            >
-              <CartIcon />
-              {product.inStock ? 'Agregar al carrito' : 'Agotado'}
-            </button>
-            <p>Carrito disponible próximamente</p>
-          </div>
+            <div className={styles.actions}>
+              <button
+                className={`${styles.cartButton} ${
+                  addedProductId === product.id ? styles.cartButtonAdded : ''
+                }`}
+                type="button"
+                disabled={!product.inStock}
+                aria-label={
+                  product.inStock
+                    ? `Agregar ${product.name} al carrito`
+                    : `${product.name} está agotado`
+                }
+                title={product.inStock ? `Agregar ${product.name} al carrito` : 'Producto agotado'}
+                onClick={handleAddToCart}
+              >
+                <CartIcon />
+                {product.inStock ? 'Agregar al carrito' : 'Agotado'}
+              </button>
+            </div>
         </div>
       </article>
     </dialog>
