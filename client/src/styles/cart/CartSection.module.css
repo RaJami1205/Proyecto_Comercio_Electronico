@@ -1,5 +1,14 @@
+/* Propaga el espacio flexible del page layout únicamente a la vista del Cart. */
+main:has(> .section) {
+  display: flex;
+  flex-direction: column;
+}
+
 .section {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
   padding: clamp(4.5rem, 8vw, 7.5rem) 1.25rem clamp(5rem, 9vw, 8rem);
   background:
     radial-gradient(circle at 8% 4%, rgba(24, 213, 227, 0.1), transparent 24rem),
@@ -7,6 +16,9 @@
 }
 
 .container {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
   width: min(100%, var(--content-max-width));
   margin: 0 auto;
 }
@@ -325,6 +337,7 @@
 
 .emptyState {
   display: grid;
+  margin-block: auto;
   justify-items: center;
   padding: clamp(2rem, 6vw, 4rem) 1.5rem;
   border: 1px solid #c8d5e9;
