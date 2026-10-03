@@ -20,3 +20,5 @@ export type CartAction =
   | { type: 'INCREMENT_ITEM'; payload: { productId: string } }
   | { type: 'DECREMENT_ITEM'; payload: { productId: string } }
   | { type: 'REMOVE_ITEM'; payload: { productId: string } }
+  // CN-11: reemplaza los items con un carrito ya validado (p. ej. cambios desde otra pestaña).
+  | { type: 'HYDRATE'; payload: { items: CartItem[] } }

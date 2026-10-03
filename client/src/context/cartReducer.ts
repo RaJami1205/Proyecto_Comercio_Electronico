@@ -42,5 +42,9 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       if (!state.items.some((item) => item.productId === action.payload.productId)) return state
       return { items: state.items.filter((item) => item.productId !== action.payload.productId) }
     }
+    case 'HYDRATE': {
+      // Recibe items ya validados por cartStorage; el reducer no lee localStorage.
+      return { items: action.payload.items }
+    }
   }
 }
