@@ -1,10 +1,9 @@
+/** Centraliza las transiciones de items; almacenamiento y presentación pertenecen a otras capas. */
 import type { CartAction, CartState } from '../types/cart'
 
 export const cartInitialState: CartState = { items: [] }
 
-// El reducer debe permanecer puro: no mutar state ni payloads, ni ejecutar side effects,
-// acceder a localStorage o realizar requests. CN-9 debe operar desde useCart en
-// CartPage / CartItem UI, sin modificar items directamente.
+/** Aplica transiciones puras e inmutables; conserva líneas únicas y quantity mínima de uno. */
 export function cartReducer(state: CartState, action: CartAction): CartState {
   switch (action.type) {
     case 'ADD_ITEM': {
@@ -41,6 +40,10 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     case 'REMOVE_ITEM': {
       if (!state.items.some((item) => item.productId === action.payload.productId)) return state
       return { items: state.items.filter((item) => item.productId !== action.payload.productId) }
+    }
+    case 'HYDRATE': {
+      // Recibe items ya validados por cartStorage; el reducer no lee localStorage.
+      return { items: action.payload.items }
     }
   }
 }

@@ -1,3 +1,4 @@
+/** Encapsula el detalle modal del Product y su integración con useCart. */
 import { useEffect, useRef, type MouseEvent } from 'react'
 
 import CartFeedbackToast from './CartFeedbackToast'
@@ -37,6 +38,7 @@ function CartIcon() {
   )
 }
 
+/** Gestiona el dialog, el foco y el bloqueo de scroll mientras muestra el detalle. */
 function ProductQuickView({ product, onClose, onProductAdded, addedProductId, feedbackProductName }: ProductQuickViewProps) {
   const { addItem } = useCart()
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -47,6 +49,7 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
   const descriptionId = `quick-view-description-${product.id}`
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
 
+  /** Agrega el snapshot del Product y notifica a la página para mostrar feedback temporal. */
   function handleAddToCart() {
     addItem({
       productId: product.id,
@@ -110,6 +113,7 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
   }, [])
 
   useEffect(() => {
+    /** Delega el cierre del modal al owner cuando se pulsa Escape. */
     function handleEscapeKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -122,6 +126,7 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
     return () => document.removeEventListener('keydown', handleEscapeKey)
   }, [onClose])
 
+  /** Cierra solo al pulsar el fondo del dialog, sin interceptar su contenido. */
   function handleBackdropClick(event: MouseEvent<HTMLDialogElement>) {
     if (event.target === event.currentTarget) {
       onClose()

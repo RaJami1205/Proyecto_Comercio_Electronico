@@ -1,3 +1,4 @@
+/** Separa el subset ProductRecord consumido de Algolia de los DTO expuestos por la API. */
 export interface HighlightedValue {
   value: string
 }

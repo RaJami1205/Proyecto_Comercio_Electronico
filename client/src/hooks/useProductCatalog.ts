@@ -1,3 +1,4 @@
+/** Coordina datos, facets y estado de carga del catálogo a través de productApi. */
 import { useEffect, useState } from 'react'
 
 import type { Product } from '../types/product'
@@ -24,6 +25,7 @@ interface ProductCatalogState {
   error: string | null
 }
 
+/** Consulta por página, filtros y query e ignora respuestas de efectos cancelados. */
 export function useProductCatalog(
   page: number,
   pageSize: number,

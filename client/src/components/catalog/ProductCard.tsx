@@ -1,3 +1,4 @@
+/** Integra cada producto del catálogo con Quick View y la API pública del Cart. */
 import type { Product } from '../../types/product'
 import { useCart } from '../../hooks/useCart'
 import styles from '../../styles/catalog/ProductCard.module.css'
@@ -25,10 +26,12 @@ function CartIcon() {
   )
 }
 
+/** Presenta disponibilidad y precio, delegando detalle y feedback al owner. */
 function ProductCard({ product, onProductSelect, onProductAdded, addedProductId }: ProductCardProps) {
   const { addItem } = useCart()
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
 
+  /** Envía el snapshot mínimo al Cart; quantity y duplicados quedan a cargo del reducer. */
   function handleAddToCart() {
     addItem({
       productId: product.id,

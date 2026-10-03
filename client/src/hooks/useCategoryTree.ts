@@ -1,3 +1,4 @@
+/** Conecta el selector jerárquico de categorías con el endpoint de productApi. */
 import { useEffect, useState } from 'react'
 
 import { getCategoryTree, type CategoryTreeNode } from '../services/productApi'
@@ -7,6 +8,7 @@ interface UseCategoryTreeResult {
   isLoading: boolean
 }
 
+/** Carga el árbol al montar y evita actualizar el estado tras el cleanup. */
 export function useCategoryTree(): UseCategoryTreeResult {
   const [tree, setTree] = useState<CategoryTreeNode[]>([])
   const [isLoading, setIsLoading] = useState(true)

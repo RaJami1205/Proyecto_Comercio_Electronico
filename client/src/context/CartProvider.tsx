@@ -1,16 +1,38 @@
-import { useReducer, type ReactNode } from 'react'
+/** Mantiene la instancia compartida del Cart y coordina cartStorage fuera del reducer. */
+import { useEffect, useReducer, type ReactNode } from 'react'
 import { CartContext, type CartContextValue } from './CartContext'
 import { cartInitialState, cartReducer } from './cartReducer'
+import { CART_STORAGE_KEY, loadCart, parseStoredCart, saveCart } from '../utils/cartStorage'
 
 interface CartProviderProps {
   children: ReactNode
 }
 
-// Posee la instancia global del CartState: montado alrededor de App, comparte el mismo carrito con todos sus consumidores.
+
+/** Expone la API pública y totalUnits derivado, restaurando y guardando items. */
 function CartProvider({ children }: CartProviderProps) {
-  // CN-6 mantiene el estado en memoria. CN-11 incorporará localStorage e hidratación;
-  // la persistencia y cualquier side effect futuro deben permanecer fuera del reducer.
-  const [state, dispatch] = useReducer(cartReducer, cartInitialState)
+  // CN-11: loadCart es el inicializador de useReducer. Recupera el carrito desde
+  // localStorage en el primer render, antes de pintar, sin efectos dentro del reducer.
+  const [state, dispatch] = useReducer(cartReducer, cartInitialState, loadCart)
+
+  // CN-11: cada cambio de items se guarda.
+  useEffect(() => {
+    saveCart(state)
+  }, [state])
+
+  // CN-11: si el usuario tiene la tienda abierta en otra pestaña, el evento storage
+  // sincroniza este carrito con el guardado más reciente.
+  useEffect(() => {
+    /** Hidrata el Cart con datos validados cuando cambia su clave en otra pestaña. */
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== CART_STORAGE_KEY) return
+      dispatch({ type: 'HYDRATE', payload: { items: parseStoredCart(event.newValue) ?? [] } })
+    }
+
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
   // Las operaciones públicas encapsulan dispatch para que los consumidores no dependan de las actions.
   const value: CartContextValue = {
     items: state.items,

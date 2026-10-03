@@ -1,3 +1,4 @@
+/** Construye el árbol de categorías desde Algolia y conserva una caché en memoria del proceso. */
 import { getAlgoliaClient } from '../config/algolia.js'
 import { getAlgoliaConfig } from '../config/env.js'
 
@@ -8,6 +9,7 @@ export interface CategoryTreeNode {
 
 let cachedTree: CategoryTreeNode[] | null = null
 
+/** Integra una ruta de categorías reutilizando nodos existentes en cada nivel. */
 function insertPath(roots: CategoryTreeNode[], path: string[]): void {
   let level = roots
   for (const segment of path) {
@@ -20,6 +22,7 @@ function insertPath(roots: CategoryTreeNode[], path: string[]): void {
   }
 }
 
+/** Devuelve la caché o la construye con hasta mil hits que contienen categorías. */
 export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
   if (cachedTree) {
     return cachedTree

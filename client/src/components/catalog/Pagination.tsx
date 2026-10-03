@@ -1,3 +1,4 @@
+/** Presenta navegación paginada y delega el estado de página al consumidor. */
 import styles from '../../styles/catalog/Pagination.module.css'
 
 interface PaginationProps {
@@ -9,6 +10,7 @@ interface PaginationProps {
 
 type PaginationItem = number | 'ellipsis-start' | 'ellipsis-end'
 
+/** Conserva extremos y páginas vecinas, sustituyendo los saltos por elipsis. */
 function getPaginationItems(currentPage: number, totalPages: number): PaginationItem[] {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, index) => index + 1)
@@ -51,6 +53,7 @@ function ArrowIcon({ direction }: { direction: 'left' | 'right' }) {
   )
 }
 
+/** Ofrece accesos numéricos y direccionales respetando los límites del catálogo. */
 function Pagination({
   currentPage,
   totalPages,

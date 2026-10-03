@@ -1,3 +1,4 @@
+/** Organiza los resultados paginados y propaga las interacciones hacia sus cards. */
 import type { Product } from '../../types/product'
 import styles from '../../styles/catalog/ProductGrid.module.css'
 import ProductCard from './ProductCard'
@@ -11,6 +12,7 @@ interface ProductGridProps {
   onProductSelect: (product: Product) => void
 }
 
+/** Renderiza las cards con callbacks de selección y feedback compartidos. */
 function ProductGrid({
   onProductAdded,
   addedProductId,

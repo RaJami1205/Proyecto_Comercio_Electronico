@@ -1,3 +1,4 @@
+/** Encapsula las requests de autocomplete a productApi y su estado de carga. */
 import { useEffect, useRef, useState } from 'react'
 
 import {
@@ -15,6 +16,7 @@ interface UseProductSearchResult {
   error: string | null
 }
 
+/** Aplica debounce y descarta respuestas de queries reemplazados mediante un identificador. */
 export function useProductSearch(): UseProductSearchResult {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ProductSearchResult[]>([])
@@ -62,6 +64,7 @@ export function useProductSearch(): UseProductSearchResult {
     }
   }, [query])
 
+  /** Invalida respuestas anteriores y limpia resultados cuando el query queda vacío. */
   function updateQuery(value: string) {
     requestIdRef.current += 1
     setQuery(value)

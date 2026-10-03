@@ -1,3 +1,4 @@
+/** Conecta el Search con la consulta del catálogo y la selección de paneles de filtros. */
 import { useEffect } from 'react'
 
 import styles from '../../styles/catalog/CatalogToolbar.module.css'
@@ -48,6 +49,7 @@ interface CatalogToolbarProps {
   onProductSelect: (product: Product) => void
 }
 
+/** Coordina useProductSearch y propaga el query al catálogo con debounce. */
 function CatalogToolbar({
   productCount,
   activePanel,
@@ -62,6 +64,7 @@ function CatalogToolbar({
     return () => clearTimeout(timeout)
   }, [query, onSearchChange])
 
+  /** Alterna el panel solicitado y permite cerrar el panel ya activo. */
   function handlePanelClick(panel: ActivePanel) {
     onTogglePanel(activePanel === panel ? null : panel)
   }

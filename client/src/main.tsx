@@ -1,3 +1,4 @@
+/** Monta la aplicación bajo StrictMode y la instancia compartida de CartProvider. */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'

@@ -1,6 +1,8 @@
+/** Reúne los enlaces y la información institucional compartidos por las vistas. */
 import styles from '../../styles/layout/Footer.module.css'
 import { handleAnchorNavigation } from '../../utils/scrollToAnchor'
 
+/** Presenta las secciones informativas y delega el desplazamiento por anclas. */
 function Footer() {
   return (
     <footer className={styles.footer} id="about">

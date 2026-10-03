@@ -1,3 +1,4 @@
+/** Conecta la presentación del Cart con useCart y los cálculos financieros derivados. */
 import type { MouseEvent } from 'react'
 
 import { useCart } from '../../hooks/useCart'
@@ -14,10 +15,12 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
   maximumFractionDigits: 0,
 })
 
+/** Presenta líneas, controles y resumen, o el Empty State cuando no hay items. */
 function CartSection({ onContinueShopping }: CartSectionProps) {
   const { items, incrementItem, decrementItem, removeItem, totalUnits } = useCart()
   const { subtotal, tax, shipping, total } = calculateCartTotals(items)
 
+  /** Delega el regreso al catálogo sin provocar la navegación nativa del ancla. */
   function handleContinueShopping(event: MouseEvent<HTMLAnchorElement>) {
     event.preventDefault()
     onContinueShopping()
