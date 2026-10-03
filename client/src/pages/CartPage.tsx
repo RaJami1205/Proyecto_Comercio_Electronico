@@ -1,3 +1,4 @@
+/** Compone la vista del carrito reutilizando Header, Footer y CartSection. */
 import CartFeedbackToast from '../components/catalog/CartFeedbackToast'
 import CartSection from '../components/cart/CartSection'
 import Footer from '../components/layout/Footer'
@@ -10,6 +11,7 @@ interface CartPageProps {
   onContinueShopping: () => void
 }
 
+/** Presenta el Cart y delega la navegación y el feedback temporal a la página owner. */
 function CartPage({ onCartClick, onContinueShopping, feedbackProductName }: CartPageProps) {
   return (
     <div className={styles.page}>

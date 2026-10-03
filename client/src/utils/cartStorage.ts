@@ -1,6 +1,5 @@
+/** Aísla la persistencia del Cart en localStorage y valida los items antes de restaurarlos. */
 import type { CartItem, CartState } from '../types/cart'
-// CN-11: módulo responsable de persistir el carrito en localStorage
-// Mantiene los side effects fuera del reducer
 
 export const CART_STORAGE_KEY = 'cibernova:cart:v1'
 
@@ -10,7 +9,7 @@ interface PersistedCart {
   items: CartItem[]
 }
 
-// Type guard: verifica que un valor leído de localStorage tenga la forma de CartItem
+/** Valida el snapshot mínimo, precio finito y quantity entera positiva antes de hidratar. */
 function isValidCartItem(value: unknown): value is CartItem {
   if (typeof value !== 'object' || value === null) return false
   const item = value as Record<string, unknown>
@@ -26,9 +25,7 @@ function isValidCartItem(value: unknown): value is CartItem {
   )
 }
 
-// Convierte el texto guardado en una lista de items válidos
-// Devuelve null si no hay datos o si el formato general no es reconocible,
-// para que quien llama use el estado inicial
+/** Recupera items válidos y combina duplicados; devuelve null ante un formato general inválido. */
 export function parseStoredCart(raw: string | null): CartItem[] | null {
   if (raw === null) return null
 
@@ -63,6 +60,7 @@ export function parseStoredCart(raw: string | null): CartItem[] | null {
   }
 }
 
+/** Restaura items válidos o conserva el fallback si el almacenamiento no está disponible. */
 export function loadCart(fallback: CartState): CartState {
   try {
     const items = parseStoredCart(window.localStorage.getItem(CART_STORAGE_KEY))
@@ -73,6 +71,7 @@ export function loadCart(fallback: CartState): CartState {
   }
 }
 
+/** Guarda únicamente items; un fallo de almacenamiento no interrumpe el Cart en memoria. */
 export function saveCart(state: CartState): void {
   try {
     const payload: PersistedCart = { items: state.items }

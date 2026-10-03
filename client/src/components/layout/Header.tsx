@@ -1,3 +1,4 @@
+/** Integra la navegación principal con el contador derivado del Cart. */
 import type { MouseEvent } from 'react'
 
 import { useCart } from '../../hooks/useCart'
@@ -10,9 +11,11 @@ interface HeaderProps {
   onCatalogClick?: () => void
 }
 
+/** Presenta los accesos según la vista activa usando totalUnits de useCart. */
 function Header({ cartView = false, onCartClick, onCatalogClick }: HeaderProps) {
   const { totalUnits } = useCart()
 
+  /** Delega el cambio de vista al owner o utiliza la navegación por anclas disponible. */
   function handleCartNavigation(event: MouseEvent<HTMLAnchorElement>) {
     if (onCartClick) {
       event.preventDefault()
@@ -23,6 +26,7 @@ function Header({ cartView = false, onCartClick, onCatalogClick }: HeaderProps) 
     handleAnchorNavigation(event)
   }
 
+  /** Permite regresar al catálogo mediante el callback de navegación o un ancla. */
   function handleCatalogNavigation(event: MouseEvent<HTMLAnchorElement>) {
     if (onCatalogClick) {
       event.preventDefault()

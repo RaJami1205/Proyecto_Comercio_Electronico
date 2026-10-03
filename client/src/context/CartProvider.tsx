@@ -1,3 +1,4 @@
+/** Mantiene la instancia compartida del Cart y coordina cartStorage fuera del reducer. */
 import { useEffect, useReducer, type ReactNode } from 'react'
 import { CartContext, type CartContextValue } from './CartContext'
 import { cartInitialState, cartReducer } from './cartReducer'
@@ -8,6 +9,7 @@ interface CartProviderProps {
 }
 
 
+/** Expone la API pública y totalUnits derivado, restaurando y guardando items. */
 function CartProvider({ children }: CartProviderProps) {
   // CN-11: loadCart es el inicializador de useReducer. Recupera el carrito desde
   // localStorage en el primer render, antes de pintar, sin efectos dentro del reducer.
@@ -21,6 +23,7 @@ function CartProvider({ children }: CartProviderProps) {
   // CN-11: si el usuario tiene la tienda abierta en otra pestaña, el evento storage
   // sincroniza este carrito con el guardado más reciente.
   useEffect(() => {
+    /** Hidrata el Cart con datos validados cuando cambia su clave en otra pestaña. */
     function handleStorage(event: StorageEvent) {
       if (event.key !== CART_STORAGE_KEY) return
       dispatch({ type: 'HYDRATE', payload: { items: parseStoredCart(event.newValue) ?? [] } })

@@ -1,3 +1,4 @@
+/** Valida parámetros HTTP y transforma resultados de los services en responses públicas mediante mappers. */
 import type { NextFunction, Request, Response } from 'express'
 import { getCategoryTree } from '../services/categoryService.js'
 
@@ -10,6 +11,7 @@ import { getCatalogPage, searchProducts } from '../services/productService.js'
 const DEFAULT_PRODUCTS_PER_PAGE = 20
 const MAX_PRODUCTS_PER_PAGE = 100
 
+/** Normaliza paginación con fallback y límite superior para entradas inválidas. */
 function parsePositiveInteger(
   value: unknown,
   fallback: number,
@@ -28,6 +30,7 @@ function parsePositiveInteger(
   return Math.min(parsedValue, maximum)
 }
 
+/** Admite valores repetidos o únicos y descarta entradas que no sean strings. */
 function parseArrayParam(value: unknown): string[] | undefined {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === 'string')
@@ -38,6 +41,7 @@ function parseArrayParam(value: unknown): string[] | undefined {
   return undefined
 }
 
+/** Acepta límites de precio finitos y no negativos desde query parameters. */
 function parseNonNegativeNumber(value: unknown): number | undefined {
   if (typeof value !== 'string' || !value.trim()) {
     return undefined
@@ -46,6 +50,7 @@ function parseNonNegativeNumber(value: unknown): number | undefined {
   return Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : undefined
 }
 
+/** Normaliza filtros y paginación antes de devolver productos mapeados y facets. */
 export async function getProducts(
   request: Request,
   response: Response,
@@ -66,7 +71,7 @@ export async function getProducts(
     const maxPrice = parseNonNegativeNumber(request.query.maxPrice)
     const sort = typeof request.query.sort === 'string' ? request.query.sort : 'relevance'
 
-    // 🟢 Pasamos `requestedPage` (base 1). `productService` se encarga de adaptarlo a Algolia (base 0)
+    // El service convierte requestedPage de base uno a la base cero de Algolia.
     const result = await getCatalogPage(
       requestedPage,
       productsPerPage,
@@ -80,7 +85,7 @@ export async function getProducts(
       query,
     )
 
-    // 🟢 `result.page` ya viene devuelto en base 1 desde `productService`
+    // El service devuelve result.page en base uno para el cliente.
     response.json({
       products: result.hits.map(mapProductRecord),
       page: result.page,
@@ -94,6 +99,7 @@ export async function getProducts(
   }
 }
 
+/** Rechaza queries vacíos y devuelve sugerencias con highlights del mapper. */
 export async function searchProductCatalog(
   request: Request,
   response: Response,
@@ -117,6 +123,7 @@ export async function searchProductCatalog(
   }
 }
 
+/** Entrega el árbol del service y delega fallos al middleware de errores. */
 export async function getCategoryTreeHandler(
   request: Request,
   response: Response,

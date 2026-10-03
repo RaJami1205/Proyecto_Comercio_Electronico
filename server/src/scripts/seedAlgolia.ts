@@ -1,18 +1,23 @@
+/** Valida el dataset en dry-run; solo escribe en Algolia con --write y confirmación exacta del índice. */
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 const datasetUrl = new URL('../../data/productos.json', import.meta.url)
 
+/** Identifica fallos controlados cuyo mensaje puede mostrarse sin revelar detalles del SDK. */
 class SeedError extends Error {}
 
+/** Descarta null y arrays antes de inspeccionar campos del dataset. */
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** Exige contenido no vacío para identificadores y campos obligatorios. */
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+/** Valida el protocolo HTTP de la imagen sin realizar requests. */
 function isHttpUrl(value: unknown): boolean {
   if (!isNonEmptyString(value)) return false
   try {
@@ -23,6 +28,7 @@ function isHttpUrl(value: unknown): boolean {
   }
 }
 
+/** Verifica campos y unicidad de objectID antes de permitir escrituras. */
 function validateDataset(value: unknown): asserts value is Record<string, unknown>[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new SeedError('Dataset inválido: se requiere un array no vacío.')
@@ -33,6 +39,7 @@ function validateDataset(value: unknown): asserts value is Record<string, unknow
   let errorCount = 0
   const examples: string[] = []
 
+  /** Acumula errores con una muestra acotada sin volcar los records completos. */
   function invalid(index: number, field: string) {
     errorCount += 1
     if (examples.length < 10) examples.push(`record ${index + 1}: ${field}`)
@@ -90,6 +97,7 @@ function validateDataset(value: unknown): asserts value is Record<string, unknow
   }
 }
 
+/** Valida argumentos y dataset antes de cargar credentials y ejecutar una escritura explícita. */
 async function main() {
   let write = false
   let confirmedIndex: string | undefined
@@ -120,7 +128,7 @@ async function main() {
     return
   }
 
-  // Load credentials only after validation and only for explicitly requested writes.
+  // Carga credentials solo tras validar y ante una solicitud explícita de escritura.
   const { config } = await import('dotenv')
   config({ path: fileURLToPath(new URL('../../.env', import.meta.url)), quiet: true })
   const appId = process.env.ALGOLIA_APP_ID?.trim()
@@ -138,7 +146,7 @@ async function main() {
   try {
     await client.saveObjects({ indexName, objects: dataset, waitForTasks: true })
   } catch {
-    // SDK errors can contain request details. Never print them or credentials.
+    // Los errores del SDK pueden incluir detalles de requests; no exponerlos ni imprimir credentials.
     throw new SeedError('Falló la carga en Algolia; puede haber escrituras parciales. Revise el índice antes de reintentar.')
   }
   console.log(`Mode: WRITE; ${dataset.length} records enviados; tareas de indexación completadas.`)

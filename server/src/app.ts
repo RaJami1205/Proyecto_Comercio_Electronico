@@ -1,3 +1,4 @@
+/** Configura Express, CORS y rutas de productos; traduce errores a responses sin detalles internos. */
 import cors from 'cors'
 import express, { type NextFunction, type Request, type Response } from 'express'
 

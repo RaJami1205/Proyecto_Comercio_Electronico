@@ -1,3 +1,4 @@
+/** Define el contrato Product consumido por la UI; el mapping de Algolia permanece en el server. */
 export type ProductCategory =
   | 'Laptop'
   | 'Monitor'

@@ -1,3 +1,4 @@
+/** Mantiene página y tamaño de página coherentes con el breakpoint del catálogo. */
 import { useCallback, useEffect, useState } from 'react'
 
 const COMPACT_CATALOG_MEDIA_QUERY = '(max-width: 1060px)'
@@ -9,6 +10,7 @@ interface CatalogPaginationState {
   pageSize: number
 }
 
+/** Resuelve el tamaño inicial según el viewport con fallback para entornos sin window. */
 function getPageSize(): number {
   if (typeof window === 'undefined') {
     return DESKTOP_PAGE_SIZE
@@ -19,6 +21,7 @@ function getPageSize(): number {
     : DESKTOP_PAGE_SIZE
 }
 
+/** Sincroniza la paginación con matchMedia sin asumir responsabilidad sobre requests. */
 export function useCatalogPagination() {
   const [pagination, setPagination] = useState<CatalogPaginationState>(() => ({
     currentPage: 1,
@@ -28,6 +31,7 @@ export function useCatalogPagination() {
   useEffect(() => {
     const mediaQuery = window.matchMedia(COMPACT_CATALOG_MEDIA_QUERY)
 
+    /** Vuelve a la primera página solo cuando cambia la capacidad del viewport. */
     function updatePageSize(matches: boolean) {
       const pageSize = matches ? COMPACT_PAGE_SIZE : DESKTOP_PAGE_SIZE
 
@@ -41,6 +45,7 @@ export function useCatalogPagination() {
       )
     }
 
+    /** Traduce el cambio de breakpoint al tamaño de página del catálogo. */
     function handleMediaQueryChange(event: MediaQueryListEvent) {
       updatePageSize(event.matches)
     }

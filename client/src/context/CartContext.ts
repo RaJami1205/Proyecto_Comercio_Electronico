@@ -1,3 +1,4 @@
+/** Define la frontera tipada entre el Cart compartido y sus consumidores mediante useCart. */
 import { createContext } from 'react'
 import type { CartItem } from '../types/cart'
 

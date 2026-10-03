@@ -1,3 +1,4 @@
+/** Adapta ProductRecord de Algolia a los DTO públicos sin filtrar su schema interno al cliente. */
 import type {
   ProductDto,
   ProductRecord,
@@ -7,6 +8,7 @@ import type {
 const PLACEHOLDER_IMAGE =
   'https://placehold.co/600x600/1f5eff/ffffff?text=CiberNova'
 
+/** Convierte claves de facets en etiquetas legibles para las especificaciones. */
 function humanizeKey(key: string): string {
   const withSpaces = key
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -19,6 +21,7 @@ function humanizeKey(key: string): string {
     .join(' ')
 }
 
+/** Construye el DTO con fallbacks de imagen, categoría y stock. */
 export function mapProductRecord(record: ProductRecord): ProductDto {
   const specifications = record.facets
     ? Object.entries(record.facets).map(([label, value]) => ({
@@ -41,6 +44,7 @@ export function mapProductRecord(record: ProductRecord): ProductDto {
   }
 }
 
+/** Extiende el DTO del catálogo con marca y highlight del título para autocomplete. */
 export function mapSearchProductRecord(record: ProductRecord): ProductSearchDto {
   return {
     ...mapProductRecord(record),

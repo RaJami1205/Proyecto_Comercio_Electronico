@@ -1,3 +1,4 @@
+/** Gestiona autocomplete y Predictive Search; Recent Searches vive solo en memoria del component. */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ProductSearchResult } from '../../services/productApi'
 import styles from '../../styles/catalog/SearchBox.module.css'
@@ -28,6 +29,7 @@ interface SearchBoxProps {
   onSelectResult: (product: ProductSearchResult) => void
 }
 
+/** Convierte segmentos mark en nodos React sin insertar HTML arbitrario. */
 function renderHighlighted(value: string) {
   return value.split(/(<mark>.*?<\/mark>)/g).map((part, index) => {
     if (part.startsWith('<mark>') && part.endsWith('</mark>')) {
@@ -38,6 +40,7 @@ function renderHighlighted(value: string) {
   })
 }
 
+/** Coordina sugerencias, selección predictiva y teclado a partir de resultados recibidos. */
 function SearchBox({
   query,
   onQueryChange,
@@ -57,6 +60,7 @@ function SearchBox({
   const showPanel = isOpen && (query.trim().length > 0 || showRecents)
 
   useEffect(() => {
+    /** Descarta la selección predictiva y cierra el panel ante una interacción externa. */
     function handlePointerDown(event: PointerEvent) {
       if (event.target instanceof Node && !wrapperRef.current?.contains(event.target)) {
         predictionRef.current = null
@@ -69,18 +73,21 @@ function SearchBox({
     return () => document.removeEventListener('pointerdown', handlePointerDown)
   }, [])
 
+  /** Invalida la predicción pendiente y cierra el panel sin borrar el query. */
   function closeSuggestions() {
     predictionRef.current = null
     setIsOpen(false)
     setActiveIndex(-1)
   }
 
+  /** Registra la búsqueda confirmada, delega el detalle y cierra las sugerencias. */
   function selectResult(product: ProductSearchResult) {
     addRecentSearch(query)
     onSelectResult(product)
     closeSuggestions()
   }
 
+  /** Conserva hasta cinco búsquedas únicas en memoria, priorizando la más reciente. */
   function addRecentSearch(value: string) {
     const trimmed = value.trim()
     if (!trimmed) return
@@ -90,6 +97,7 @@ function SearchBox({
     ].slice(0, 5))
   }
 
+  /** Distingue aceptar o borrar una predicción de navegar y confirmar sugerencias. */
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     const input = event.currentTarget
     const prediction = predictionRef.current
@@ -177,7 +185,7 @@ function SearchBox({
           }
           autoComplete="off"
           onFocus={(event) => {
-            // Returning focus from clear/close must not reopen the panel.
+            // Devolver el foco al limpiar o cerrar no debe reabrir el panel.
             if (showRecents && !wrapperRef.current?.contains(event.relatedTarget)) {
               setIsOpen(true)
             }
@@ -208,7 +216,7 @@ function SearchBox({
               predictionRef.current = prediction
               setTimeout(() => {
                 const input = inputRef.current
-                // Ignore callbacks superseded by typing, clear/close, or loss of focus.
+                // Descarta callbacks invalidados por escritura, cierre o pérdida de foco.
                 if (predictionRef.current === prediction && input &&
                     document.activeElement === input && input.value === prediction.value) {
                   input.setSelectionRange(prediction.start, prediction.value.length)
