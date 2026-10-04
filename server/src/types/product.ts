@@ -1,26 +1,21 @@
+/** Separa el subset ProductRecord consumido de Algolia de los DTO expuestos por la API. */
 export interface HighlightedValue {
   value: string
 }
 
 export interface ProductRecord {
   objectID: string
-  name: string
+  title: string
+  price?: number
+  image_url?: string
+  categories?: string[]
   brand?: string
-  category: string
-  subCategory?: string
   description?: string
-  tags?: string[]
-  rating?: number
-  sku?: string
-  images?: string[]
-  price_CRC?: number
-  inventory?: {
-    totalStock: number
-    sedes?: Record<string, number>
-  }
-  specs?: Record<string, string | number | boolean>
+  in_stock?: boolean
+  stock_quantity?: number
+  facets?: Record<string, string | number | unknown[]>
   _highlightResult?: {
-    name?: HighlightedValue
+    title?: HighlightedValue
   }
 }
 

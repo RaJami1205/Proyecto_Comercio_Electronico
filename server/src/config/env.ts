@@ -1,8 +1,10 @@
+/** Resuelve configuración server-side y valida la presencia de credentials de Algolia sin exponer sus valores. */
 import 'dotenv/config'
 
 const DEFAULT_PORT = Number(process.env.PORT)
 const DEFAULT_CLIENT_ORIGIN = process.env.CLIENT_ORIGIN
 
+/** Distingue una configuración incompleta de otros fallos para responder con servicio no disponible. */
 export class ConfigurationError extends Error {
   constructor(message: string) {
     super(message)
@@ -10,6 +12,7 @@ export class ConfigurationError extends Error {
   }
 }
 
+/** Acepta un puerto entero positivo o utiliza el valor base configurado. */
 function resolvePort(value: string | undefined): number {
   const parsedPort = Number(value)
 
@@ -21,6 +24,7 @@ export const serverConfig = {
   clientOrigin: process.env.CLIENT_ORIGIN?.trim() || DEFAULT_CLIENT_ORIGIN,
 }
 
+/** Exige las variables de Algolia antes de habilitar una consulta del service. */
 export function getAlgoliaConfig() {
   const appId = process.env.ALGOLIA_APP_ID?.trim()
   const apiKey = process.env.ALGOLIA_API_KEY?.trim()

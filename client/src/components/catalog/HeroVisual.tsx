@@ -1,8 +1,5 @@
 import styles from '../../styles/catalog/HeroVisual.module.css'
 
-// Renderiza la ilustración animada principal de la sección de inicio
-// Contiene un SVG complejo con órbitas, cápsulas flotantes y partículas,
-// representando visualmente el ecosistema de productos tecnológicos de CiberNova
 function HeroVisual() {
   return (
     <div className={styles.visual} aria-hidden="true">

@@ -1,3 +1,4 @@
+/** Traduce consultas de catálogo y Search a Algolia sin asumir el mapping de DTO públicos. */
 import { getAlgoliaClient } from '../config/algolia.js'
 import { getAlgoliaConfig } from '../config/env.js'
 import type { ProductRecord } from '../types/product.js'
@@ -20,6 +21,7 @@ export interface CatalogPageResult {
   facets: Record<string, Record<string, number>>
 }
 
+/** Aplica facets, precio y réplica de ordenación, convirtiendo páginas entre base uno y cero. */
 export async function getCatalogPage(
   page: number,
   productsPerPage: number,
@@ -83,6 +85,7 @@ export async function getCatalogPage(
   }
 }
 
+/** Solicita hasta ocho sugerencias con marcas de highlight para el mapper. */
 export async function searchProducts(query: string): Promise<ProductRecord[]> {
   const { indexName } = getAlgoliaConfig()
   const response = await getAlgoliaClient().searchSingleIndex<ProductRecord>({

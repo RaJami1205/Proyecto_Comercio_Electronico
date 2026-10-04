@@ -1,10 +1,8 @@
+/** Gestiona autocomplete y Predictive Search; Recent Searches vive solo en memoria del component. */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ProductSearchResult } from '../../services/productApi'
-import { useRecentSearches } from '../../hooks/useRecentSearches'
 import styles from '../../styles/catalog/SearchBox.module.css'
 
-// Dibuja el icono de lupa utilizado para indicar la acción 
-// de búsqueda visualmente en la interfaz
 function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -14,8 +12,6 @@ function SearchIcon() {
   )
 }
 
-// Dibuja el icono de una "X" utilizado para limpiar el texto 
-// ingresado o cerrar paneles desplegables
 function ClearIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -24,19 +20,6 @@ function ClearIcon() {
   )
 }
 
-// Dibuja el icono de un reloj, representando el historial 
-// de búsquedas recientes realizadas por el usuario
-function HistoryIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
-      <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-// Define las propiedades esperadas por el componente SearchBox,
-// incluyendo el estado de la consulta, los resultados y callbacks
 interface SearchBoxProps {
   query: string
   onQueryChange: (value: string) => void
@@ -46,19 +29,18 @@ interface SearchBoxProps {
   onSelectResult: (product: ProductSearchResult) => void
 }
 
-// Procesa un string que contiene etiquetas HTML <mark> (de Algolia)
-// y lo convierte en un arreglo de elementos React para resaltarlo
+/** Convierte segmentos mark en nodos React sin insertar HTML arbitrario. */
 function renderHighlighted(value: string) {
   return value.split(/(<mark>.*?<\/mark>)/g).map((part, index) => {
     if (part.startsWith('<mark>') && part.endsWith('</mark>')) {
       return <mark key={`${part}-${index}`}>{part.slice(6, -7)}</mark>
     }
+
     return part
   })
 }
 
-// Componente principal de la búsqueda experta avanzada.
-// Gestiona el autocompletado inline, el panel de sugerencias y el historial local
+/** Coordina sugerencias, selección predictiva y teclado a partir de resultados recibidos. */
 function SearchBox({
   query,
   onQueryChange,
@@ -69,103 +51,96 @@ function SearchBox({
 }: SearchBoxProps) {
   const [activeIndex, setActiveIndex] = useState(-1)
   const [isOpen, setIsOpen] = useState(false)
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
   const wrapperRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  
-  // Referencia para saber si el usuario está borrando texto
-  // y así evitar lanzar la predicción automática accidentalmente
   const isDeletingRef = useRef(false)
+  const predictionRef = useRef<{ start: number; value: string } | null>(null)
+  const showRecents = query.trim().length === 0 && recentSearches.length > 0
+  const showPanel = isOpen && (query.trim().length > 0 || showRecents)
 
-  const { recentSearches, addRecentSearch, removeRecentSearch } = useRecentSearches()
-
-  const showPanel = isOpen && (query.trim().length > 0 || recentSearches.length > 0)
-
-  // Escucha los clics fuera del contenedor del SearchBox para 
-  // cerrar automáticamente el panel de sugerencias
   useEffect(() => {
+    /** Descarta la selección predictiva y cierra el panel ante una interacción externa. */
     function handlePointerDown(event: PointerEvent) {
       if (event.target instanceof Node && !wrapperRef.current?.contains(event.target)) {
+        predictionRef.current = null
         setIsOpen(false)
         setActiveIndex(-1)
       }
     }
+
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
   }, [])
 
-  // Limpia el índice de navegación por teclado y oculta 
-  // el panel desplegable de sugerencias y búsquedas recientes
+  /** Invalida la predicción pendiente y cierra el panel sin borrar el query. */
   function closeSuggestions() {
+    predictionRef.current = null
     setIsOpen(false)
     setActiveIndex(-1)
   }
 
-  // Agrega la consulta al historial local, notifica al componente 
-  // padre sobre la selección final y cierra el panel
+  /** Registra la búsqueda confirmada, delega el detalle y cierra las sugerencias. */
   function selectResult(product: ProductSearchResult) {
     addRecentSearch(query)
     onSelectResult(product)
     closeSuggestions()
   }
 
-  // Intercepta eventos de teclado para navegar la lista, descartar
-  // predicciones (Backspace), aceptar sugerencias (Tab) y buscar (Enter)
+  /** Conserva hasta cinco búsquedas únicas en memoria, priorizando la más reciente. */
+  function addRecentSearch(value: string) {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    setRecentSearches((current) => [
+      trimmed,
+      ...current.filter((recent) => recent.toLowerCase() !== trimmed.toLowerCase()),
+    ].slice(0, 5))
+  }
+
+  /** Distingue aceptar o borrar una predicción de navegar y confirmar sugerencias. */
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    // Si presiona Backspace o Delete y hay una predicción sombreada:
-    if (event.key === 'Backspace' || event.key === 'Delete') {
-      isDeletingRef.current = true
-      if (inputRef.current && inputRef.current.selectionStart !== inputRef.current.selectionEnd) {
-        event.preventDefault()
-        const userLength = inputRef.current.selectionStart ?? 0
-        const preservedText = query.slice(0, userLength)
-        onQueryChange(preservedText)
-        setTimeout(() => {
-          if (inputRef.current) {
-            inputRef.current.setSelectionRange(userLength, userLength)
-          }
-        }, 0)
-        return
-      }
-    } else {
-      isDeletingRef.current = false
+    const input = event.currentTarget
+    const prediction = predictionRef.current
+    const hasPredictiveSelection = prediction !== null && input.value === prediction.value &&
+      input.selectionStart === prediction.start && input.selectionEnd === prediction.value.length
+
+    isDeletingRef.current = event.key === 'Backspace' || event.key === 'Delete'
+    if (hasPredictiveSelection && isDeletingRef.current) {
+      event.preventDefault()
+      predictionRef.current = null
+      onQueryChange(input.value.slice(0, prediction.start))
+      return
+    }
+    if (hasPredictiveSelection && (event.key === 'Tab' || event.key === 'ArrowRight')) {
+      input.setSelectionRange(input.value.length, input.value.length)
+      predictionRef.current = null
+      if (event.key === 'Tab') event.preventDefault()
+      return
     }
 
-    // Aceptar la sugerencia con Flecha Derecha o Tab
-    if (event.key === 'ArrowRight' || event.key === 'Tab') {
-      if (inputRef.current && inputRef.current.selectionStart !== inputRef.current.selectionEnd) {
-        const length = inputRef.current.value.length
-        inputRef.current.setSelectionRange(length, length)
-        if (event.key === 'Tab') event.preventDefault()
-        return
-      }
-    }
-
-    if (isLoading && query.trim().length > 0) return
-
-    if (event.key === 'ArrowDown') {
+    if (event.key === 'Enter' && query.trim()) {
       event.preventDefault()
-      setIsOpen(true)
-      if (query.trim().length > 0 && results.length > 0) {
-        setActiveIndex((current) => (current + 1) % results.length)
-      }
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setIsOpen(true)
-      if (query.trim().length > 0 && results.length > 0) {
-        setActiveIndex((current) => (current <= 0 ? results.length - 1 : current - 1))
-      }
-    } else if (event.key === 'Enter') {
-      event.preventDefault()
-      if (query.trim().length === 0) return
-
-      if (showPanel && activeIndex >= 0 && results[activeIndex] && query.trim().length > 0) {
-        addRecentSearch(query)
+      if (!isLoading && showPanel && activeIndex >= 0 && results[activeIndex]) {
         selectResult(results[activeIndex])
       } else {
         addRecentSearch(query)
         closeSuggestions()
-        inputRef.current?.focus({ preventScroll: true })
       }
+      return
+    }
+
+    if (isLoading || results.length === 0 || !query.trim()) {
+      return
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setIsOpen(true)
+      setActiveIndex((current) => (current + 1) % results.length)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setIsOpen(true)
+      setActiveIndex((current) => (current <= 0 ? results.length - 1 : current - 1))
     }
   }
 
@@ -204,49 +179,52 @@ function SearchBox({
           aria-expanded={showPanel}
           aria-controls={showPanel ? 'catalog-search-results' : undefined}
           aria-autocomplete="list"
+          aria-haspopup={showRecents ? 'dialog' : 'listbox'}
           aria-activedescendant={
-            showPanel && !isLoading && results[activeIndex] ? `search-result-${activeIndex}` : undefined
+            showPanel && !showRecents && !isLoading && results[activeIndex] ? `search-result-${activeIndex}` : undefined
           }
           autoComplete="off"
-          onFocus={() => setIsOpen(true)}
-          onKeyDown={handleKeyDown}
+          onFocus={(event) => {
+            // Devolver el foco al limpiar o cerrar no debe reabrir el panel.
+            if (showRecents && !wrapperRef.current?.contains(event.relatedTarget)) {
+              setIsOpen(true)
+            }
+          }}
+          onClick={() => {
+            if (showRecents) setIsOpen(true)
+          }}
           onChange={(event) => {
             const typedValue = event.target.value
-            let newValue = typedValue
-            const originalLength = typedValue.length
+            const nativeEvent = event.nativeEvent
+            const isDeleting = isDeletingRef.current ||
+              (nativeEvent instanceof InputEvent && nativeEvent.inputType.startsWith('delete'))
+            const isComposing = nativeEvent instanceof InputEvent && nativeEvent.isComposing
+            isDeletingRef.current = false
+            predictionRef.current = null
 
-            if (!isDeletingRef.current && typedValue.length > 0) {
-              // 1. Prioriza sugerir productos del catálogo
-              const catalogMatch = results.find((r) =>
-                r.name.toLowerCase().startsWith(typedValue.toLowerCase())
-              )
-
-              let match = catalogMatch ? catalogMatch.name : undefined
-
-              // 2. Si no hay en catálogo, busca en búsquedas recientes
-              if (!match) {
-                match = recentSearches.find((search) =>
-                  search.toLowerCase().startsWith(typedValue.toLowerCase())
-                )
-              }
-
-              if (match) {
-                newValue = typedValue + match.slice(typedValue.length)
-              }
-            }
+            const match = !isDeleting && !isComposing && typedValue.length > 0
+              ? results.find((result) => result.name.toLowerCase().startsWith(typedValue.toLowerCase()))
+              : undefined
+            const newValue = match ? typedValue + match.name.slice(typedValue.length) : typedValue
 
             onQueryChange(newValue)
             setActiveIndex(-1)
             setIsOpen(true)
 
             if (newValue !== typedValue) {
+              const prediction = { start: typedValue.length, value: newValue }
+              predictionRef.current = prediction
               setTimeout(() => {
-                if (inputRef.current) {
-                  inputRef.current.setSelectionRange(originalLength, newValue.length)
+                const input = inputRef.current
+                // Descarta callbacks invalidados por escritura, cierre o pérdida de foco.
+                if (predictionRef.current === prediction && input &&
+                    document.activeElement === input && input.value === prediction.value) {
+                  input.setSelectionRange(prediction.start, prediction.value.length)
                 }
               }, 0)
             }
           }}
+          onKeyDown={handleKeyDown}
           placeholder="Buscar laptops, componentes, accesorios..."
         />
         <button
@@ -256,8 +234,8 @@ function SearchBox({
           disabled={!query}
           onClick={() => {
             onQueryChange('')
+            closeSuggestions()
             inputRef.current?.focus({ preventScroll: true })
-            setIsOpen(true)
           }}
         >
           <ClearIcon />
@@ -267,7 +245,7 @@ function SearchBox({
       {showPanel ? (
         <div className={styles.panel}>
           <div className={styles.panelHeader}>
-            <span>{query.trim().length === 0 ? 'Recientes' : 'Sugerencias'}</span>
+            <span>{showRecents ? 'Recientes' : 'Sugerencias'}</span>
             <button
               className={styles.closeSuggestions}
               type="button"
@@ -283,83 +261,83 @@ function SearchBox({
           </div>
           <div
             id="catalog-search-results"
-            role="listbox"
-            aria-label="Sugerencias de productos"
-            aria-busy={isLoading}
+            role={showRecents ? 'dialog' : 'listbox'}
+            aria-label={showRecents ? 'Búsquedas recientes' : 'Sugerencias de productos'}
+            aria-busy={!showRecents && isLoading}
           >
-            {query.trim().length === 0 && recentSearches.length > 0 ? (
-              <>
-                <div className={styles.recentHeader}>Búsquedas recientes</div>
-                <ul className={styles.recentList} role="presentation">
-                  {recentSearches.map((recent) => (
-                    <li key={recent} role="presentation">
-                      <button
-                        type="button"
-                        className={styles.recentItem}
-                        onClick={() => {
-                          onQueryChange(recent)
-                          addRecentSearch(recent)
-                          closeSuggestions()
-                        }}
-                      >
-                        <span className={styles.recentItemContent}>
-                          <HistoryIcon />
-                          <span>{recent}</span>
-                        </span>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          className={styles.removeRecent}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            removeRecentSearch(recent)
-                          }}
-                          title="Eliminar búsqueda"
-                        >
-                          <ClearIcon />
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
+            {showRecents ? (
+              <ul className={styles.recentList}>
+                {recentSearches.map((recent) => (
+                  <li key={recent} className={styles.recentItem}>
+                    <button
+                      type="button"
+                      className={styles.recentItemContent}
+                      onClick={() => {
+                        onQueryChange(recent)
+                        addRecentSearch(recent)
+                        inputRef.current?.focus({ preventScroll: true })
+                        closeSuggestions()
+                      }}
+                    >
+                      {recent}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.removeRecent}
+                      aria-label={`Eliminar búsqueda: ${recent}`}
+                      onClick={() => {
+                        setRecentSearches((current) => current.filter(
+                          (value) => value.toLowerCase() !== recent.toLowerCase(),
+                        ))
+                        inputRef.current?.focus({ preventScroll: true })
+                      }}
+                    >
+                      <ClearIcon />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <>
-                {isLoading ? <p className={styles.status}>Buscando...</p> : null}
-                {error ? <p className={styles.error}>{error}</p> : null}
-                {!isLoading && !error && results.length === 0 && query.trim().length > 0 ? (
-                  <p className={styles.status}>No encontramos resultados para "{query}".</p>
-                ) : null}
-                {!isLoading && !error && results.length > 0 && query.trim().length > 0 ? (
-                  <ul className={styles.results} role="presentation">
-                    {results.map((hit, index) => {
-                      const highlightedName = hit.highlightedName ?? hit.name
-                      return (
-                        <li key={hit.id} role="presentation">
-                          <button
-                            type="button"
-                            id={`search-result-${index}`}
-                            role="option"
-                            aria-selected={index === activeIndex}
-                            className={`${styles.resultItem} ${
-                              index === activeIndex ? styles.resultItemActive : ''
-                            }`}
-                            onMouseEnter={() => setActiveIndex(index)}
-                            onClick={() => selectResult(hit)}
-                          >
-                            <p className={styles.resultCategory}>{hit.category}</p>
-                            <p className={styles.resultName}>
-                              {renderHighlighted(highlightedName)}
-                            </p>
-                            {hit.brand ? (
-                              <p className={styles.resultBrand}>{hit.brand}</p>
-                            ) : null}
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ) : null}
+            {isLoading ? <p className={styles.status}>Buscando…</p> : null}
+
+            {error ? <p className={styles.error}>{error}</p> : null}
+
+            {!isLoading && !error && results.length === 0 ? (
+              <p className={styles.status}>No encontramos resultados para "{query}".</p>
+            ) : null}
+
+            {!isLoading && !error && results.length > 0 ? (
+              <ul className={styles.results} role="presentation">
+                {results.map((hit, index) => {
+                  const highlightedName = hit.highlightedName ?? hit.name
+
+                  return (
+                    <li key={hit.id} role="presentation">
+                      <button
+                        type="button"
+                        id={`search-result-${index}`}
+                        role="option"
+                        aria-selected={index === activeIndex}
+                        className={`${styles.resultItem} ${
+                          index === activeIndex ? styles.resultItemActive : ''
+                        }`}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => selectResult(hit)}
+                      >
+                        <p className={styles.resultCategory}>{hit.category}</p>
+                        <p className={styles.resultName}>
+                          {renderHighlighted(highlightedName)}
+                        </p>
+                        {hit.brand ? (
+                          <p className={styles.resultBrand}>{hit.brand}</p>
+                        ) : null}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : null}
               </>
             )}
           </div>

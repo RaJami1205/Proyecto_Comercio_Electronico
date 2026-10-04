@@ -1,16 +1,13 @@
+/** Conecta el Search con la consulta del catálogo y la selección de paneles de filtros. */
 import { useEffect } from 'react'
 
 import styles from '../../styles/catalog/CatalogToolbar.module.css'
-import type { Product } from '../../data/products'
+import type { Product } from '../../types/product'
 import { useProductSearch } from '../../hooks/useProductSearch'
 import SearchBox from './SearchBox'
 
-// Define los estados posibles para los paneles desplegables
-// de filtrado y ordenamiento en la barra de herramientas
 export type ActivePanel = 'filters' | 'categories' | 'price' | null
 
-// Dibuja el icono representativo para el botón del panel
-// de filtrado por marcas en la interfaz
 function FilterIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true">
@@ -19,8 +16,6 @@ function FilterIcon() {
   )
 }
 
-// Dibuja el icono de cuadrícula representativo para el botón
-// del panel de categorías de productos
 function GridIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true">
@@ -32,8 +27,6 @@ function GridIcon() {
   )
 }
 
-// Dibuja el icono representativo para el botón del panel
-// de configuración de rangos de precio y ordenamiento
 function SortIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true">
@@ -48,8 +41,6 @@ function SortIcon() {
   )
 }
 
-// Define las propiedades esperadas por CatalogToolbar,
-// incluyendo el total de productos encontrados, estado de paneles y callbacks
 interface CatalogToolbarProps {
   productCount: number
   activePanel: ActivePanel
@@ -58,9 +49,7 @@ interface CatalogToolbarProps {
   onProductSelect: (product: Product) => void
 }
 
-// Barra de herramientas que agrupa el buscador avanzado y los controles
-// para alternar la visibilidad de los distintos paneles de filtrado.
-// Aplica un retardo (debounce) para optimizar la búsqueda en tiempo real
+/** Coordina useProductSearch y propaga el query al catálogo con debounce. */
 function CatalogToolbar({
   productCount,
   activePanel,
@@ -70,15 +59,12 @@ function CatalogToolbar({
 }: CatalogToolbarProps) {
   const { query, setQuery, results, isLoading, error } = useProductSearch()
 
-  // Efecto que aplica un retraso (debounce) de 250ms a las consultas
-  // de búsqueda para no sobrecargar el servidor con peticiones al teclear
   useEffect(() => {
     const timeout = setTimeout(() => onSearchChange(query.trim()), 250)
     return () => clearTimeout(timeout)
   }, [query, onSearchChange])
 
-  // Función auxiliar para abrir o cerrar un panel específico
-  // verificando si ya se encuentra activo
+  /** Alterna el panel solicitado y permite cerrar el panel ya activo. */
   function handlePanelClick(panel: ActivePanel) {
     onTogglePanel(activePanel === panel ? null : panel)
   }

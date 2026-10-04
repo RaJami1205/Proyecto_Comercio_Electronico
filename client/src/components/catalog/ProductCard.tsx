@@ -1,25 +1,21 @@
-import type { Product } from '../../data/products'
+/** Integra cada producto del catálogo con Quick View y la API pública del Cart. */
+import type { Product } from '../../types/product'
+import { useCart } from '../../hooks/useCart'
 import styles from '../../styles/catalog/ProductCard.module.css'
 
-// Define las propiedades esperadas por la tarjeta de producto,
-// incluyendo los datos del producto a mostrar y la función
-// a ejecutar cuando el usuario selecciona la tarjeta
 interface ProductCardProps {
   product: Product
+  onProductAdded: (product: Pick<Product, 'id' | 'name'>) => void
+  addedProductId?: string
   onProductSelect: (product: Product) => void
 }
 
-// Instancia un formateador de moneda para convertir
-// valores numéricos a Colones Costarricenses (CRC)
-// sin mostrar decimales, según el requerimiento del proyecto
 const priceFormatter = new Intl.NumberFormat('es-CR', {
   style: 'currency',
   currency: 'CRC',
   maximumFractionDigits: 0,
 })
 
-// Dibuja el icono vectorial de un carrito de compras
-// utilizado en el botón de acción principal de la tarjeta
 function CartIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -30,11 +26,21 @@ function CartIcon() {
   )
 }
 
-// Renderiza la tarjeta individual de un producto del catálogo
-// Muestra su imagen, precio formateado, estado de inventario
-// y maneja la interacción para ver detalles o simular la compra
-function ProductCard({ product, onProductSelect }: ProductCardProps) {
+/** Presenta disponibilidad y precio, delegando detalle y feedback al owner. */
+function ProductCard({ product, onProductSelect, onProductAdded, addedProductId }: ProductCardProps) {
+  const { addItem } = useCart()
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
+
+  /** Envía el snapshot mínimo al Cart; quantity y duplicados quedan a cargo del reducer. */
+  function handleAddToCart() {
+    addItem({
+      productId: product.id,
+      name: product.name,
+      price: product.price,
+      image: product.image,
+    })
+    onProductAdded({ id: product.id, name: product.name })
+  }
 
   return (
     <article className={styles.card}>
@@ -55,15 +61,18 @@ function ProductCard({ product, onProductSelect }: ProductCardProps) {
         <div className={styles.purchaseRow}>
           <p className={styles.price}>{priceFormatter.format(product.price)}</p>
           <button
-            className={styles.cartButton}
+            className={`${styles.cartButton} ${
+              addedProductId === product.id ? styles.cartButtonAdded : ''
+            }`}
             type="button"
             disabled={!product.inStock}
             aria-label={
               product.inStock
-                ? `Agregar ${product.name} al carrito (disponible próximamente)`
+                ? `Agregar ${product.name} al carrito`
                 : `${product.name} está agotado`
             }
-            title={product.inStock ? 'Carrito disponible próximamente' : 'Producto agotado'}
+            title={product.inStock ? `Agregar ${product.name} al carrito` : 'Producto agotado'}
+            onClick={handleAddToCart}
           >
             <CartIcon />
           </button>

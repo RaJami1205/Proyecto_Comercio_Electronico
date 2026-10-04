@@ -1,3 +1,4 @@
+/** Encapsula las requests de autocomplete a productApi y su estado de carga. */
 import { useEffect, useRef, useState } from 'react'
 
 import {
@@ -5,13 +6,8 @@ import {
   type ProductSearchResult,
 } from '../services/productApi'
 
-// Define el tiempo de espera en milisegundos para retrasar la búsqueda
-// a la API, optimizando el rendimiento mientras el usuario teclea
 const DEBOUNCE_MS = 200
 
-// Define la interfaz del resultado del hook, exponiendo el estado
-// de la consulta, los resultados autocompletados, indicadores
-// de carga y la función para actualizar la consulta de forma segura
 interface UseProductSearchResult {
   query: string
   setQuery: (value: string) => void
@@ -20,9 +16,7 @@ interface UseProductSearchResult {
   error: string | null
 }
 
-// Hook que maneja el autocompletado en tiempo real en la barra de búsqueda
-// Implementa "debouncing" para reducir llamadas al servidor y rastrea el ID
-// de cada petición (requestIdRef) para ignorar respuestas de solicitudes antiguas
+/** Aplica debounce y descarta respuestas de queries reemplazados mediante un identificador. */
 export function useProductSearch(): UseProductSearchResult {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ProductSearchResult[]>([])
@@ -31,8 +25,6 @@ export function useProductSearch(): UseProductSearchResult {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const requestIdRef = useRef(0)
 
-  // Dispara de forma asíncrona y retrasada la petición al catálogo
-  // cada vez que el valor del query cambia
   useEffect(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current)
@@ -72,8 +64,7 @@ export function useProductSearch(): UseProductSearchResult {
     }
   }, [query])
 
-  // Actualiza el estado local de la consulta de forma segura,
-  // incrementando el ID de petición y limpiando errores previos
+  /** Invalida respuestas anteriores y limpia resultados cuando el query queda vacío. */
   function updateQuery(value: string) {
     requestIdRef.current += 1
     setQuery(value)

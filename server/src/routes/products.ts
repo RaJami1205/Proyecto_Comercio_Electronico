@@ -1,3 +1,4 @@
+/** Asocia endpoints GET del catálogo, Search y categorías con sus controllers. */
 import { Router } from 'express'
 
 import {

@@ -1,4 +1,5 @@
-import type { Product } from '../data/products'
+/** Centraliza el acceso HTTP del cliente al catálogo; Algolia y sus credentials permanecen en el server. */
+import type { Product } from '../types/product'
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || ''
 const API_BASE_URL = configuredApiBaseUrl.replace(/\/+$/, '')
@@ -31,6 +32,7 @@ interface ProductSearchResponse {
   products: ProductSearchResult[]
 }
 
+/** Resuelve la URL y rechaza responses no exitosas; el tipo genérico no valida el JSON en runtime. */
 async function request<T>(path: string): Promise<T> {
   const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`
 
@@ -47,6 +49,7 @@ async function request<T>(path: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
+/** Serializa página, query y filtros soportados para consultar el catálogo por HTTP. */
 export function getCatalogPage(
   page: number,
   productsPerPage: number,
@@ -81,6 +84,7 @@ export function getCatalogPage(
   return request<CatalogPageResponse>(`/api/products?${params.toString()}`)
 }
 
+/** Recupera sugerencias y highlights del endpoint de Search sin consultar Algolia directamente. */
 export async function searchProducts(query: string): Promise<ProductSearchResult[]> {
   const params = new URLSearchParams({ q: query })
   const response = await request<ProductSearchResponse>(
@@ -95,6 +99,7 @@ export interface CategoryTreeNode {
   children: CategoryTreeNode[]
 }
 
+/** Recupera la jerarquía que utiliza el selector de categorías del catálogo. */
 export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
   const response = await request<{ tree: CategoryTreeNode[] }>('/api/products/categories/tree')
   return response.tree

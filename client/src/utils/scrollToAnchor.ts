@@ -1,21 +1,25 @@
+/** Centraliza el desplazamiento por anclas respetando el espacio del Header y reduced motion. */
 import type { MouseEvent } from 'react'
 
 const SCROLL_DURATION_MS = 800
 
 let activeAnimationFrame: number | null = null
 
+/** Suaviza la aceleración y desaceleración del desplazamiento animado. */
 function easeInOutCubic(progress: number) {
   return progress < 0.5
     ? 4 * progress * progress * progress
     : 1 - Math.pow(-2 * progress + 2, 3) / 2
 }
 
+/** Calcula el destino descontando scroll-margin-top y evita posiciones negativas. */
 function getTargetScrollPosition(target: HTMLElement) {
   const scrollMarginTop = Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0
 
   return Math.max(0, target.getBoundingClientRect().top + window.scrollY - scrollMarginTop)
 }
 
+/** Reemplaza la animación anterior y respeta la preferencia de movimiento reducido. */
 export function scrollToElement(target: HTMLElement) {
   if (activeAnimationFrame !== null) {
     cancelAnimationFrame(activeAnimationFrame)
@@ -36,6 +40,7 @@ export function scrollToElement(target: HTMLElement) {
 
   const startTime = performance.now()
 
+  /** Avanza la animación hasta el destino usando el tiempo transcurrido. */
   function animateScroll(currentTime: number) {
     const progress = Math.min((currentTime - startTime) / SCROLL_DURATION_MS, 1)
     const easedProgress = easeInOutCubic(progress)
@@ -52,6 +57,7 @@ export function scrollToElement(target: HTMLElement) {
   activeAnimationFrame = requestAnimationFrame(animateScroll)
 }
 
+/** Intercepta anclas internas existentes preservando clicks modificados y actualizando History API. */
 export function handleAnchorNavigation(event: MouseEvent<HTMLAnchorElement>) {
   if (
     event.defaultPrevented ||

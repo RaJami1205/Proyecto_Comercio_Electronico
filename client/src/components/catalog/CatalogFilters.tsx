@@ -1,3 +1,4 @@
+/** Presenta filtros controlados por la página usando facets y el árbol de categorías de la API. */
 import { useState } from 'react'
 
 import { useCategoryTree } from '../../hooks/useCategoryTree'
@@ -6,10 +7,6 @@ import type { CatalogFilters as CatalogFiltersState, SortOption } from '../../se
 import type { ActivePanel } from './CatalogToolbar'
 import styles from '../../styles/catalog/CatalogFilters.module.css'
 
-
-// Define las propiedades del componente CatalogFilters,
-// incluyendo los conteos de facetas de Algolia, el estado actual,
-// la función para actualizarlos y el panel que está visible
 interface CatalogFiltersProps {
   facets: Record<string, Record<string, number>>
   filters: CatalogFiltersState
@@ -18,9 +15,6 @@ interface CatalogFiltersProps {
   activePanel: ActivePanel
 }
 
-// Lista de las marcas principales que se mostrarán por defecto
-// en el panel de marcas cuando el usuario no haya seleccionado
-// ninguna categoría específica
 const LEADING_BRANDS = [
   'Samsung',
   'ASUS',
@@ -34,16 +28,12 @@ const LEADING_BRANDS = [
   'Logitech',
 ]
 
-// Función recursiva que extrae y agrupa los nombres de todas
-// las subcategorías (nodos hijos) que pertenecen a un nodo de
-// categoría padre dentro del árbol
+/** Obtiene los descendientes que deben deseleccionarse al retirar una categoría padre. */
 function collectDescendantNames(node: CategoryTreeNode): string[] {
   return node.children.flatMap((child) => [child.name, ...collectDescendantNames(child)])
 }
 
-// Renderiza el árbol jerárquico de categorías con checkboxes
-// Filtra dinámicamente las categorías que no tienen resultados
-// y gestiona la selección recursiva de categorías y subcategorías
+/** Presenta categorías jerárquicas según facets y selecciones activas. */
 function CategoryTree({
   facetCounts,
   values,
@@ -55,10 +45,12 @@ function CategoryTree({
 }) {
   const { tree, isLoading } = useCategoryTree()
 
+  /** Conserva categorías disponibles o seleccionadas para permitir deshacer el filtro. */
   function isVisible(name: string): boolean {
     return facetCounts[name] !== undefined || values.includes(name)
   }
 
+  /** Selecciona una categoría o retira también sus descendientes al desmarcarla. */
   function toggleSelect(node: CategoryTreeNode, checked: boolean) {
     if (checked) {
       onChange([...values, node.name])
@@ -68,6 +60,7 @@ function CategoryTree({
     onChange(values.filter((value) => value !== node.name && !descendants.includes(value)))
   }
 
+  /** Renderiza recursivamente las ramas visibles sin perder su jerarquía. */
   function renderNodes(nodes: CategoryTreeNode[]) {
     return nodes
       .filter((node) => isVisible(node.name))
@@ -106,9 +99,7 @@ function CategoryTree({
   )
 }
 
-// Muestra la lista de marcas disponibles para filtrar
-// Si no hay categoría seleccionada, muestra solo las marcas principales;
-// de lo contrario, lista todas las marcas relevantes ordenadas alfabéticamente
+/** Restringe las marcas iniciales a las destacadas y usa facets al seleccionar categoría. */
 function BrandFilter({
   facets,
   categorySelected,
@@ -161,9 +152,7 @@ function BrandFilter({
   )
 }
 
-// Componente orquestador que renderiza el panel de filtros activo
-// (Marcas, Categorías o Precio/Orden). Maneja el estado temporal
-// de los rangos de precio y la lógica para limpiar todos los filtros
+/** Mantiene el precio pendiente separado de los filtros aplicados y muestra el panel activo. */
 function CatalogFilters({
   facets,
   filters,
@@ -186,10 +175,12 @@ function CatalogFilters({
 
   if (!activePanel) return null
 
+  /** Comunica un cambio parcial conservando los filtros ajenos al panel. */
   function update(patch: Partial<CatalogFiltersState>) {
     onChange({ ...filters, ...patch })
   }
 
+  /** Confirma el rango escrito antes de enviarlo a la página. */
   function handleApplyPrice() {
     update({
       minPrice: pendingMinPrice.trim(),
@@ -197,6 +188,7 @@ function CatalogFilters({
     })
   }
 
+  /** Limpia valores pendientes y filtros aplicados, restaurando la relevancia. */
   function clearAll() {
     setPendingMinPrice('')
     setPendingMaxPrice('')

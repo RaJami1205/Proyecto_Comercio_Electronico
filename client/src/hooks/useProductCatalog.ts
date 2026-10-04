@@ -1,11 +1,9 @@
+/** Coordina datos, facets y estado de carga del catálogo a través de productApi. */
 import { useEffect, useState } from 'react'
 
-import type { Product } from '../data/products'
+import type { Product } from '../types/product'
 import { getCatalogPage, type CatalogFilters } from '../services/productApi'
 
-// Define la estructura expuesta por el hook para el componente consumidor,
-// incluyendo productos, metadatos de paginación, facetas dinámicas
-// y el estado de carga o error actual
 interface UseProductCatalogResult {
   products: Product[]
   totalPages: number
@@ -15,9 +13,6 @@ interface UseProductCatalogResult {
   error: string | null
 }
 
-// Interfaz interna que maneja el estado de la petición, guardando
-// los parámetros de la última carga exitosa (página, query, filtros)
-// para calcular correctamente la bandera de `isLoading`
 interface ProductCatalogState {
   products: Product[]
   totalPages: number
@@ -30,9 +25,7 @@ interface ProductCatalogState {
   error: string | null
 }
 
-// Hook principal que orquesta la búsqueda y el filtrado del catálogo
-// Sincroniza la paginación, filtros y texto de búsqueda con la API,
-// gestionando estados de carga y cancelando peticiones obsoletas
+/** Consulta por página, filtros y query e ignora respuestas de efectos cancelados. */
 export function useProductCatalog(
   page: number,
   pageSize: number,
@@ -50,9 +43,6 @@ export function useProductCatalog(
     loadedFilters: null,
     error: null,
   })
-
-  // Serializa los filtros complejos a string para usarlos 
-  // de forma segura como dependencia dentro del useEffect.
   const filtersKey = JSON.stringify(filters) ?? ''
 
   useEffect(() => {
@@ -92,8 +82,6 @@ export function useProductCatalog(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize, filtersKey, query])
 
-  // Determina si los parámetros actuales (página, query, filtros) 
-  // difieren de los últimos datos cargados exitosamente para mostrar el loader
   const isLoading = state.loadedPage !== page || state.loadedPageSize !== pageSize
     || state.loadedQuery !== query || state.loadedFilters !== filtersKey
 

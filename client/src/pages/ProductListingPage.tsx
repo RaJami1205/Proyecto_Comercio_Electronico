@@ -1,5 +1,7 @@
-import { useCallback, useRef, useState } from 'react'
+/** Coordina catálogo y Cart por History API, conservando montado el catálogo oculto. */
+import { useCallback, useEffect, useRef, useState } from 'react'
 
+import CartFeedbackToast from '../components/catalog/CartFeedbackToast'
 import CatalogFilters from '../components/catalog/CatalogFilters'
 import CatalogHero from '../components/catalog/CatalogHero'
 import CatalogToolbar, { type ActivePanel } from '../components/catalog/CatalogToolbar'
@@ -8,12 +10,19 @@ import ProductGrid from '../components/catalog/ProductGrid'
 import ProductQuickView from '../components/catalog/ProductQuickView'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
-import type { Product } from '../data/products'
+import CartPage from './CartPage'
+import type { Product } from '../types/product'
 import { useCatalogPagination } from '../hooks/useCatalogPagination'
 import { useProductCatalog } from '../hooks/useProductCatalog'
 import type { CatalogFilters as CatalogFiltersState } from '../services/productApi'
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
+
+interface CartFeedback {
+  productId: string
+  productName: string
+  source: 'catalog' | 'quick-view'
+}
 
 const EMPTY_FILTERS: CatalogFiltersState = {
   categories: [],
@@ -23,31 +32,94 @@ const EMPTY_FILTERS: CatalogFiltersState = {
   maxPrice: '',
 }
 
+/** Posee filtros, query, selección de Quick View y feedback temporal de presentación. */
 function ProductListingPage() {
+  const [isCartPage, setIsCartPage] = useState(() => window.location.hash === '#cart-page')
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
   const [catalogQuery, setCatalogQuery] = useState('')
   
-  // Reemplazamos 'isFiltersOpen' por 'activePanel'
+  // Un único panel activo evita desplegar grupos de filtros simultáneamente.
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
   
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  // El feedback es presentación temporal; no forma parte del dominio del Cart.
+  const [feedback, setFeedback] = useState<CartFeedback | null>(null)
+  const feedbackTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => () => {
+    if (feedbackTimeoutRef.current !== null) window.clearTimeout(feedbackTimeoutRef.current)
+  }, [])
+
+  /** Reemplaza el feedback anterior y reinicia su timer para mantener un solo aviso. */
+  function showCartFeedback(product: Pick<Product, 'id' | 'name'>, source: CartFeedback['source']) {
+    if (feedbackTimeoutRef.current !== null) window.clearTimeout(feedbackTimeoutRef.current)
+    setFeedback({ productId: product.id, productName: product.name, source })
+    feedbackTimeoutRef.current = window.setTimeout(() => {
+      setFeedback(null)
+      feedbackTimeoutRef.current = null
+    }, 2500)
+  }
+
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
   const { products, totalPages, nbHits, facets, isLoading, error } =
     useProductCatalog(currentPage, pageSize, filters, catalogQuery)
 
+  useEffect(() => {
+    /** Sincroniza la vista visible con los cambios de hash y el historial del navegador. */
+    function syncPageWithLocation() {
+      const shouldShowCart = window.location.hash === '#cart-page'
+      setIsCartPage(shouldShowCart)
+
+      if (!shouldShowCart) {
+        window.scrollTo({ top: 0, behavior: 'auto' })
+      }
+    }
+
+    window.addEventListener('popstate', syncPageWithLocation)
+    window.addEventListener('hashchange', syncPageWithLocation)
+
+    return () => {
+      window.removeEventListener('popstate', syncPageWithLocation)
+      window.removeEventListener('hashchange', syncPageWithLocation)
+    }
+  }, [])
+
+  /** Abre la vista Cart sin desmontar el estado de búsqueda del catálogo. */
+  function navigateToCart() {
+    if (window.location.hash !== '#cart-page') {
+      window.history.pushState({ view: 'cart' }, '', '#cart-page')
+    }
+    setIsCartPage(true)
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+
+  /** Regresa al catálogo conservando su estado y retirando el hash del Cart. */
+  function navigateToCatalog() {
+    window.history.pushState(
+      { view: 'catalog' },
+      '',
+      `${window.location.pathname}${window.location.search}`,
+    )
+    setIsCartPage(false)
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+
+  /** Reinicia la paginación únicamente cuando cambia el query del catálogo. */
   const handleSearchChange = useCallback((query: string) => {
     if (query === catalogQuery) return
     setCatalogQuery(query)
     setCurrentPage(1)
   }, [catalogQuery, setCurrentPage])
 
+  /** Aplica filtros y vuelve a la primera página para consultar resultados válidos. */
   function handleFiltersChange(nextFilters: CatalogFiltersState) {
     setFilters(nextFilters)
     setCurrentPage(1)
   }
 
+  /** Cambia de página y desplaza el viewport al inicio de resultados tras el render. */
   function handleDirectionalPageChange(page: number) {
     setCurrentPage(page)
 
@@ -59,8 +131,11 @@ function ProductListingPage() {
   }
 
   return (
-    <div className={styles.page}>
-      <Header />
+    <>
+    {/* Mantener mounted conserva búsqueda, historial y filtros; hidden/inert impiden interacción. */}
+    <div className={styles.page} hidden={isCartPage} inert={isCartPage}>
+      {!selectedProduct && feedback?.source === 'catalog' ? <CartFeedbackToast productName={feedback.productName} /> : null}
+      <Header onCartClick={navigateToCart} />
 
       <main>
         <CatalogHero />
@@ -110,6 +185,8 @@ function ProductListingPage() {
                 <ProductGrid
                   key={currentPage}
                   products={products}
+                  onProductAdded={(product) => showCartFeedback(product, 'catalog')}
+                  addedProductId={feedback?.productId}
                   currentPage={currentPage}
                   totalPages={totalPages}
                   onProductSelect={setSelectedProduct}
@@ -131,17 +208,29 @@ function ProductListingPage() {
             </div>
           </div>
         </section>
+
       </main>
 
       <Footer />
 
-      {selectedProduct ? (
+      {selectedProduct && !isCartPage ? (
         <ProductQuickView
           product={selectedProduct}
+          onProductAdded={(product) => showCartFeedback(product, 'quick-view')}
+          addedProductId={feedback?.productId}
+          feedbackProductName={feedback?.source === 'quick-view' ? feedback.productName : undefined}
           onClose={() => setSelectedProduct(null)}
         />
       ) : null}
     </div>
+    {isCartPage ? (
+      <CartPage
+        onCartClick={navigateToCart}
+        onContinueShopping={navigateToCatalog}
+        feedbackProductName={feedback?.source === 'catalog' ? feedback.productName : undefined}
+      />
+    ) : null}
+    </>
   )
 }
 

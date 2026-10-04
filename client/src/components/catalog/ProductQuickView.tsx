@@ -1,27 +1,25 @@
+/** Encapsula el detalle modal del Product y su integración con useCart. */
 import { useEffect, useRef, type MouseEvent } from 'react'
 
-import type { Product } from '../../data/products'
+import CartFeedbackToast from './CartFeedbackToast'
+import { useCart } from '../../hooks/useCart'
+import type { Product } from '../../types/product'
 import styles from '../../styles/catalog/ProductQuickView.module.css'
 
-// Define las propiedades para la vista rápida de un producto,
-// recibiendo los datos del producto seleccionado y la función
-// para cerrar el modal o cuadro de diálogo
 interface ProductQuickViewProps {
   product: Product
+  onProductAdded: (product: Pick<Product, 'id' | 'name'>) => void
+  addedProductId?: string
   onClose: () => void
+  feedbackProductName?: string
 }
 
-// Instancia un formateador de moneda para convertir
-// valores numéricos a Colones Costarricenses (CRC)
-// sin mostrar decimales, según el requerimiento del proyecto
 const priceFormatter = new Intl.NumberFormat('es-CR', {
   style: 'currency',
   currency: 'CRC',
   maximumFractionDigits: 0,
 })
 
-// Dibuja el icono vectorial de una "X"
-// utilizado en el botón para cerrar la vista rápida
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -30,8 +28,6 @@ function CloseIcon() {
   )
 }
 
-// Dibuja el icono vectorial de un carrito de compras
-// utilizado en el botón de acción para simular la compra
 function CartIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -42,10 +38,9 @@ function CartIcon() {
   )
 }
 
-// Renderiza un modal detallado del producto usando
-// Bloquea el scroll del fondo, atrapa el foco por accesibilidad
-// y permite cerrar la vista con la tecla Escape o un clic fuera
-function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
+/** Gestiona el dialog, el foco y el bloqueo de scroll mientras muestra el detalle. */
+function ProductQuickView({ product, onClose, onProductAdded, addedProductId, feedbackProductName }: ProductQuickViewProps) {
+  const { addItem } = useCart()
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
@@ -53,6 +48,17 @@ function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
   const titleId = `quick-view-title-${product.id}`
   const descriptionId = `quick-view-description-${product.id}`
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
+
+  /** Agrega el snapshot del Product y notifica a la página para mostrar feedback temporal. */
+  function handleAddToCart() {
+    addItem({
+      productId: product.id,
+      name: product.name,
+      price: product.price,
+      image: product.image,
+    })
+    onProductAdded({ id: product.id, name: product.name })
+  }
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -107,6 +113,7 @@ function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
   }, [])
 
   useEffect(() => {
+    /** Delega el cierre del modal al owner cuando se pulsa Escape. */
     function handleEscapeKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -119,6 +126,7 @@ function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
     return () => document.removeEventListener('keydown', handleEscapeKey)
   }, [onClose])
 
+  /** Cierra solo al pulsar el fondo del dialog, sin interceptar su contenido. */
   function handleBackdropClick(event: MouseEvent<HTMLDialogElement>) {
     if (event.target === event.currentTarget) {
       onClose()
@@ -137,6 +145,7 @@ function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
         onClose()
       }}
     >
+      {feedbackProductName ? <CartFeedbackToast productName={feedbackProductName} /> : null}
       <article className={styles.surface}>
         <button
           ref={closeButtonRef}
@@ -185,23 +194,25 @@ function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
             </dl>
           </section>
 
-          <div className={styles.actions}>
-            <button
-              className={styles.cartButton}
-              type="button"
-              disabled={!product.inStock}
-              aria-label={
-                product.inStock
-                  ? `Agregar ${product.name} al carrito (disponible próximamente)`
-                  : `${product.name} está agotado`
-              }
-              title={product.inStock ? 'Carrito disponible próximamente' : 'Producto agotado'}
-            >
-              <CartIcon />
-              {product.inStock ? 'Agregar al carrito' : 'Agotado'}
-            </button>
-            <p>Carrito disponible próximamente</p>
-          </div>
+            <div className={styles.actions}>
+              <button
+                className={`${styles.cartButton} ${
+                  addedProductId === product.id ? styles.cartButtonAdded : ''
+                }`}
+                type="button"
+                disabled={!product.inStock}
+                aria-label={
+                  product.inStock
+                    ? `Agregar ${product.name} al carrito`
+                    : `${product.name} está agotado`
+                }
+                title={product.inStock ? `Agregar ${product.name} al carrito` : 'Producto agotado'}
+                onClick={handleAddToCart}
+              >
+                <CartIcon />
+                {product.inStock ? 'Agregar al carrito' : 'Agotado'}
+              </button>
+            </div>
         </div>
       </article>
     </dialog>

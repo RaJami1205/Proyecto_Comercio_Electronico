@@ -1,9 +1,6 @@
 import HeroVisual from './HeroVisual'
 import styles from '../../styles/catalog/CatalogHero.module.css'
 
-// Componente principal de la sección de inicio (Hero). 
-// Muestra el título principal del proyecto "CiberNova", una breve descripción 
-// promocional y el componente visual animado (HeroVisual) de la plataforma.
 function CatalogHero() {
   return (
     <section className={styles.hero} id="top" aria-labelledby="hero-title">

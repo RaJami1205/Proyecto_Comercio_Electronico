@@ -1,21 +1,21 @@
-import type { Product } from '../../data/products'
+/** Organiza los resultados paginados y propaga las interacciones hacia sus cards. */
+import type { Product } from '../../types/product'
 import styles from '../../styles/catalog/ProductGrid.module.css'
 import ProductCard from './ProductCard'
 
-// Define las propiedades esperadas por la cuadrícula de productos,
-// incluyendo el arreglo de productos a mostrar, estado de paginación
-// y la función callback al seleccionar un producto
 interface ProductGridProps {
+  onProductAdded: (product: Pick<Product, 'id' | 'name'>) => void
+  addedProductId?: string
   products: Product[]
   currentPage: number
   totalPages: number
   onProductSelect: (product: Product) => void
 }
 
-// Renderiza una cuadrícula estructurada de tarjetas de productos
-// Se encarga de iterar sobre el arreglo de resultados y pasar
-// los datos correspondientes a cada componente ProductCard individual
+/** Renderiza las cards con callbacks de selección y feedback compartidos. */
 function ProductGrid({
+  onProductAdded,
+  addedProductId,
   products,
   currentPage,
   totalPages,
@@ -32,6 +32,8 @@ function ProductGrid({
           <ProductCard
             key={product.id}
             product={product}
+            onProductAdded={onProductAdded}
+            addedProductId={addedProductId}
             onProductSelect={onProductSelect}
           />
         ))}

@@ -1,3 +1,4 @@
+/** Inicia el servidor HTTP usando la aplicación Express y la configuración server-side. */
 import app from './app.js'
 import { serverConfig } from './config/env.js'
 
