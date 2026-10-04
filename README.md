@@ -1,6 +1,6 @@
 <div align="center">
 
-# CiberNova
+# 💻 CiberNova
 
 ### E-Commerce de Tecnología, Computación y Electrónica
 
@@ -37,7 +37,7 @@
 
 ---
 
-## CiberNova
+# 🚀 CiberNova
 
 **CiberNova** es una aplicación web de comercio electrónico enfocada en la venta de productos de tecnología, computación y electrónica.
 
@@ -49,34 +49,34 @@ La arquitectura separa claramente el frontend y backend, manteniendo las credenc
 
 ---
 
-## Contenido
+# 📑 Contenido
 
-- [Características principales](#características-principales)
-- [Experiencia de compra](#experiencia-de-compra)
-- [Tecnologías](#tecnologías)
-- [Arquitectura](#arquitectura)
-- [Arquitectura del carrito](#arquitectura-del-carrito)
-- [Búsqueda y catálogo](#búsqueda-y-catálogo)
-- [Diseño responsive](#diseño-responsive)
-- [Estructura del proyecto](#estructura-del-proyecto)
-- [Requisitos](#requisitos)
-- [Clonar el proyecto](#clonar-el-proyecto)
-- [Instalación](#instalación)
-- [Variables de entorno](#variables-de-entorno)
-- [Ejecutar localmente](#ejecutar-localmente)
-- [Comandos principales](#comandos-principales)
-- [Algolia y dataset](#algolia-y-dataset)
-- [Validaciones](#validaciones)
-- [Git y flujo de desarrollo](#git-y-flujo-de-desarrollo)
-- [Despliegue](#despliegue)
-- [Seguridad](#seguridad)
-- [Estado actual](#estado-actual)
-- [Autores](#autores)
-- [Licencia](#licencia)
+- [Características principales](#-características-principales)
+- [Experiencia de compra](#-experiencia-de-compra)
+- [Tecnologías](#-tecnologías)
+- [Arquitectura](#-arquitectura)
+- [Arquitectura del carrito](#-arquitectura-del-carrito)
+- [Búsqueda y catálogo](#-búsqueda-y-catálogo)
+- [Diseño responsive](#-diseño-responsive)
+- [Estructura del proyecto](#-estructura-del-proyecto)
+- [Requisitos](#-requisitos)
+- [Clonar el proyecto](#-clonar-el-proyecto)
+- [Instalación](#-instalación)
+- [Variables de entorno](#-variables-de-entorno)
+- [Ejecutar localmente](#-ejecutar-localmente)
+- [Comandos principales](#-comandos-principales)
+- [Algolia y dataset](#-algolia-y-dataset)
+- [Validaciones](#-validaciones)
+- [Git y flujo de desarrollo](#-git-y-flujo-de-desarrollo)
+- [Despliegue](#-despliegue)
+- [Seguridad](#-seguridad)
+- [Estado actual](#-estado-actual)
+- [Autores](#-autores)
+- [Licencia](#-licencia)
 
 ---
 
-# Características principales
+# ✨ Características principales
 
 CiberNova incorpora actualmente las principales funcionalidades de un E-Commerce B2C:
 
@@ -131,7 +131,7 @@ CiberNova incorpora actualmente las principales funcionalidades de un E-Commerce
 
 ---
 
-# Experiencia de compra
+# 🛒 Experiencia de compra
 
 El flujo principal de usuario es:
 
@@ -170,7 +170,7 @@ La regla de envío gratuito se evalúa utilizando el **subtotal antes del IVA**.
 
 ---
 
-# Tecnologías
+# 🧰 Tecnologías
 
 ## Frontend
 
@@ -188,8 +188,6 @@ La regla de envío gratuito se evalúa utilizando el **subtotal antes del IVA**.
 - Local Storage
 - `Intl.NumberFormat`
 
----
-
 ## Backend
 
 ![Node.js](https://img.shields.io/badge/Node.js-Runtime-339933?style=flat-square&logo=node.js&logoColor=white)
@@ -202,8 +200,6 @@ La regla de envío gratuito se evalúa utilizando el **subtotal antes del IVA**.
 - Algolia JavaScript API Client
 - CORS
 - dotenv
-
----
 
 ## Desarrollo y DevOps
 
@@ -222,7 +218,7 @@ La regla de envío gratuito se evalúa utilizando el **subtotal antes del IVA**.
 
 ---
 
-# Arquitectura
+# 🏗️ Arquitectura
 
 CiberNova utiliza una arquitectura separada entre cliente y servidor.
 
@@ -276,8 +272,6 @@ React
 
 Esta separación evita que el frontend tenga acceso directo a credenciales privadas de Algolia.
 
----
-
 ## Responsabilidades del Client
 
 El directorio `client/` contiene:
@@ -293,8 +287,6 @@ El directorio `client/` contiene:
 - persistencia del carrito;
 - cálculos derivados;
 - responsive design.
-
----
 
 ## Responsabilidades del Server
 
@@ -313,7 +305,7 @@ El directorio `server/` contiene:
 
 ---
 
-# Arquitectura del carrito
+# 🛍️ Arquitectura del carrito
 
 El Shopping Cart mantiene una única fuente de verdad para sus productos.
 
@@ -366,8 +358,6 @@ total
 
 Esto evita inconsistencias entre el carrito y el resumen de compra.
 
----
-
 ## Persistencia del carrito
 
 El carrito utiliza almacenamiento local para conservar los productos entre recargas del navegador.
@@ -390,7 +380,7 @@ Funciones como **Predictive Search** y **Recent Searches** continúan siendo tem
 
 ---
 
-# Búsqueda y catálogo
+# 🔍 Búsqueda y catálogo
 
 El catálogo utiliza Algolia como motor de búsqueda.
 
@@ -422,8 +412,6 @@ Express
 Algolia
 ```
 
----
-
 ## Recent Searches
 
 Las búsquedas recientes son deliberadamente **memory-only**.
@@ -440,7 +428,7 @@ Al recargar o cerrar la aplicación, el historial se reinicia.
 
 ---
 
-# Diseño responsive
+# 📱 Diseño responsive
 
 CiberNova fue diseñada para adaptarse a:
 
@@ -456,7 +444,7 @@ El catálogo utiliza distintas densidades dependiendo del viewport.
 | Tablet | 3 | 6 |
 | Mobile | 2 | 6 |
 
-El carrito también adapta su composición:
+El carrito también adapta su composición.
 
 ### Desktop / Tablet
 
@@ -495,7 +483,7 @@ La interfaz utiliza una identidad visual basada en:
 
 ---
 
-# Estructura del proyecto
+# 📂 Estructura del proyecto
 
 ```text
 E_Commerce/
@@ -553,7 +541,7 @@ E_Commerce/
 
 ---
 
-# Requisitos
+# ✅ Requisitos
 
 Antes de ejecutar el proyecto se requiere:
 
@@ -573,7 +561,7 @@ npm --version
 
 ---
 
-# Clonar el proyecto
+# 📥 Clonar el proyecto
 
 Repositorio:
 
@@ -595,7 +583,7 @@ cd Proyecto_Comercio_Electronico
 
 ---
 
-# Instalación
+# ⚙️ Instalación
 
 El `client` y el `server` mantienen dependencias independientes.
 
@@ -623,11 +611,9 @@ npm ci
 
 ---
 
-# Variables de entorno
+# 🔐 Variables de entorno
 
 Los archivos `.env` no deben almacenarse en Git.
-
----
 
 ## Client
 
@@ -644,8 +630,6 @@ VITE_API_BASE_URL=http://localhost:3000
 ```
 
 En producción, esta variable apunta hacia la API desplegada en Render.
-
----
 
 ## Server
 
@@ -673,11 +657,9 @@ Las credenciales privadas nunca deben utilizarse directamente desde `client/`.
 
 ---
 
-# Ejecutar localmente
+# ▶️ Ejecutar localmente
 
 Frontend y backend deben ejecutarse en terminales independientes.
-
----
 
 ## 1. Server
 
@@ -687,8 +669,6 @@ npm run dev
 ```
 
 El backend utilizará el puerto configurado para el entorno local.
-
----
 
 ## 2. Client
 
@@ -719,7 +699,7 @@ Algolia
 
 ---
 
-# Comandos principales
+# ⌨️ Comandos principales
 
 ## Client
 
@@ -729,8 +709,6 @@ Algolia
 | `npm run lint` | Ejecuta ESLint |
 | `npm run build` | Genera el build de producción |
 | `npm run preview` | Previsualiza localmente el build |
-
----
 
 ## Server
 
@@ -743,7 +721,7 @@ Algolia
 
 ---
 
-# Algolia y dataset
+# 🧠 Algolia y dataset
 
 El catálogo de CiberNova utiliza Algolia como motor de búsqueda y faceting.
 
@@ -776,7 +754,7 @@ Debe utilizarse únicamente cuando sea necesario reconstruir o actualizar delibe
 
 ---
 
-# Validaciones
+# 🧪 Validaciones
 
 Antes de integrar cambios se deben ejecutar las validaciones correspondientes.
 
@@ -799,7 +777,7 @@ Todos los comandos deben finalizar correctamente antes de integrar cambios hacia
 
 ---
 
-# Git y flujo de desarrollo
+# 🌿 Git y flujo de desarrollo
 
 El proyecto utiliza una estrategia basada en:
 
@@ -841,11 +819,9 @@ Las integraciones se realizan mediante Pull Requests.
 
 ---
 
-# Despliegue
+# 🌐 Despliegue
 
 La solución utiliza deployments independientes para frontend y backend.
-
----
 
 ## Frontend — GitHub Pages
 
@@ -881,8 +857,6 @@ Sitio:
 
 Cada nuevo deployment actualiza el sitio existente y conserva la misma URL.
 
----
-
 ## Backend — Render
 
 La API Express está desplegada mediante un Web Service de Render.
@@ -909,8 +883,6 @@ La URL del servicio permanece estable entre deployments.
 
 > El plan gratuito de Render puede suspender temporalmente la instancia después de un periodo de inactividad, por lo que la primera solicitud puede presentar un tiempo de respuesta mayor.
 
----
-
 ## Algolia
 
 Algolia funciona como servicio externo para:
@@ -926,7 +898,7 @@ El deployment del frontend o backend no ejecuta automáticamente el seed.
 
 ---
 
-# Seguridad
+# 🛡️ Seguridad
 
 El proyecto sigue las siguientes prácticas:
 
@@ -942,7 +914,7 @@ El proyecto sigue las siguientes prácticas:
 
 ---
 
-# Estado actual
+# 📊 Estado actual
 
 <div align="center">
 
@@ -986,7 +958,7 @@ La arquitectura se desarrolló de forma incremental y mantiene separación clara
 
 ---
 
-# Autores
+# 👥 Autores
 
 Proyecto académico desarrollado para el curso de **Comercio Electrónico**.
 
@@ -995,7 +967,7 @@ Proyecto académico desarrollado para el curso de **Comercio Electrónico**.
 
 ---
 
-# Licencia
+# 📄 Licencia
 
 Este proyecto fue desarrollado con fines académicos y educativos.
 
