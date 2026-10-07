@@ -1,0 +1,12 @@
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
+.step { display: flex; align-items: center; gap: 0.6rem; min-width: 0; padding: 1rem 0.75rem; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
+.step strong { overflow-wrap: anywhere; }
+.number { display: grid; place-items: center; flex-shrink: 0; width: 2rem; height: 2rem; border-radius: 50%; background: var(--color-surface); font-weight: 800; }
+.status { display: block; margin-top: 0.25rem; font-size: 0.8rem; color: var(--color-text-muted); }
+.current { border: 2px solid var(--color-primary); }
+.current .number { background: var(--color-primary); color: #fff; }
+.compact { display: none; }
+@media (max-width: 760px) {
+  .compact { display: block; margin: 0; padding: 1rem; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
+  .steps { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}

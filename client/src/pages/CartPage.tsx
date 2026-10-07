@@ -8,11 +8,13 @@ import styles from '../styles/pages/ProductListingPage.module.css'
 interface CartPageProps {
   feedbackProductName?: string
   onCartClick: () => void
-  onContinueShopping: () => void
+  onContinueShopping: (hash?: '#top' | '#catalog') => void
+  onCheckoutRequested: () => void
+  navigationNotice?: string
 }
 
 /** Presenta el Cart y delega la navegación y el feedback temporal a la página owner. */
-function CartPage({ onCartClick, onContinueShopping, feedbackProductName }: CartPageProps) {
+function CartPage({ onCartClick, onContinueShopping, onCheckoutRequested, feedbackProductName, navigationNotice }: CartPageProps) {
   return (
     <div className={styles.page}>
       {feedbackProductName ? <CartFeedbackToast productName={feedbackProductName} /> : null}
@@ -22,11 +24,13 @@ function CartPage({ onCartClick, onContinueShopping, feedbackProductName }: Cart
         onCatalogClick={onContinueShopping}
       />
         <main>
+          {navigationNotice ? <p className={styles.container} role="status">{navigationNotice}</p> : null}
           <CartSection
             onContinueShopping={onContinueShopping}
+            onCheckoutRequested={onCheckoutRequested}
           />
         </main>
-        <Footer />
+        <Footer onCatalogClick={onContinueShopping} />
     </div>
   )
 }

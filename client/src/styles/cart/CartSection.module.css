@@ -49,6 +49,10 @@ main:has(> .section) {
   letter-spacing: -0.045em;
 }
 
+.introduction h2[data-app-heading][tabindex="-1"]:focus {
+  outline: none;
+}
+
 .description {
   max-width: 34rem;
   margin: 0;
@@ -323,6 +327,7 @@ main:has(> .section) {
 }
 
 .summary a,
+.checkoutButton,
 .emptyState a {
   display: inline-flex;
   min-height: 46px;
@@ -341,6 +346,12 @@ main:has(> .section) {
 
 .summary a {
   width: 100%;
+}
+
+.checkoutButton {
+  width: 100%;
+  margin-bottom: 0.75rem;
+  cursor: pointer;
 }
 
 .summary a:hover,

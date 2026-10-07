@@ -9,6 +9,7 @@ interface CartPreviewDrawerProps {
   onViewCart: () => void
   onContinueShopping: () => void
   onCheckoutRequested?: () => void
+  shouldRestoreFocus?: () => boolean
 }
 
 const priceFormatter = new Intl.NumberFormat('es-CR', {
@@ -18,7 +19,7 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
 })
 
 function CartPreviewDrawer({
-  onClose, onViewCart, onContinueShopping, onCheckoutRequested,
+  onClose, onViewCart, onContinueShopping, onCheckoutRequested, shouldRestoreFocus,
 }: CartPreviewDrawerProps) {
   const { items } = useCart()
   const { subtotal } = calculateCartTotals(items)
@@ -49,6 +50,7 @@ function CartPreviewDrawer({
       dialog.close()
       document.body.style.overflow = previousOverflow
       document.body.style.paddingRight = previousPadding
+      if (shouldRestoreFocus && !shouldRestoreFocus()) return
       // Espera al commit de navegación: el trigger anterior puede quedar hidden/inert.
       restoreFrameRef.current = requestAnimationFrame(() => {
         const isAvailable = (element: HTMLElement | null): element is HTMLElement =>
@@ -65,7 +67,7 @@ function CartPreviewDrawer({
         }
       })
     }
-  }, [])
+  }, [shouldRestoreFocus])
 
   return (
     <dialog

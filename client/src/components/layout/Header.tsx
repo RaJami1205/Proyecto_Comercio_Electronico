@@ -7,13 +7,15 @@ import { handleAnchorNavigation } from '../../utils/scrollToAnchor'
 
 interface HeaderProps {
   cartView?: boolean
+  checkoutView?: boolean
   onCartClick?: () => void
   onCatalogClick?: () => void
 }
 
 /** Presenta los accesos según la vista activa usando totalUnits de useCart. */
-function Header({ cartView = false, onCartClick, onCatalogClick }: HeaderProps) {
+function Header({ cartView = false, checkoutView = false, onCartClick, onCatalogClick }: HeaderProps) {
   const { totalUnits } = useCart()
+  const outsideCatalog = cartView || checkoutView
 
   /** Permite regresar al catálogo mediante el callback de navegación o un ancla. */
   function handleCatalogNavigation(event: MouseEvent<HTMLAnchorElement>) {
@@ -31,9 +33,9 @@ function Header({ cartView = false, onCartClick, onCatalogClick }: HeaderProps) 
       <div className={styles.inner}>
         <a
           className={styles.brand}
-          href={cartView ? '#catalog' : '#top'}
-          aria-label={cartView ? 'CiberNova, volver al catálogo' : 'CiberNova, ir al inicio'}
-          onClick={cartView ? handleCatalogNavigation : handleAnchorNavigation}
+          href={outsideCatalog ? '#catalog' : '#top'}
+          aria-label={outsideCatalog ? 'CiberNova, volver al catálogo' : 'CiberNova, ir al inicio'}
+          onClick={outsideCatalog ? handleCatalogNavigation : handleAnchorNavigation}
         >
           <span>Ciber</span>
           <span className={styles.brandAccent}>Nova</span>
@@ -41,7 +43,7 @@ function Header({ cartView = false, onCartClick, onCatalogClick }: HeaderProps) 
 
         <nav className={styles.navigation} aria-label="Navegación principal">
           <ul>
-            {cartView ? (
+            {outsideCatalog ? (
               <li>
                 <a href="#catalog" onClick={handleCatalogNavigation}>
                   Volver al catálogo
