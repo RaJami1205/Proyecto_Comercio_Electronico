@@ -8,6 +8,7 @@ import CatalogToolbar, { type ActivePanel } from '../components/catalog/CatalogT
 import Pagination from '../components/catalog/Pagination'
 import ProductGrid from '../components/catalog/ProductGrid'
 import ProductQuickView from '../components/catalog/ProductQuickView'
+import CartPreviewDrawer from '../components/cart/CartPreviewDrawer'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
 import CartPage from './CartPage'
@@ -35,6 +36,7 @@ const EMPTY_FILTERS: CatalogFiltersState = {
 /** Posee filtros, query, selección de Quick View y feedback temporal de presentación. */
 function ProductListingPage() {
   const [isCartPage, setIsCartPage] = useState(() => window.location.hash === '#cart-page')
+  const [isCartPreviewOpen, setIsCartPreviewOpen] = useState(false)
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
   const [catalogQuery, setCatalogQuery] = useState('')
@@ -70,6 +72,7 @@ function ProductListingPage() {
     /** Sincroniza la vista visible con los cambios de hash y el historial del navegador. */
     function syncPageWithLocation() {
       const shouldShowCart = window.location.hash === '#cart-page'
+      setIsCartPreviewOpen(false)
       setIsCartPage(shouldShowCart)
 
       if (!shouldShowCart) {
@@ -88,6 +91,7 @@ function ProductListingPage() {
 
   /** Abre la vista Cart sin desmontar el estado de búsqueda del catálogo. */
   function navigateToCart() {
+    setIsCartPreviewOpen(false)
     if (window.location.hash !== '#cart-page') {
       window.history.pushState({ view: 'cart' }, '', '#cart-page')
     }
@@ -97,6 +101,7 @@ function ProductListingPage() {
 
   /** Regresa al catálogo conservando su estado y retirando el hash del Cart. */
   function navigateToCatalog() {
+    setIsCartPreviewOpen(false)
     window.history.pushState(
       { view: 'catalog' },
       '',
@@ -104,6 +109,17 @@ function ProductListingPage() {
     )
     setIsCartPage(false)
     window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+
+  /** El preview comparte owner con las vistas y nunca se superpone al Quick View. */
+  function openCartPreview() {
+    if (selectedProduct && !isCartPage) return
+    setIsCartPreviewOpen(true)
+  }
+
+  function continueShoppingFromPreview() {
+    if (isCartPage) navigateToCatalog()
+    else setIsCartPreviewOpen(false)
   }
 
   /** Reinicia la paginación únicamente cuando cambia el query del catálogo. */
@@ -135,7 +151,7 @@ function ProductListingPage() {
     {/* Mantener mounted conserva búsqueda, historial y filtros; hidden/inert impiden interacción. */}
     <div className={styles.page} hidden={isCartPage} inert={isCartPage}>
       {!selectedProduct && feedback?.source === 'catalog' ? <CartFeedbackToast productName={feedback.productName} /> : null}
-      <Header onCartClick={navigateToCart} />
+      <Header onCartClick={openCartPreview} />
 
       <main>
         <CatalogHero />
@@ -213,7 +229,7 @@ function ProductListingPage() {
 
       <Footer />
 
-      {selectedProduct && !isCartPage ? (
+      {selectedProduct && !isCartPage && !isCartPreviewOpen ? (
         <ProductQuickView
           product={selectedProduct}
           onProductAdded={(product) => showCartFeedback(product, 'quick-view')}
@@ -225,9 +241,16 @@ function ProductListingPage() {
     </div>
     {isCartPage ? (
       <CartPage
-        onCartClick={navigateToCart}
+        onCartClick={openCartPreview}
         onContinueShopping={navigateToCatalog}
         feedbackProductName={feedback?.source === 'catalog' ? feedback.productName : undefined}
+      />
+    ) : null}
+    {isCartPreviewOpen ? (
+      <CartPreviewDrawer
+        onClose={() => setIsCartPreviewOpen(false)}
+        onViewCart={navigateToCart}
+        onContinueShopping={continueShoppingFromPreview}
       />
     ) : null}
     </>
