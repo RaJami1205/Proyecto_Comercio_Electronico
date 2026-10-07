@@ -59,6 +59,10 @@
   line-height: 1.75;
 }
 
+.introduction h2[data-app-heading][tabindex="-1"]:focus {
+  outline: none;
+}
+
 .results {
   scroll-margin-top: 6rem;
 }

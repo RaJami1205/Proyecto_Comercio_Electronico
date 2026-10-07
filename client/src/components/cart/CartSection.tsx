@@ -7,6 +7,7 @@ import styles from '../../styles/cart/CartSection.module.css'
 
 interface CartSectionProps {
   onContinueShopping: () => void
+  onCheckoutRequested: () => void
 }
 
 const priceFormatter = new Intl.NumberFormat('es-CR', {
@@ -16,7 +17,7 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
 })
 
 /** Presenta líneas, controles y resumen, o el Empty State cuando no hay items. */
-function CartSection({ onContinueShopping }: CartSectionProps) {
+function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionProps) {
   const { items, incrementItem, decrementItem, removeItem, totalUnits } = useCart()
   const { subtotal, tax, shipping, total } = calculateCartTotals(items)
 
@@ -32,7 +33,7 @@ function CartSection({ onContinueShopping }: CartSectionProps) {
         <header className={styles.introduction}>
           <div>
             <p className={styles.eyebrow}>Tu selección</p>
-            <h2 id="cart-title">Tu carrito</h2>
+            <h2 id="cart-title" tabIndex={-1} data-app-heading>Tu carrito</h2>
           </div>
           <p className={styles.description}>
             Revisa tus productos y ajusta las cantidades antes de continuar.
@@ -144,6 +145,9 @@ function CartSection({ onContinueShopping }: CartSectionProps) {
                 <span>Total</span>
                 <strong>{priceFormatter.format(total)}</strong>
               </div>
+              <button className={styles.checkoutButton} type="button" onClick={onCheckoutRequested}>
+                Finalizar compra
+              </button>
               <a href="#catalog" onClick={handleContinueShopping}>
                 Seguir comprando
               </a>
