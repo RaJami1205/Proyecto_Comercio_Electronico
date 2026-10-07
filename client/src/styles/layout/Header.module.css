@@ -93,6 +93,7 @@
 
 .action {
   display: inline-flex;
+  cursor: pointer;
   gap: 0.55rem;
   align-items: center;
   justify-content: center;
