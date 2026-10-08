@@ -1,0 +1,28 @@
+.fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+.field { display: grid; gap: 0.5rem; min-width: 0; }
+.field label { color: var(--color-text-primary); font-weight: 700; }
+
+.field input,
+.field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.field textarea { resize: vertical; line-height: 1.5; }
+.field [aria-invalid="true"] { border-color: #a3293d; }
+.field input:focus-visible,
+.field textarea:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
+.field .error { margin: 0; color: #a3293d; font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }

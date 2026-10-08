@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import CheckoutStepper, { type CheckoutStep } from '../components/checkout/CheckoutStepper'
+import BuyerStep from '../components/checkout/BuyerStep'
+import DeliveryStep from '../components/checkout/DeliveryStep'
+import type { CheckoutData } from '../types/checkout'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import styles from '../styles/pages/CheckoutPage.module.css'
@@ -11,15 +14,19 @@ interface CheckoutPageProps {
 }
 
 const stages: Record<CheckoutStep, { title: string; description: string; previous?: CheckoutStep; next?: CheckoutStep }> = {
-  buyer: { title: 'Comprador', description: 'Aquí podrás completar tus datos de contacto. El formulario estará disponible próximamente.', next: 'delivery' },
-  delivery: { title: 'Entrega', description: 'Aquí podrás indicar la dirección de entrega. El formulario estará disponible próximamente.', previous: 'buyer', next: 'review' },
+  buyer: { title: 'Comprador', description: 'Completa tus datos de contacto.', next: 'delivery' },
+  delivery: { title: 'Entrega', description: 'Indica la dirección de entrega.', previous: 'buyer', next: 'review' },
   review: { title: 'Revisión', description: 'Aquí podrás revisar los detalles de tu compra. El resumen estará disponible próximamente.', previous: 'delivery', next: 'payment' },
   payment: { title: 'Pago', description: 'La etapa de pago estará disponible próximamente. Todavía no se pueden realizar pagos.', previous: 'review' },
 }
 
-/** Shell sin datos ni operaciones transaccionales; se reinicia al volver a entrar. */
+/** Conserva borradores solo en memoria; se reinicia al volver a entrar. */
 function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick }: CheckoutPageProps) {
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
+  const [data, setData] = useState<CheckoutData>({
+    buyer: { fullName: '', email: '', phone: '' },
+    delivery: { province: '', canton: '', address: '', additionalInfo: '' },
+  })
   const pageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageChangedRef = useRef(false)
@@ -50,6 +57,27 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick }: CheckoutPag
           <section className={styles.stage} aria-labelledby="checkout-stage-title">
             <h2 id="checkout-stage-title" ref={stageHeadingRef} tabIndex={-1}>{stage.title}</h2>
             <p>{stage.description}</p>
+            {currentStep === 'buyer' ? (
+              <BuyerStep
+                value={data.buyer}
+                onChange={(buyer) => setData((current) => ({ ...current, buyer }))}
+                onContinue={(buyer) => {
+                  setData((current) => ({ ...current, buyer }))
+                  changeStep('delivery')
+                }}
+                onBack={onBackToCart}
+              />
+            ) : currentStep === 'delivery' ? (
+              <DeliveryStep
+                value={data.delivery}
+                onChange={(delivery) => setData((current) => ({ ...current, delivery }))}
+                onContinue={(delivery) => {
+                  setData((current) => ({ ...current, delivery }))
+                  changeStep('review')
+                }}
+                onBack={() => changeStep('buyer')}
+              />
+            ) : (
             <div className={styles.actions}>
               <button type="button" className={styles.back} onClick={() => stage.previous ? changeStep(stage.previous) : onBackToCart()}>
                 {stage.previous ? 'Atrás' : 'Volver al carrito'}
@@ -58,6 +86,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick }: CheckoutPag
                 <button type="button" className={styles.continue} onClick={() => changeStep(stage.next)}>Continuar</button>
               ) : null}
             </div>
+            )}
           </section>
         </div>
       </main>
