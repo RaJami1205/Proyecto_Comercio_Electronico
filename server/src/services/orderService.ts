@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { calculateLineSubtotal, calculateOrderTotals } from '../domain/orderCalculations.js'
 import { OrderError } from '../domain/orderError.js'
 import { validateCreateOrderRequest } from '../domain/orderValidation.js'
-import { InMemoryOrderStore, type OrderStore } from '../stores/orderStore.js'
+import { orderStore, type OrderStore } from '../stores/orderStore.js'
 import type { CreateOrderRequest, Order, OrderItem } from '../types/order.js'
 import type { ProductRecord } from '../types/product.js'
 import { getProductById } from './productService.js'
@@ -11,7 +11,7 @@ type ProductLookup = (id: string) => Promise<ProductRecord | undefined>
 
 export class OrderService {
   private readonly pending = new Map<string, Promise<Order>>()
-  constructor(private readonly store: OrderStore = new InMemoryOrderStore(), private readonly lookup: ProductLookup = getProductById) {}
+  constructor(private readonly store: OrderStore = orderStore, private readonly lookup: ProductLookup = getProductById) {}
 
   async create(value: unknown): Promise<Order> {
     const request = validateCreateOrderRequest(value)

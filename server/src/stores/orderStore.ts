@@ -34,3 +34,6 @@ export class InMemoryOrderStore implements OrderStore {
     return structuredClone(order)
   }
 }
+
+/** Instancia compartida por creación, consulta y procesamiento de pagos. */
+export const orderStore = new InMemoryOrderStore()

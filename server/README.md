@@ -97,3 +97,36 @@ Verificación focalizada de CN-28 sin requests a Algolia ni pagos:
 npm run build
 node --test tests/orders.test.mjs
 ```
+
+## Payment Sandbox (CN-30)
+
+POST /api/orders/:orderId/payment recibe únicamente scenario e idempotencyKey:
+
+```json
+{ "scenario": "PAYMENT_APPROVED", "idempotencyKey": "payment-attempt-001" }
+```
+
+El servicio deriva orderId, amount (order.totals.total) y currency de la Order almacenada. Ignora importes y estados del request. No usa pasarelas externas ni datos financieros reales. El Sandbox simula una espera de 100 ms y devuelve determinísticamente el escenario solicitado.
+
+| scenario | paymentStatus | orderStatus | Retry con nueva clave |
+| --- | --- | --- | --- |
+| PAYMENT_APPROVED | APPROVED | CONFIRMED | No |
+| PAYMENT_DECLINED | DECLINED | PENDING | Sí |
+| PAYMENT_ERROR | ERROR | PENDING | Sí |
+
+Los tres resultados responden 200 con PaymentResult { result, processedAt, order }. PAYMENT_ERROR es un resultado simulado, distinto de un fallo real del servidor (500 UNEXPECTED_ERROR). GET /api/orders/:orderId refleja los estados actualizados.
+
+Las claves de pago se aíslan por orden. Repetir una clave procesada devuelve una copia del resultado histórico y no ejecuta nuevamente el Sandbox, aunque la orden se haya aprobado o tenga un Retry posterior. Una clave nueva sobre una orden confirmada devuelve 409 ORDER_ALREADY_CONFIRMED. Reutilizar una clave con otro scenario devuelve su resultado original.
+
+Mientras se procesa una orden, cualquier intento no procesado (incluso con la misma clave en curso) devuelve 409 PAYMENT_IN_PROGRESS. El lock se adquiere antes del primer await y se libera en finally. DECLINED y ERROR permiten intentar nuevamente sobre la misma orden con una clave nueva. Los resultados y locks son in-memory, como las órdenes, y se pierden al reiniciar; las garantías aplican a una única instancia del servidor.
+
+Validaciones: orden inexistente (404 ORDER_NOT_FOUND), scenario inválido (400 INVALID_PAYMENT_SCENARIO), cuerpo o clave inválida (400 CHECKOUT_VALIDATION_ERROR). Los errores usan ApiErrorResponse sin detalles internos.
+
+Verificación completa del backend:
+
+```sh
+npm run build
+node --test tests/*.test.mjs
+```
+
+Esta Story no incorpora interfaz de pagos, Confirmation Page ni limpieza del carrito.
