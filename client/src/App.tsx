@@ -19,6 +19,9 @@ function viewFromLocation(): AppView {
 
 function App() {
   const { items } = useCart()
+  const checkoutLockedRef = useRef(false)
+  const [checkoutLocked, setCheckoutLocked] = useState(false)
+  const [checkoutHasOrder, setCheckoutHasOrder] = useState(false)
   const [navigation, setNavigation] = useState<NavigationState>(() => ({
     view: viewFromLocation(), emptyCartNotice: false,
   }))
@@ -30,7 +33,7 @@ function App() {
   const shouldRestoreDrawerFocus = useCallback(() => restoreDrawerFocusRef.current, [])
 
   // Ajuste antes del commit: nunca se monta Checkout con un Cart vacío.
-  if (navigation.view === 'checkout' && items.length === 0) {
+  if (navigation.view === 'checkout' && items.length === 0 && !checkoutLocked && !checkoutHasOrder) {
     setNavigation({ view: 'cart', emptyCartNotice: true })
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }
@@ -38,6 +41,11 @@ function App() {
 
   useEffect(() => {
     function syncLocation() {
+      if (checkoutLockedRef.current) {
+        window.history.replaceState({ view: 'checkout' }, '', '#checkout')
+        return
+      }
+      if (viewFromLocation() !== 'checkout') setCheckoutHasOrder(false)
       restoreDrawerFocusRef.current = false
       setIsCartPreviewOpen(false)
       setNavigation({ view: viewFromLocation(), emptyCartNotice: false })
@@ -82,6 +90,8 @@ function App() {
   }
 
   function navigate(requestedView: AppView, catalogHash: '' | '#top' | '#catalog' = '') {
+    if (checkoutLockedRef.current) return
+    if (requestedView !== 'checkout') setCheckoutHasOrder(false)
     restoreDrawerFocusRef.current = false
     setIsCartPreviewOpen(false)
     const denied = requestedView === 'checkout' && items.length === 0
@@ -100,6 +110,7 @@ function App() {
   }
 
   function openCartPreview() {
+    if (checkoutLockedRef.current) return
     restoreDrawerFocusRef.current = true
     setIsCartPreviewOpen(true)
   }
@@ -122,8 +133,10 @@ function App() {
           navigationNotice={emptyCartNotice ? 'Agrega productos al carrito para continuar con la compra.' : undefined}
         />
       ) : null}
-      {view === 'checkout' && items.length > 0 ? (
+      {view === 'checkout' && (items.length > 0 || checkoutLocked || checkoutHasOrder) ? (
         <CheckoutPage
+          onNavigationLockChange={(busy) => { checkoutLockedRef.current = busy; setCheckoutLocked(busy) }}
+          onOrderCreated={() => setCheckoutHasOrder(true)}
           onBackToCart={() => navigate('cart')}
           onCatalogClick={(hash) => navigate('catalog', hash)}
           onCartClick={openCartPreview}

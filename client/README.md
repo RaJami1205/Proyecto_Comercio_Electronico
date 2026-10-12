@@ -73,3 +73,13 @@ export default defineConfig([
 ])
 
 ```
+
+## Revisión y creación de órdenes
+
+El Checkout presenta Comprador, Entrega, Revisión y Pago. La revisión deriva importes previos con cartCalculations. Confirmar envía únicamente buyer, delivery, productId/quantity e idempotencyKey a POST /api/orders mediante orderApi. Configura VITE_API_BASE_URL con la URL del backend, como para el catálogo.
+
+La Order recibida reemplaza el resumen previo y se conserva en el estado local del Checkout. Pago muestra la orden pendiente sin procesar cobros ni limpiar el carrito. Un error controlado permite corregir datos. Ante un fallo técnico, el reintento conserva clave y payload; los datos del intento permanecen visibles y su edición se bloquea hasta resolverlo. El botón y la navegación se bloquean durante el envío.
+
+Verificación: npm run lint y npm run build.
+
+Pruebas focalizadas del contrato HTTP y errores: node --test tests/orderApi.test.mjs.
