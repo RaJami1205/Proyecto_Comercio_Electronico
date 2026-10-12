@@ -100,3 +100,13 @@ export async function searchProducts(query: string): Promise<ProductRecord[]> {
 
   return response.hits
 }
+/** Consulta por objectID exacto; un fallo del catálogo no se confunde con un producto inexistente. */
+export async function getProductById(productId: string): Promise<ProductRecord | undefined> {
+  const { indexName } = getAlgoliaConfig()
+  try {
+    return await getAlgoliaClient().getObject<ProductRecord>({ indexName, objectID: productId })
+  } catch (error) {
+    if (error !== null && typeof error === 'object' && 'status' in error && error.status === 404) return undefined
+    throw error
+  }
+}

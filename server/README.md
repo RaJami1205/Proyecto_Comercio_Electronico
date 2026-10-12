@@ -70,3 +70,30 @@ npm run build
 
 El build incluye `src/scripts/seedAlgolia.ts`. Estas comprobaciones no prueban
 credenciales ni configuración remota y no requieren ejecutar write mode.
+
+## Órdenes (CN-28)
+
+- POST /api/orders recibe buyer, delivery, items [{ productId, quantity }] e idempotencyKey. Devuelve el snapshot Order con 201, incluso al repetir la clave.
+- GET /api/orders/:orderId devuelve ese snapshot con 200, o ORDER_NOT_FOUND con 404.
+- El servidor consulta cada objectID en Algolia; nunca utiliza precios o totales del request. Producto inexistente: PRODUCT_NOT_FOUND (404); datos inválidos: CHECKOUT_VALIDATION_ERROR o EMPTY_CART (400).
+- Los importes se calculan en centavos, con redondeo a dos decimales y el IVA de 13% redondeado sobre el subtotal. Shipping: 3500 CRC para subtotal mayor que cero y menor que 100000 CRC; cero en los demás casos.
+- Order y claves de idempotencia viven únicamente en memoria y se pierden al reiniciar. Las solicitudes simultáneas con una misma clave comparten la creación; un fallo libera la clave para reintentar. La clave debe ser única por compra; reutilizarla devuelve la orden original aun si cambia el payload válido.
+- No se procesa ningún pago. OrderStatus y PaymentStatus comienzan en PENDING.
+
+Ejemplo de cuerpo (usar un productId real del catálogo):
+
+```json
+{
+  "buyer": { "fullName": "Usuario de prueba", "email": "usuario@example.com", "phone": "88888888" },
+  "delivery": { "province": "San José", "canton": "San José", "address": "Dirección ficticia" },
+  "items": [{ "productId": "ID_REAL", "quantity": 2 }],
+  "idempotencyKey": "compra-unica-001"
+}
+```
+
+Verificación focalizada de CN-28 sin requests a Algolia ni pagos:
+
+```sh
+npm run build
+node --test tests/orders.test.mjs
+```
