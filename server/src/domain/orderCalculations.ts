@@ -1,25 +1,22 @@
 import type { OrderItem, OrderTotals } from '../types/order.js'
 import { OrderError } from './orderError.js'
 
-/** Usa centavos enteros para evitar errores de punto flotante en importes monetarios. */
-function cents(value: number): number {
-  const result = Math.round(value * 100)
-  if (!Number.isFinite(value) || value < 0 || !Number.isSafeInteger(result)) {
+/** Conserva la precisión del number original y el límite monetario defensivo. */
+function amount(value: number): number {
+  if (!Number.isFinite(value) || value < 0 || value > Number.MAX_SAFE_INTEGER / 100) {
     throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'No se pueden calcular los importes de la orden.')
   }
-  return result
-}
-function safe(value: number): number {
-  if (!Number.isSafeInteger(value)) throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'El importe de la orden excede el límite permitido.')
   return value
 }
 export function calculateLineSubtotal(unitPrice: number, quantity: number): number {
-  return safe(cents(unitPrice) * quantity) / 100
+  return amount(amount(unitPrice) * quantity)
 }
 export function calculateOrderTotals(items: readonly OrderItem[]): OrderTotals {
-  const subtotalCents = items.reduce((sum, item) => safe(sum + cents(item.lineSubtotal)), 0)
-  const taxCents = safe(Math.round(subtotalCents * 0.13))
-  const shippingCents = subtotalCents > 0 && subtotalCents < 10000000 ? 350000 : 0
-  const totalCents = safe(subtotalCents + taxCents + shippingCents)
-  return { subtotal: subtotalCents / 100, tax: taxCents / 100, shipping: shippingCents / 100, total: totalCents / 100 }
+  const subtotal = items.reduce((sum, item) => amount(sum + amount(item.lineSubtotal)), 0)
+  // El umbral se evalúa antes de cualquier redondeo y antes del IVA, sin tolerancias.
+  const shipping = subtotal > 0 && subtotal < 100000 ? 3500 : 0
+  // Conserva el redondeo existente del IVA a centavos; no redondea el subtotal ni el total.
+  const tax = amount(Math.round(subtotal * 100 * 0.13) / 100)
+  const total = amount(subtotal + tax + shipping)
+  return { subtotal, tax, shipping, total }
 }

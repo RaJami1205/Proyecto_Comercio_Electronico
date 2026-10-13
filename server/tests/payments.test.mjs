@@ -135,7 +135,7 @@ test('valida request y orden sin ejecutar el Sandbox; APPROVED siempre impide nu
 test('HTTP: tres resultados 200, GET actualizado, replay, concurrencia y errores del contrato', async () => {
   const originalLookup = orderService.lookup
   const originalSandbox = paymentService.sandbox
-  orderService.lookup = async id => ({objectID:id, title:'Producto', price:10000, image_url:''})
+  orderService.lookup = async id => ({objectID:id, title:'Producto', price:10000, image_url:'', in_stock:true, stock_quantity:3})
   const server = app.listen(0,'127.0.0.1')
   await new Promise(resolve => server.once('listening',resolve))
   const base = 'http://127.0.0.1:' + server.address().port + '/api/orders'

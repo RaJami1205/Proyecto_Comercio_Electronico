@@ -10,7 +10,7 @@ const request = (key = 'purchase-1') => ({
   delivery: { province: 'San José', canton: 'San José', address: 'Dirección de prueba' },
   items: [{ productId: 'product-1', quantity: 2 }], idempotencyKey: key,
 })
-const product = { objectID: 'product-1', title: 'Producto real', image_url: '/image.jpg', price: 10000 }
+const product = { objectID: 'product-1', title: 'Producto real', image_url: '/image.jpg', price: 10000, in_stock: true, stock_quantity: 3 }
 
 test('snapshot autoritativo, consulta, estados y aislamiento del store', async () => {
   const store = new InMemoryOrderStore()
@@ -65,7 +65,7 @@ test('shipping en cero y alrededor del umbral; IVA y centavos', () => {
     assert.equal(totals.shipping, shipping)
     assert.equal(totals.tax, Math.round(subtotal * 100 * 0.13) / 100)
   }
-  assert.deepEqual(calculateOrderTotals([{ lineSubtotal: 0.1 }, { lineSubtotal: 0.2 }]), { subtotal: 0.3, tax: 0.04, shipping: 3500, total: 3500.34 })
+  assert.deepEqual(calculateOrderTotals([{ lineSubtotal: 0.1 }, { lineSubtotal: 0.2 }]), { subtotal: 0.1 + 0.2, tax: 0.04, shipping: 3500, total: (0.1 + 0.2) + 0.04 + 3500 })
 })
 
 test('validaciones impiden consultar catálogo y admiten solamente cantidades enteras positivas', async () => {

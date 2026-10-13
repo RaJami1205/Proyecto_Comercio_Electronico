@@ -9,18 +9,50 @@ import { getProductById } from './productService.js'
 
 type ProductLookup = (id: string) => Promise<ProductRecord | undefined>
 
+function quantities(items: CreateOrderRequest['items']): Map<string, number> {
+  const result = new Map<string, number>()
+  for (const { productId, quantity } of items) {
+    const total = (result.get(productId) ?? 0) + quantity
+    if (!Number.isSafeInteger(total)) throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'La cantidad total de un producto excede el límite permitido.')
+    result.set(productId, total)
+  }
+  return result
+}
+
+/** La identidad excluye precios/estados y normaliza orden de líneas y notas vacías. */
+function identity({ buyer, delivery, items }: Pick<CreateOrderRequest, 'buyer' | 'delivery' | 'items'>): string {
+  return JSON.stringify([
+    buyer.fullName, buyer.email, buyer.phone,
+    delivery.province, delivery.canton, delivery.address, delivery.additionalInfo ?? '',
+    [...quantities(items)].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),
+  ])
+}
+
+function requireCompatible(expected: string, received: string): void {
+  if (expected !== received) throw new OrderError(409, 'CHECKOUT_VALIDATION_ERROR', 'La clave de idempotencia ya está asociada a una solicitud diferente.', { idempotencyKey: 'Utiliza la misma clave únicamente para repetir la misma compra.' })
+}
+
 export class OrderService {
-  private readonly pending = new Map<string, Promise<Order>>()
+  private readonly pending = new Map<string, { identity: string; task: Promise<Order> }>()
   constructor(private readonly store: OrderStore = orderStore, private readonly lookup: ProductLookup = getProductById) {}
 
   async create(value: unknown): Promise<Order> {
     const request = validateCreateOrderRequest(value)
+    const fingerprint = identity(request)
     const existing = this.store.findByIdempotencyKey(request.idempotencyKey)
-    if (existing) return existing
+    if (existing) {
+      // El snapshot conserva Buyer/Delivery/items originales, incluso después del pago.
+      requireCompatible(identity(existing), fingerprint)
+      return existing
+    }
     const pending = this.pending.get(request.idempotencyKey)
-    if (pending) return structuredClone(await pending)
-    const task = this.buildOrder(request)
-    this.pending.set(request.idempotencyKey, task)
+    if (pending) {
+      requireCompatible(pending.identity, fingerprint)
+      return structuredClone(await pending.task)
+    }
+    // Registra la identidad antes de iniciar incluso la primera consulta asíncrona.
+    const task = Promise.resolve().then(() => this.buildOrder(request))
+    this.pending.set(request.idempotencyKey, { identity: fingerprint, task })
     try { return structuredClone(await task) }
     finally { this.pending.delete(request.idempotencyKey) }
   }
@@ -33,18 +65,20 @@ export class OrderService {
 
   private async buildOrder(request: CreateOrderRequest): Promise<Order> {
     const products = new Map<string, ProductRecord>()
-    for (const { productId } of request.items) {
-      if (products.has(productId)) continue
+    for (const [productId, quantity] of quantities(request.items)) {
       const product = await this.lookup(productId)
       if (!product) throw new OrderError(404, 'PRODUCT_NOT_FOUND', 'Un producto solicitado no existe.')
       if (product.objectID !== productId || typeof product.price !== 'number' || !Number.isFinite(product.price) || product.price < 0 || !product.title?.trim()) {
         throw new OrderError(503, 'UNEXPECTED_ERROR', 'Un producto no está disponible para crear la orden.')
       }
+      if (product.in_stock !== true || typeof product.stock_quantity !== 'number' || !Number.isSafeInteger(product.stock_quantity) || product.stock_quantity <= 0 || quantity > product.stock_quantity) {
+        throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'Un producto no tiene disponibilidad suficiente para la cantidad solicitada.', { items: 'Revisa la disponibilidad y las cantidades de los productos.' })
+      }
       products.set(productId, product)
     }
     const items: OrderItem[] = request.items.map(({ productId, quantity }) => {
       const product = products.get(productId)!
-      const unitPrice = Math.round(product.price! * 100) / 100
+      const unitPrice = product.price!
       return { productId, name: product.title, image: product.image_url ?? '', unitPrice, quantity, lineSubtotal: calculateLineSubtotal(unitPrice, quantity) }
     })
     const id = randomUUID()
