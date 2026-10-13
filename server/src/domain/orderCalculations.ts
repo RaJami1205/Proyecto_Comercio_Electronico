@@ -13,8 +13,8 @@ export function calculateLineSubtotal(unitPrice: number, quantity: number): numb
 }
 export function calculateOrderTotals(items: readonly OrderItem[]): OrderTotals {
   const subtotal = items.reduce((sum, item) => amount(sum + amount(item.lineSubtotal)), 0)
-  // El umbral se evalúa antes de cualquier redondeo y antes del IVA, sin tolerancias.
-  const shipping = subtotal > 0 && subtotal < 100000 ? 3500 : 0
+  // Redondea la suma completa a CRC enteros solo para elegibilidad, antes del IVA.
+  const shipping = subtotal > 0 && Math.round(subtotal) < 100000 ? 3500 : 0
   // Conserva el redondeo existente del IVA a centavos; no redondea el subtotal ni el total.
   const tax = amount(Math.round(subtotal * 100 * 0.13) / 100)
   const total = amount(subtotal + tax + shipping)

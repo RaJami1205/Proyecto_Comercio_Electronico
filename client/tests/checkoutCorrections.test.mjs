@@ -122,7 +122,7 @@ test('F4 identifica precios, cantidades, líneas y productos añadidos/retirados
   changed.items[0].productId = 'another'
   assert.equal(orderReviewDifferences(cart, changed).length, 2)
 })
-for (const field of ['total', 'shipping', 'unitPrice']) {
+for (const field of ['total', 'tax', 'shipping', 'unitPrice']) {
   test('F4 ' + field + ' requiere aceptación y reutiliza la misma Order', async () => {
     const changed = order()
     if (field === 'unitPrice') changed.items[0].unitPrice += 0.001
@@ -147,15 +147,37 @@ for (const field of ['total', 'shipping', 'unitPrice']) {
     })
   })
 }
-test('F4 compara Shipping estricto con el snapshot original bajo el umbral', () => {
+test('F4 compara Shipping redondeado y detecta un envío autoritativo diferente', () => {
   const below = [{ ...cart[0], price:99999.995 }]
   const changed = order()
   changed.items[0] = { ...changed.items[0], unitPrice:99999.995, lineSubtotal:99999.995 }
   changed.totals = calculateCartTotals(below)
-  assert.equal(changed.totals.shipping, 3500)
+  assert.equal(changed.totals.shipping, 0)
   assert.deepEqual(orderReviewDifferences(below, changed), [])
-  changed.totals.shipping = 0
+  changed.totals.shipping = 3500
   assert.match(orderReviewDifferences(below, changed)[0], /Envío/)
+})
+
+test('F4 IVA alineado con Server no produce diferencias artificiales ni exige aceptación', async () => {
+  const fractional = [{...cart[0], price:99999.995}]
+  // Snapshot explícito: no calcula los importes esperados mediante la utilidad Client.
+  const authoritative = {
+    ...order(),
+    items:[{...order().items[0], unitPrice:99999.995, lineSubtotal:99999.995}],
+    totals:{subtotal:99999.995, tax:13000, shipping:0, total:112999.995},
+  }
+  assert.deepEqual(orderReviewDifferences(fractional, authoritative), [])
+  await withFetch(() => Response.json(authoritative, {status:201}), async requests => {
+    const flow = checkout()
+    runtime.cart[0].price = 99999.995
+    flow.render()
+    await flow.review().onConfirm()
+    flow.render()
+    assert.equal(flow.step(), 'payment')
+    assert.deepEqual(flow.review().differences, [])
+    assert.deepEqual(flow.review().totals, authoritative.totals)
+    assert.equal(requests.length, 1)
+  })
 })
 test('F4 salida advierte que la orden existe y conserva Cart', async () => {
   const changed = order()

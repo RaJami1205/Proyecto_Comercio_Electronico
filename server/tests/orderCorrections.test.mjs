@@ -131,9 +131,11 @@ test('F2 comparte concurrentes compatibles y libera pending tras fallo', async (
 })
 
 for (const [prices, shipping] of [
-  [[0], 0], [[50000], 3500], [[99999], 3500], [[99999.99], 3500],
-  [[99999.995], 3500], [[99999.999999], 3500], [[100000], 0], [[100000.01], 0], [[150000], 0],
-  [[60000, 39999.995], 3500], [[60000, 40000], 0],
+  [[0], 0], [[50000], 3500], [[99999], 3500], [[99999.01], 3500],
+  [[99999.49], 3500], [[99999.50], 0], [[99999.99], 0],
+  [[99999.995], 0], [[99999.999999], 0], [[100000], 0], [[100000.01], 0], [[150000], 0],
+  [[60000, 39999.49], 3500], [[60000, 39999.50], 0], [[49999.49, 50000.49], 0],
+  [[60000, 39999.995], 0], [[60000, 40000], 0],
 ]) {
   test('F3 precios sin normalizar ' + prices.join(' + '), async () => {
     const { service } = setup(async id => ({ ...product, objectID: id, price: prices[Number(id)] }))
@@ -153,7 +155,10 @@ test('F3 preserva precisión antes de multiplicar y rechaza importes inválidos'
   input.items[0].quantity = 2
   const order = await service.create(input)
   assert.equal(order.items[0].lineSubtotal, 99999.995)
-  assert.equal(order.totals.shipping, 3500)
+  assert.equal(order.items[0].unitPrice, 49999.9975)
+  assert.equal(order.totals.subtotal, 99999.995)
+  assert.equal(order.totals.shipping, 0)
+  assert.equal(order.totals.total, order.totals.subtotal + order.totals.tax)
   for (const lineSubtotal of [NaN, Infinity, -1, Number.MAX_SAFE_INTEGER]) {
     assert.throws(() => calculateOrderTotals([{ lineSubtotal }]), invalid)
   }

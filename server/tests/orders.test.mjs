@@ -59,7 +59,7 @@ test('idempotencia simultánea y recuperación después de un fallo', async () =
 })
 
 test('shipping en cero y alrededor del umbral; IVA y centavos', () => {
-  for (const [subtotal, shipping] of [[0, 0], [99999.99, 3500], [100000, 0], [100000.01, 0]]) {
+  for (const [subtotal, shipping] of [[0, 0], [99999.49, 3500], [99999.50, 0], [99999.99, 0], [100000, 0], [100000.01, 0]]) {
     const totals = calculateOrderTotals([{ lineSubtotal: subtotal }])
     assert.equal(totals.subtotal, subtotal)
     assert.equal(totals.shipping, shipping)
