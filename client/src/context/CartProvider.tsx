@@ -1,5 +1,5 @@
 /** Mantiene la instancia compartida del Cart y coordina cartStorage fuera del reducer. */
-import { useEffect, useReducer, type ReactNode } from 'react'
+import { useCallback, useEffect, useReducer, type ReactNode } from 'react'
 import { CartContext, type CartContextValue } from './CartContext'
 import { cartInitialState, cartReducer } from './cartReducer'
 import { CART_STORAGE_KEY, loadCart, parseStoredCart, saveCart } from '../utils/cartStorage'
@@ -33,9 +33,12 @@ function CartProvider({ children }: CartProviderProps) {
     return () => window.removeEventListener('storage', handleStorage)
   }, [])
 
+  const clearCart = useCallback(() => dispatch({ type: 'CLEAR_CART' }), [])
+
   // Las operaciones públicas encapsulan dispatch para que los consumidores no dependan de las actions.
   const value: CartContextValue = {
     items: state.items,
+    clearCart,
     addItem: (item) => dispatch({ type: 'ADD_ITEM', payload: item }),
     incrementItem: (productId) => dispatch({ type: 'INCREMENT_ITEM', payload: { productId } }),
     decrementItem: (productId) => dispatch({ type: 'DECREMENT_ITEM', payload: { productId } }),

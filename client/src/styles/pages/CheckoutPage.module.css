@@ -13,3 +13,5 @@
 .continue { background: linear-gradient(135deg, var(--color-primary), #674ee8); color: #fff; }
 .actions button:hover { filter: brightness(0.96); }
 @media (max-width: 420px) { .actions { flex-direction: column; } .actions button { width: 100%; } }
+
+.actions button:disabled { opacity: 0.6; cursor: not-allowed; }

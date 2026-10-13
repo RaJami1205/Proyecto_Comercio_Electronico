@@ -15,3 +15,15 @@ export interface PaymentResult {
   processedAt: string
   order: Order
 }
+
+/** Entrada interna construida exclusivamente desde la Order y el scenario validado. */
+export interface SandboxPaymentRequest {
+  orderId: string
+  amount: number
+  currency: Order['currency']
+  scenario: PaymentScenario
+}
+
+export interface SandboxPaymentResult {
+  result: PaymentScenario
+}

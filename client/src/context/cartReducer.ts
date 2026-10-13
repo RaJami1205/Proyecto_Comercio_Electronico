@@ -6,6 +6,9 @@ export const cartInitialState: CartState = { items: [] }
 /** Aplica transiciones puras e inmutables; conserva líneas únicas y quantity mínima de uno. */
 export function cartReducer(state: CartState, action: CartAction): CartState {
   switch (action.type) {
+    case 'CLEAR_CART': {
+      return state.items.length ? { items: [] } : state
+    }
     case 'ADD_ITEM': {
       const existing = state.items.find((item) => item.productId === action.payload.productId)
       // ADD_ITEM crea una línea con quantity = 1 o incrementa la existente conservando su snapshot.
