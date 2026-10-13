@@ -10,6 +10,7 @@ export interface CartContextValue {
   incrementItem: (productId: string) => void
   decrementItem: (productId: string) => void
   removeItem: (productId: string) => void
+  clearCart: () => void
   totalUnits: number
 }
 

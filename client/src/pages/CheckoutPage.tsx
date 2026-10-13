@@ -7,6 +7,7 @@ import type { CheckoutData } from '../types/checkout'
 import type { CreateOrderRequest, Order } from '../types/order'
 import type { CartItem } from '../types/cart'
 import { useCart } from '../hooks/useCart'
+import { useClearCartAfterPayment } from '../hooks/useClearCartAfterPayment'
 import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalculations'
 import { normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
 import { orderApi, OrderApiError, orderErrorMessage } from '../services/orderApi'
@@ -35,6 +36,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
+  useClearCartAfterPayment(order)
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
   const [error, setError] = useState<string>()
   const [attempt, setAttempt] = useState<CreationAttempt>()

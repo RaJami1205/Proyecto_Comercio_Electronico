@@ -16,6 +16,7 @@ export interface CartState {
 }
 
 export type CartAction =
+  | { type: 'CLEAR_CART' }
   | { type: 'ADD_ITEM'; payload: Omit<CartItem, 'quantity'> }
   | { type: 'INCREMENT_ITEM'; payload: { productId: string } }
   | { type: 'DECREMENT_ITEM'; payload: { productId: string } }
