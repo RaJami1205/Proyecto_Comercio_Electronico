@@ -25,7 +25,9 @@ function isOrder(value: unknown): value is Order {
     && ['fullName', 'email', 'phone'].every(key => text((value.buyer as Record<string, unknown>)[key]))
     && ['province', 'canton', 'address'].every(key => text((value.delivery as Record<string, unknown>)[key]))
     && (value.delivery.additionalInfo === undefined || typeof value.delivery.additionalInfo === 'string')
-    && value.currency === 'CRC' && value.orderStatus === 'PENDING' && value.paymentStatus === 'PENDING'
+    && value.currency === 'CRC'
+    && ((value.orderStatus === 'PENDING' && (value.paymentStatus === 'PENDING' || value.paymentStatus === 'DECLINED' || value.paymentStatus === 'ERROR'))
+      || (value.orderStatus === 'CONFIRMED' && value.paymentStatus === 'APPROVED'))
     && ['subtotal', 'tax', 'shipping', 'total'].every(key => money((value.totals as Record<string, unknown>)[key]))
     && Array.isArray(value.items) && value.items.length > 0 && value.items.every(item => isRecord(item)
       && text(item.productId) && text(item.name) && typeof item.image === 'string' && money(item.unitPrice)

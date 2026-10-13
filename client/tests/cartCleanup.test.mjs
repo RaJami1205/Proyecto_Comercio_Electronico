@@ -9,33 +9,8 @@ async function loadSource(file) {
   return import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'))
 }
 const {cartReducer} = await loadSource('context/cartReducer.ts')
-const {createPaidOrderCartCleanup} = await loadSource('utils/paidOrderCartCleanup.ts')
 const {saveCart, loadCart, CART_STORAGE_KEY} = await loadSource('utils/cartStorage.ts')
 const product = {productId:'product-1', name:'Producto', price:10000, image:'', quantity:2}
-
-test('solo CONFIRMED/APPROVED limpia; crear orden, rechazo y error conservan productos', () => {
-  let cart = {items:[{...product}]}
-  let clears = 0
-  const cleanup = createPaidOrderCartCleanup(() => { clears++; cart = cartReducer(cart, {type:'CLEAR_CART'}) })
-  for (const order of [undefined, {id:'pending',orderStatus:'PENDING',paymentStatus:'PENDING'}, {id:'declined',orderStatus:'PENDING',paymentStatus:'DECLINED'}, {id:'error',orderStatus:'PENDING',paymentStatus:'ERROR'}, {id:'invalid-1',orderStatus:'PENDING',paymentStatus:'APPROVED'}, {id:'invalid-2',orderStatus:'CONFIRMED',paymentStatus:'PENDING'}]) {
-    cleanup(order)
-    assert.deepEqual(cart.items,[product])
-    assert.equal(clears,0)
-  }
-  const approved = {id:'approved',orderStatus:'CONFIRMED',paymentStatus:'APPROVED'}
-  const original = structuredClone(approved)
-  cleanup(approved)
-  assert.deepEqual(cart.items,[])
-  assert.equal(clears,1)
-  assert.deepEqual(approved,original)
-  cart = cartReducer(cart, {type:'ADD_ITEM',payload:product})
-  cleanup({...approved})
-  assert.equal(clears,1)
-  assert.equal(cart.items.length,1)
-  cleanup({...approved,id:'another-order'})
-  assert.equal(clears,2)
-  assert.deepEqual(cart.items,[])
-})
 
 test('CLEAR_CART no muta el snapshot original y conserva las operaciones del carrito', () => {
   const before = {items:[{...product}]}

@@ -17,8 +17,7 @@ const runtimeUrl = dataUrl(`
   }
   export function useRef(initial) { const [value] = useState(() => ({current:initial})); return value; }
   export function useEffect() {}
-  export function useCart() { return {items:cart}; }
-  export function useClearCartAfterPayment() {}
+  export function useCart() { return {items:cart, clearCart: () => { throw new Error('No se permite cleanup automático'); }}; }
   export const Fragment = 'Fragment';
   export function jsx(type, props) { return {type, props}; }
   export const jsxs = jsx;
@@ -26,7 +25,7 @@ const runtimeUrl = dataUrl(`
 const runtime = await import(runtimeUrl)
 const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
-  ['../hooks/useCart', runtimeUrl], ['../hooks/useClearCartAfterPayment', runtimeUrl],
+  ['../hooks/useCart', runtimeUrl],
 ])
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep']) {
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
@@ -53,7 +52,6 @@ const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx')
 const { default: ReviewStep } = await import(compile('components/checkout/ReviewStep.tsx'))
 const { orderReviewDifferences } = await import(differencesUrl)
 const { calculateCartTotals } = await import(calculationsUrl)
-const { orderApi } = await import(apiUrl)
 const buyer = { fullName: 'Prueba', email: 'test@example.com', phone: '88888888' }
 const delivery = { province: 'San José', canton: 'Central', address: 'Dirección' }
 const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quantity: 1 }]
@@ -214,8 +212,50 @@ test('F5 retry resuelto conserva identidad y compara el intento original, no Car
     assert.equal(flow.review().totals.total, order().totals.total)
   })
 })
-test('Compatibilidad pendiente: replay CONFIRMED/APPROVED sigue siendo rechazado por el parser', async () => {
-  await withFetch(() => Response.json({...order(),orderStatus:'CONFIRMED',paymentStatus:'APPROVED'}, {status:201}), async () => {
-    await assert.rejects(orderApi.createOrder({buyer,delivery,items:[{productId:'p',quantity:1}],idempotencyKey:'replay'}), error => error.conclusive === false)
+for (const paymentStatus of ['PENDING', 'DECLINED', 'ERROR']) {
+  test('Replay pendiente ' + paymentStatus + ' conserva Order y Cart', async () => {
+    await withFetch(() => Response.json({...order(), paymentStatus}, {status:201}), async requests => {
+      const flow = checkout()
+      await flow.review().onConfirm()
+      flow.render()
+      assert.equal(flow.step(), 'payment')
+      assert.equal(flow.review().order.paymentStatus, paymentStatus)
+      assert.equal(requests.length, 1)
+      assert.deepEqual(runtime.cart, cart)
+      if (paymentStatus !== 'PENDING') assert.match(text(ReviewStep(flow.review())), /último intento de pago/)
+    })
   })
-})
+}
+for (const changed of [false, true]) {
+  test('Replay confirmado tras retry, diferencias=' + changed + ': sin Pago ni cleanup', async () => {
+    const confirmed = {...order(), orderStatus:'CONFIRMED', paymentStatus:'APPROVED'}
+    if (changed) confirmed.totals.total += 500
+    await withFetch(count => {
+      if (count === 1) throw new TypeError('simulated timeout')
+      return Response.json(confirmed, {status:201})
+    }, async requests => {
+      const flow = checkout()
+      await flow.review().onConfirm()
+      flow.render()
+      assert.equal(flow.review().retryPending, true)
+      await flow.review().onConfirm()
+      flow.render()
+      assert.deepEqual(requests[1], requests[0])
+      assert.equal(flow.step(), 'review')
+      assert.equal(flow.review().retryPending, false)
+      assert.equal(flow.review().error, undefined)
+      assert.equal(flow.review().onConfirm, undefined)
+      assert.equal(flow.review().onEdit, undefined)
+      assert.deepEqual(flow.review().differences, [])
+      assert.deepEqual(flow.review().order, confirmed)
+      const message = text(ReviewStep(flow.review()))
+      assert.match(message, /ya está confirmada y su pago fue aprobado/)
+      assert.doesNotMatch(message, /Aceptar cambios|continuar al pago|orden pendiente|Reintentar/)
+      assert.deepEqual(runtime.cart, cart)
+      flow.review().onAbandon()
+      assert.deepEqual(flow.events.slice(-2), [false, 'exit'])
+      assert.equal(requests.length, 2)
+      assert.deepEqual(runtime.cart, cart)
+    })
+  })
+}

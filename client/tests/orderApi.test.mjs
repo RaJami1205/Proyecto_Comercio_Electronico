@@ -65,3 +65,34 @@ test('fallo técnico o respuesta 201 inválida mantienen el intento pendiente', 
     await assert.rejects(orderApi.createOrder(request), error => orderErrorMessage(error).includes('evitar duplicados'))
   } finally { globalThis.fetch = original }
 })
+
+test('replay acepta únicamente las cuatro combinaciones coherentes', async () => {
+  const original = globalThis.fetch
+  try {
+    for (const orderStatus of ['PENDING', 'CONFIRMED', 'UNKNOWN', undefined]) {
+      for (const paymentStatus of ['PENDING', 'DECLINED', 'ERROR', 'APPROVED', 'UNKNOWN', undefined]) {
+        const snapshot = {...order, orderStatus, paymentStatus}
+        globalThis.fetch = async () => Response.json(snapshot, {status:201})
+        const valid = (orderStatus === 'PENDING' && ['PENDING','DECLINED','ERROR'].includes(paymentStatus))
+          || (orderStatus === 'CONFIRMED' && paymentStatus === 'APPROVED')
+        if (valid) assert.deepEqual(await orderApi.createOrder(request), snapshot)
+        else await assert.rejects(orderApi.createOrder(request), error => error instanceof OrderApiError && !error.conclusive)
+      }
+    }
+  } finally { globalThis.fetch = original }
+})
+
+test('un replay aprobado conserva toda la validación estructural', async () => {
+  const original = globalThis.fetch
+  const approved = {...order, orderStatus:'CONFIRMED', paymentStatus:'APPROVED'}
+  try {
+    for (const patch of [
+      {id:''}, {orderNumber:''}, {createdAt:'invalid'}, {buyer:null}, {delivery:{...order.delivery,address:''}},
+      {currency:'USD'}, {totals:{...order.totals,total:-1}}, {items:[]},
+      {items:[{...order.items[0],quantity:0}]}, {items:[{...order.items[0],unitPrice:'5000'}]},
+    ]) {
+      globalThis.fetch = async () => Response.json({...approved,...patch}, {status:201})
+      await assert.rejects(orderApi.createOrder(request), error => error instanceof OrderApiError && !error.conclusive)
+    }
+  } finally { globalThis.fetch = original }
+})

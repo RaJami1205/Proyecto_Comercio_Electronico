@@ -7,7 +7,6 @@ import type { CheckoutData } from '../types/checkout'
 import type { CreateOrderRequest, Order } from '../types/order'
 import type { CartItem } from '../types/cart'
 import { useCart } from '../hooks/useCart'
-import { useClearCartAfterPayment } from '../hooks/useClearCartAfterPayment'
 import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalculations'
 import { normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
 import { orderApi, OrderApiError, orderErrorMessage } from '../services/orderApi'
@@ -28,7 +27,7 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
   buyer: { title: 'Comprador', description: 'Completa tus datos de contacto.' },
   delivery: { title: 'Entrega', description: 'Indica la dirección de entrega.' },
   review: { title: 'Revisión', description: 'Revisa tus datos y productos antes de confirmar la compra.' },
-  payment: { title: 'Pago', description: 'Tu orden está lista. La etapa de pago estará disponible próximamente; todavía no se ha realizado ningún cobro.' },
+  payment: { title: 'Pago', description: 'Tu orden está pendiente. La etapa de pago estará disponible próximamente. No se procesará un pago desde esta pantalla.' },
 }
 
 /** Buyer, Delivery, intento y Order viven exclusivamente dentro de este Checkout. */
@@ -38,7 +37,6 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
   const [differences, setDifferences] = useState<string[]>([])
-  useClearCartAfterPayment(order)
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
   const [error, setError] = useState<string>()
   const [attempt, setAttempt] = useState<CreationAttempt>()
@@ -47,7 +45,10 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const pageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageChangedRef = useRef(false)
-  const stage = stages[currentStep]
+  const confirmed = order?.orderStatus === 'CONFIRMED' && order.paymentStatus === 'APPROVED'
+  const stage = confirmed
+    ? { title: 'Orden confirmada', description: 'Recuperamos una orden existente con pago aprobado. No necesitas realizar otro pago.' }
+    : stages[currentStep]
   const reviewItems = attempt?.items ?? items
   const invalid = Object.keys(validateBuyer(data.buyer)).length > 0 || Object.keys(validateDelivery(data.delivery)).length > 0
     || reviewItems.length === 0 || reviewItems.some(item => !Number.isSafeInteger(item.quantity) || item.quantity <= 0)
@@ -61,7 +62,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   }, [currentStep, order])
 
   function changeStep(next: CheckoutStep) {
-    if (submittingRef.current) return
+    if (submittingRef.current || confirmed) return
     if (next === 'payment' && !order) return
     if (attemptRef.current && next !== 'review' && next !== 'payment') return
     stageChangedRef.current = true
@@ -70,7 +71,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   }
 
   async function confirmOrder() {
-    if (submittingRef.current || (!order && invalid)) return
+    if (submittingRef.current || confirmed || (!order && invalid)) return
     if (order) {
       setDifferences([])
       onNavigationLockChange(false)
@@ -95,7 +96,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       attemptRef.current = activeAttempt
       setAttempt(activeAttempt)
       const created = await orderApi.createOrder(activeAttempt.request)
-      const changes = orderReviewDifferences(activeAttempt.items, created)
+      const alreadyConfirmed = created.orderStatus === 'CONFIRMED' && created.paymentStatus === 'APPROVED'
+      const changes = alreadyConfirmed ? [] : orderReviewDifferences(activeAttempt.items, created)
       requiresAcceptance = changes.length > 0
       setDifferences(changes)
       setOrder(created)
@@ -103,7 +105,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       attemptRef.current = undefined
       setAttempt(undefined)
       stageChangedRef.current = true
-      setCurrentStep(requiresAcceptance ? 'review' : 'payment')
+      setCurrentStep(alreadyConfirmed || requiresAcceptance ? 'review' : 'payment')
     } catch (failure) {
       if (failure instanceof OrderApiError && failure.conclusive) {
         attemptRef.current = undefined
@@ -149,8 +151,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                   items={displayItems} totals={order?.totals ?? calculateCartTotals(reviewItems)} order={order}
                   busy={isCreatingOrder} retryPending={Boolean(attempt)} invalid={!order && invalid} error={error}
                   differences={differences}
-                  onAbandon={attempt || differences.length > 0 ? abandonCheckout : undefined}
-                  onEdit={!order ? changeStep : undefined} onConfirm={currentStep === 'review' ? confirmOrder : undefined} />
+                  onAbandon={confirmed || attempt || differences.length > 0 ? abandonCheckout : undefined}
+                  onEdit={!order ? changeStep : undefined} onConfirm={!confirmed && currentStep === 'review' ? confirmOrder : undefined} />
                 <div className={styles.actions}>
                   {currentStep === 'review' && !order ? <button type="button" className={styles.back} disabled={lockNavigation} onClick={() => changeStep('delivery')}>Volver a entrega</button> : null}
                   {currentStep === 'payment' ? <button type="button" className={styles.back} onClick={() => changeStep('review')}>Revisar orden</button> : null}
