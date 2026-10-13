@@ -11,6 +11,7 @@ import { useClearCartAfterPayment } from '../hooks/useClearCartAfterPayment'
 import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalculations'
 import { normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
 import { orderApi, OrderApiError, orderErrorMessage } from '../services/orderApi'
+import { orderReviewDifferences } from '../utils/orderReviewDifferences'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import styles from '../styles/pages/CheckoutPage.module.css'
@@ -36,6 +37,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
+  const [differences, setDifferences] = useState<string[]>([])
   useClearCartAfterPayment(order)
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
   const [error, setError] = useState<string>()
@@ -56,7 +58,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       target?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
-  }, [currentStep])
+  }, [currentStep, order])
 
   function changeStep(next: CheckoutStep) {
     if (submittingRef.current) return
@@ -69,12 +71,18 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
   async function confirmOrder() {
     if (submittingRef.current || (!order && invalid)) return
-    if (order) { changeStep('payment'); return }
+    if (order) {
+      setDifferences([])
+      onNavigationLockChange(false)
+      changeStep('payment')
+      return
+    }
     // El ref protege incluso clicks ocurridos antes del siguiente render de React.
     submittingRef.current = true
     setIsCreatingOrder(true)
     onNavigationLockChange(true)
     setError(undefined)
+    let requiresAcceptance = false
     try {
       const activeAttempt = attemptRef.current ?? {
         request: {
@@ -87,12 +95,15 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       attemptRef.current = activeAttempt
       setAttempt(activeAttempt)
       const created = await orderApi.createOrder(activeAttempt.request)
+      const changes = orderReviewDifferences(activeAttempt.items, created)
+      requiresAcceptance = changes.length > 0
+      setDifferences(changes)
       setOrder(created)
       onOrderCreated()
       attemptRef.current = undefined
       setAttempt(undefined)
       stageChangedRef.current = true
-      setCurrentStep('payment')
+      setCurrentStep(requiresAcceptance ? 'review' : 'payment')
     } catch (failure) {
       if (failure instanceof OrderApiError && failure.conclusive) {
         attemptRef.current = undefined
@@ -102,12 +113,19 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     } finally {
       submittingRef.current = false
       setIsCreatingOrder(false)
-      onNavigationLockChange(Boolean(attemptRef.current))
+      onNavigationLockChange(Boolean(attemptRef.current) || requiresAcceptance)
     }
   }
 
+  function abandonCheckout() {
+    if (submittingRef.current) return
+    // La salida es explícita: no cancela ni recrea la Order y no modifica Cart.
+    onNavigationLockChange(false)
+    onBackToCart()
+  }
+
   const displayItems = order?.items ?? reviewItems.map(item => ({ productId: item.productId, name: item.name, image: item.image, unitPrice: item.price, quantity: item.quantity, lineSubtotal: calculateLineSubtotal(item.price, item.quantity) }))
-  const lockNavigation = isCreatingOrder || Boolean(attempt)
+  const lockNavigation = isCreatingOrder || Boolean(attempt) || differences.length > 0
   return (
     <div className={styles.page}>
       <div inert={lockNavigation}><Header checkoutView onCartClick={onCartClick} onCatalogClick={onCatalogClick} /></div>
@@ -130,6 +148,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                 <ReviewStep buyer={order?.buyer ?? data.buyer} delivery={order?.delivery ?? data.delivery}
                   items={displayItems} totals={order?.totals ?? calculateCartTotals(reviewItems)} order={order}
                   busy={isCreatingOrder} retryPending={Boolean(attempt)} invalid={!order && invalid} error={error}
+                  differences={differences}
+                  onAbandon={attempt || differences.length > 0 ? abandonCheckout : undefined}
                   onEdit={!order ? changeStep : undefined} onConfirm={currentStep === 'review' ? confirmOrder : undefined} />
                 <div className={styles.actions}>
                   {currentStep === 'review' && !order ? <button type="button" className={styles.back} disabled={lockNavigation} onClick={() => changeStep('delivery')}>Volver a entrega</button> : null}

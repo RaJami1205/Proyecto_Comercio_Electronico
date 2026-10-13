@@ -13,11 +13,13 @@ interface ReviewStepProps {
   retryPending?: boolean
   invalid?: boolean
   error?: string
+  differences?: readonly string[]
+  onAbandon?: () => void
   onEdit?: (step: 'buyer' | 'delivery') => void
   onConfirm?: () => void
 }
 
-function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retryPending = false, invalid = false, error, onEdit, onConfirm }: ReviewStepProps) {
+function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retryPending = false, invalid = false, error, differences = [], onAbandon, onEdit, onConfirm }: ReviewStepProps) {
   const money = (value: number) => new Intl.NumberFormat('es-CR', { style: 'currency', currency: order?.currency ?? 'CRC' }).format(value)
   return (
     <div className={styles.layout}>
@@ -49,13 +51,23 @@ function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retry
       </div>
       <aside className={styles.summary} aria-labelledby="review-summary">
         <h3 id="review-summary">Resumen de compra</h3>
+        {differences.length > 0 ? <div role="alert" className={styles.orderInfo}>
+          <p><strong>Las condiciones de tu compra cambiaron.</strong> Revisa los importes actualizados de la orden antes de aceptarlos y continuar al pago.</p>
+          <ul>{differences.map((difference, index) => <li key={index}>{difference}</li>)}</ul>
+        </div> : null}
         <p>{order ? 'Estos son los montos de tu orden.' : 'Revisa tu compra. Los montos finales se confirmarán al crear la orden.'}</p>
         <dl className={styles.totals}><dt>Subtotal</dt><dd>{money(totals.subtotal)}</dd><dt>IVA (13%)</dt><dd>{money(totals.tax)}</dd><dt>Costo de envío</dt><dd>{totals.shipping === 0 ? 'Gratis' : money(totals.shipping)}</dd><dt className={styles.total}>Total</dt><dd className={styles.total}>{money(totals.total)}</dd></dl>
         {order ? <div className={styles.orderInfo}><p>Orden: <strong>{order.orderNumber}</strong></p><p>Estado de la orden: {order.orderStatus === 'PENDING' ? 'Pendiente' : order.orderStatus}</p><p>Estado del pago: {order.paymentStatus === 'PENDING' ? 'Pendiente' : order.paymentStatus}</p></div> : null}
         {invalid ? <p role="alert" className={styles.error}>Completa los datos del comprador y la entrega y verifica que tu carrito tenga productos con cantidades válidas.</p> : null}
         {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-        {retryPending && !busy ? <p>Reintenta para confirmar este envío antes de modificar los datos de la compra.</p> : null}
-        {onConfirm ? <div className={pageStyles.actions}><button type="button" className={pageStyles.continue} disabled={busy || invalid} onClick={onConfirm}>{busy ? 'Creando orden…' : 'Confirmar y continuar al pago'}</button></div> : null}
+        {retryPending && !busy ? <p role="status">No se ha podido confirmar el resultado. La orden podría haberse creado. Reintentar envía la misma solicitud con la misma identidad para evitar duplicarla, conservando tus datos y productos.</p> : null}
+        {onConfirm ? <div className={pageStyles.actions}><button type="button" className={pageStyles.continue} disabled={busy || invalid} onClick={onConfirm}>{busy ? 'Creando orden…' : differences.length > 0 ? 'Aceptar cambios y continuar al pago' : order ? 'Continuar al pago' : retryPending ? 'Reintentar la misma solicitud' : 'Confirmar y continuar al pago'}</button></div> : null}
+        {onAbandon && !busy ? <div className={styles.orderInfo}>
+          <p id="checkout-exit-warning">{order
+            ? 'La orden pendiente ya existe. Salir no la cancela ni realiza un pago. Conservaremos tu carrito, pero se perderán los datos de este Checkout. Si vuelves a comprar, podrías crear otra orden.'
+            : 'Puedes salir y conservar tu carrito. No sabemos si la orden existe y salir no la cancela ni realiza un pago. Se perderán los datos y la identidad de este intento; si vuelves a comprar, podrías crear una orden duplicada.'}</p>
+          <div className={pageStyles.actions}><button type="button" className={pageStyles.back} aria-describedby="checkout-exit-warning" onClick={onAbandon}>Salir del Checkout y conservar carrito</button></div>
+        </div> : null}
         <p role="status" aria-live="polite">{busy ? 'Estamos confirmando tu orden. Espera un momento.' : ''}</p>
       </aside>
     </div>
