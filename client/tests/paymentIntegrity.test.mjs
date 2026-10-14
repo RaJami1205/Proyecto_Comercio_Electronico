@@ -82,7 +82,7 @@ function checkout() {
   return { render, find, review: () => find('ReviewStep'), step: () => find('CheckoutStepper').currentStep, events }
 }
 
-// Pruebas dirigidas F1/F2/F4. No reparan la suite histórica pendiente de F7.
+// Pruebas dirigidas de integridad y preservación del Cart.
 const result = (scenario, changes = {}) => ({
   result: scenario, processedAt: order().createdAt,
   order: {...order(), orderStatus: scenario === 'PAYMENT_APPROVED' ? 'CONFIRMED' : 'PENDING',
@@ -96,6 +96,8 @@ async function paymentFlow(t, scenario = 'PAYMENT_DECLINED') {
   globalThis.fetch = async (url, options) => {
     assert.equal(options.method, 'POST')
     const payload = JSON.parse(options.body)
+    assert.equal(typeof payload.idempotencyKey, 'string')
+    assert.ok(payload.idempotencyKey.length > 0)
     requests.push({url, payload})
     if (url === '/api/orders') return Response.json(order(), {status:201})
     assert.equal(url, '/api/orders/order-1/payment')
@@ -176,6 +178,8 @@ const invalidResults = [
   ['Approved/Pending', () => result('PAYMENT_APPROVED', {order:order()})],
   ['Order ajena', () => result('PAYMENT_APPROVED', {order:{...result('PAYMENT_APPROVED').order, id:'other'}})],
   ['escenario ajeno', () => result('PAYMENT_DECLINED')],
+  ['escenario desconocido', () => result('PAYMENT_UNKNOWN')],
+  ['resultado ausente', () => result('PAYMENT_APPROVED', {result:undefined})],
   ['fecha ausente', () => result('PAYMENT_APPROVED', {processedAt:undefined})],
   ['fecha inválida', () => result('PAYMENT_APPROVED', {processedAt:'invalid'})],
   ['Order incompleta', () => result('PAYMENT_APPROVED', {order:{id:'order-1'}})],
@@ -225,3 +229,74 @@ test('API excluye campos de tarjeta demostrativos y otros extras del payload', a
   await paymentApi.processPayment('order-1', {scenario:'PAYMENT_APPROVED', idempotencyKey:'test',
     cardNumber:'1234567890123456', cardCvv:'000', cardName:'Demo', amount:1})
 })
+
+const { default: PaymentStep } = await import(compile('components/checkout/PaymentStep.tsx'))
+const { default: PaymentResultPanel } = await import(compile('components/checkout/PaymentResultPanel.tsx'))
+
+test('Sandbox conserva campos demo, validación, escenarios y payload sin datos de tarjeta', async t => {
+  runtime.reset([])
+  const writes = [], logs = [], requests = []
+  const storage = {setItem: (...args) => writes.push(args)}
+  for (const key of ['localStorage', 'sessionStorage', 'window']) {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, key)
+    Object.defineProperty(globalThis, key, {configurable:true, value:key === 'window' ? {localStorage:storage, sessionStorage:storage} : storage})
+    t.after(() => {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+      else delete globalThis[key]
+    })
+  }
+  for (const method of ['log', 'info', 'warn', 'error', 'debug']) t.mock.method(console, method, (...args) => logs.push(args))
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({url, payload:JSON.parse(options.body)})
+    return Response.json(result('PAYMENT_APPROVED'))
+  })
+  const props = {order:order(), selectedScenario:null, isProcessingPayment:false,
+    onScenarioChange: scenario => { props.selectedScenario = scenario },
+    onProcessPayment: () => paymentApi.processPayment('order-1', {scenario:props.selectedScenario, idempotencyKey:'demo-key'})}
+  let tree
+  const render = () => { runtime.renderStart(); tree = PaymentStep(props) }
+  const inputs = () => nodes(tree).filter(n => n.type === 'input' && n.props.type !== 'radio')
+  const button = () => nodes(tree).find(n => n.type === 'button').props
+  const fieldsets = () => nodes(tree).filter(n => n.type === 'fieldset')
+  render()
+  assert.equal(inputs().length, 4)
+  assert.equal(inputs()[3].props.type, 'password')
+  assert.equal(nodes(tree).filter(n => n.type === 'input' && n.props.type === 'radio').length, 3)
+  assert.equal(button().disabled, true)
+  const values = ['1234567890123456', 'Persona Demo', '1399', '000']
+  inputs().forEach((input, index) => input.props.onChange({target:{value:values[index]}}))
+  render()
+  assert.equal(inputs()[0].props.value, '1234 5678 9012 3456')
+  assert.equal(inputs()[2].props.value, '13/99')
+  const radio = nodes(tree).find(n => n.type === 'input' && n.props.value === 'PAYMENT_APPROVED')
+  radio.props.onChange(); render()
+  assert.equal(button().disabled, true) // mes inválido
+  inputs()[2].props.onChange({target:{value:'1299'}}); render()
+  assert.equal(button().disabled, false)
+  await button().onClick()
+  assert.deepEqual(requests, [{url:'/api/orders/order-1/payment', payload:{scenario:'PAYMENT_APPROVED', idempotencyKey:'demo-key'}}])
+  props.isProcessingPayment = true; render()
+  assert.equal(button().disabled, true)
+  assert.ok(fieldsets().every(n => n.props.disabled))
+  props.isProcessingPayment = false; props.scenarioLocked = true; render()
+  assert.equal(Boolean(fieldsets()[0].props.disabled), false)
+  assert.equal(fieldsets()[1].props.disabled, true)
+  assert.equal(inputs()[0].props.value, '1234 5678 9012 3456')
+  assert.deepEqual(writes, [])
+  assert.deepEqual(logs, [])
+})
+
+for (const scenario of ['PAYMENT_APPROVED', 'PAYMENT_DECLINED', 'PAYMENT_ERROR']) {
+  test('Panel real presenta ' + scenario + ' y disponibilidad correcta de Retry', () => {
+    runtime.reset([])
+    let retries = 0
+    const payment = result(scenario)
+    const tree = PaymentResultPanel({result:scenario, order:payment.order,
+      onRetry:scenario === 'PAYMENT_APPROVED' ? undefined : () => { retries++ }})
+    assert.equal(tree.props.role, scenario === 'PAYMENT_APPROVED' ? 'status' : 'alert')
+    assert.equal(nodes(tree).find(n => n.type === 'h3').props.tabIndex, -1)
+    const buttons = nodes(tree).filter(n => n.type === 'button')
+    assert.equal(buttons.length, scenario === 'PAYMENT_APPROVED' ? 0 : 1)
+    if (buttons.length) { buttons[0].props.onClick(); assert.equal(retries, 1) }
+  })
+}

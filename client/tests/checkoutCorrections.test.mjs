@@ -27,7 +27,7 @@ const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
 ])
-for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep']) {
+for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel']) {
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 }
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
@@ -48,6 +48,7 @@ const differencesUrl = compile('utils/orderReviewDifferences.ts')
 modules.set('../utils/orderReviewDifferences', differencesUrl)
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
+modules.set('../services/paymentApi', compile('services/paymentApi.ts'))
 const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx'))
 const { default: ReviewStep } = await import(compile('components/checkout/ReviewStep.tsx'))
 const { orderReviewDifferences } = await import(differencesUrl)
@@ -83,7 +84,7 @@ function checkout() {
   render()
   find('DeliveryStep').onContinue(delivery)
   render()
-  return { render, review: () => find('ReviewStep'), step: () => find('CheckoutStepper').currentStep, events }
+  return { render, find, review: () => find('ReviewStep'), payment: () => find('PaymentStep'), step: () => find('CheckoutStepper').currentStep, events }
 }
 async function withFetch(responder, run) {
   const original = globalThis.fetch
@@ -141,7 +142,7 @@ for (const field of ['total', 'tax', 'shipping', 'unitPrice']) {
       await flow.review().onConfirm()
       flow.render()
       assert.equal(flow.step(), 'payment')
-      assert.equal(flow.review().order, authoritative)
+      assert.equal(flow.payment().order, authoritative)
       assert.equal(requests.length, 1)
       assert.equal(flow.events.at(-1), false)
     })
@@ -174,8 +175,8 @@ test('F4 IVA alineado con Server no produce diferencias artificiales ni exige ac
     await flow.review().onConfirm()
     flow.render()
     assert.equal(flow.step(), 'payment')
-    assert.deepEqual(flow.review().differences, [])
-    assert.deepEqual(flow.review().totals, authoritative.totals)
+    assert.deepEqual(orderReviewDifferences(fractional, flow.payment().order), [])
+    assert.deepEqual(flow.payment().order.totals, authoritative.totals)
     assert.equal(requests.length, 1)
   })
 })
@@ -186,7 +187,9 @@ test('F4 salida advierte que la orden existe y conserva Cart', async () => {
     const flow = checkout()
     await flow.review().onConfirm()
     flow.render()
-    assert.match(text(ReviewStep(flow.review())), /La orden pendiente ya existe/)
+    assert.ok(flow.review().order)
+    assert.match(text(ReviewStep(flow.review())), /La orden no se cancela/)
+    assert.match(text(ReviewStep(flow.review())), /conservas los productos del carrito/)
     flow.review().onAbandon()
     assert.deepEqual(flow.events.slice(-2), [false, 'exit'])
     assert.equal(requests.length, 1)
@@ -211,7 +214,8 @@ test('F5 errores persistentes preservan key/payload/datos y ofrecen salida expl�
     assert.deepEqual(requests[1], first)
     const message = text(ReviewStep(flow.review()))
     assert.match(message, /La orden podría haberse creado/)
-    assert.match(message, /podrías crear una orden duplicada/)
+    assert.match(message, /podría crear una orden duplicada/)
+    assert.match(message, /conservas los productos del carrito/)
     flow.review().onAbandon()
     assert.deepEqual(flow.events.slice(-2), [false, 'exit'])
     assert.equal(requests.length, 2)
@@ -231,7 +235,7 @@ test('F5 retry resuelto conserva identidad y compara el intento original, no Car
     flow.render()
     assert.deepEqual(requests[1], requests[0])
     assert.equal(flow.step(), 'payment')
-    assert.equal(flow.review().totals.total, order().totals.total)
+    assert.equal(flow.payment().order.totals.total, order().totals.total)
   })
 })
 for (const paymentStatus of ['PENDING', 'DECLINED', 'ERROR']) {
@@ -241,10 +245,15 @@ for (const paymentStatus of ['PENDING', 'DECLINED', 'ERROR']) {
       await flow.review().onConfirm()
       flow.render()
       assert.equal(flow.step(), 'payment')
-      assert.equal(flow.review().order.paymentStatus, paymentStatus)
+      assert.equal(flow.payment().order.paymentStatus, paymentStatus)
       assert.equal(requests.length, 1)
       assert.deepEqual(runtime.cart, cart)
-      if (paymentStatus !== 'PENDING') assert.match(text(ReviewStep(flow.review())), /último intento de pago/)
+      if (paymentStatus !== 'PENDING') {
+        flow.find('button').onClick() // Revisar orden desde Payment.
+        flow.render()
+        assert.equal(flow.step(), 'review')
+        assert.match(text(ReviewStep(flow.review())), /último intento de pago/)
+      }
     })
   })
 }
