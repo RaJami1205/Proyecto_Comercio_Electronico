@@ -14,6 +14,9 @@ import { orderReviewDifferences } from '../utils/orderReviewDifferences'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import styles from '../styles/pages/CheckoutPage.module.css'
+import PaymentStep from '../components/checkout/PaymentStep'
+import { paymentApi, paymentErrorMessage } from '../services/paymentApi'
+import type { PaymentScenario } from '../types/payment'
 
 interface CheckoutPageProps {
   onBackToCart: () => void
@@ -32,7 +35,7 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
 
 /** Buyer, Delivery, intento y Order viven exclusivamente dentro de este Checkout. */
 function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated }: CheckoutPageProps) {
-  const { items } = useCart()
+  const { items, clearCart } = useCart()
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
@@ -40,6 +43,10 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
   const [error, setError] = useState<string>()
   const [attempt, setAttempt] = useState<CreationAttempt>()
+  const [selectedPaymentScenario, setSelectedPaymentScenario] = useState<PaymentScenario | null>(null)
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
+  const [paymentError, setPaymentError] = useState<string>()
+  const idempotencyKeyRef = useRef<string | undefined>(undefined)
   const attemptRef = useRef<CreationAttempt | undefined>(undefined)
   const submittingRef = useRef(false)
   const pageHeadingRef = useRef<HTMLHeadingElement>(null)
@@ -119,6 +126,41 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     }
   }
 
+  function getIdempotencyKey(): string {
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = crypto.randomUUID()
+    }
+    return idempotencyKeyRef.current
+  }
+
+  async function handleProcessPayment() {
+    if (isProcessingPayment || submittingRef.current || !order || !selectedPaymentScenario) return
+
+    setIsProcessingPayment(true)
+    setPaymentError(undefined)
+    onNavigationLockChange(true)
+
+    try {
+      const result = await paymentApi.processPayment(order.id, {
+        scenario: selectedPaymentScenario,
+        idempotencyKey: getIdempotencyKey(),
+      })
+      idempotencyKeyRef.current = undefined
+      setOrder(result.order)
+
+      if (result.result === 'PAYMENT_APPROVED') {
+        clearCart()
+      }
+    } catch (failure) {
+      setPaymentError(paymentErrorMessage(failure))
+    } finally {
+      setIsProcessingPayment(false)
+      onNavigationLockChange(false)
+    }
+  }
+
+
+
   function abandonCheckout() {
     if (submittingRef.current) return
     // La salida es explícita: no cancela ni recrea la Order y no modifica Cart.
@@ -155,7 +197,10 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                   onEdit={!order ? changeStep : undefined} onConfirm={!confirmed && currentStep === 'review' ? confirmOrder : undefined} />
                 <div className={styles.actions}>
                   {currentStep === 'review' && !order ? <button type="button" className={styles.back} disabled={lockNavigation} onClick={() => changeStep('delivery')}>Volver a entrega</button> : null}
-                  {currentStep === 'payment' ? <button type="button" className={styles.back} onClick={() => changeStep('review')}>Revisar orden</button> : null}
+                  {currentStep === 'payment' ? <button type="button" className={styles.back} disabled={isProcessingPayment || confirmed} onClick={() => changeStep('review')}>Revisar orden</button> : null}
+                  {currentStep === 'payment' && order ? (<PaymentStep order={order} selectedScenario={selectedPaymentScenario} onScenarioChange={setSelectedPaymentScenario} 
+                    onProcessPayment={handleProcessPayment} isProcessingPayment={isProcessingPayment} locked={confirmed} error={paymentError}/>) : null
+                  }
                 </div>
               </>
             )}

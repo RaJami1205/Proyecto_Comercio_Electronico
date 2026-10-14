@@ -1,0 +1,179 @@
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.sandboxBanner {
+  border: 1px solid var(--color-border, #d8dce1);
+  background: #fff8e6;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.orderSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--color-border, #d8dce1);
+  border-radius: 0.5rem;
+}
+
+.orderSummary div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.orderSummary dt {
+  font-size: 0.8rem;
+  color: #5b6472;
+}
+
+.orderSummary dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.total {
+  font-size: 1.1rem;
+}
+
+.cardFields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid var(--color-border, #d8dce1);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 0;
+}
+
+.cardFields legend {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #5b6472;
+  padding: 0 0.25rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #2a2f37;
+}
+
+.field input {
+  border: 1px solid var(--color-border, #d8dce1);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.field input:focus-visible {
+  outline: 2px solid var(--color-accent, #1f5eff);
+  outline-offset: 1px;
+}
+
+.field input:disabled {
+  background: #f2f3f5;
+  color: #9aa1ab;
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.scenarios {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.scenarios legend {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  padding: 0;
+}
+
+.scenarioCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border: 1px solid var(--color-border, #d8dce1);
+  border-radius: 0.5rem;
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.scenarioCard:hover {
+  border-color: var(--color-accent, #1f5eff);
+}
+
+.scenarioCard:has(input:focus-visible) {
+  outline: 2px solid var(--color-accent, #1f5eff);
+  outline-offset: 2px;
+}
+
+.scenarioCardSelected {
+  border-color: var(--color-accent, #1f5eff);
+  background: rgba(31, 94, 255, 0.05);
+}
+
+.scenarioCard input[type='radio'] {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.scenarioText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.scenarioText code {
+  font-size: 0.75rem;
+  color: #5b6472;
+}
+
+.scenarioDescription {
+  font-size: 0.85rem;
+  color: #5b6472;
+}
+
+.error {
+  color: #b3261e;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .orderSummary {
+    grid-template-columns: 1fr;
+  }
+
+  .fieldRow {
+    grid-template-columns: 1fr;
+  }
+}
