@@ -5,11 +5,12 @@
     "moduleResolution": "NodeNext",
     "rootDir": "src",
     "outDir": "dist",
+    "noEmitOnError": true,
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "../client/src/services/paymentApi.ts"]
+  "include": ["src"]
 }
