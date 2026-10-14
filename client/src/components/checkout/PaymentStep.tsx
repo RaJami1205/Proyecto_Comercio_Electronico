@@ -30,7 +30,7 @@ const scenarios: { id: PaymentScenario; label: string; description: string }[] =
   {
     id: 'PAYMENT_ERROR',
     label: 'Error del servicio',
-    description: 'Simula un error del Sandbox. Podrás intentarlo de nuevo.',
+    description: 'Simula un error del Servidor. Podrás intentarlo de nuevo.',
   },
 ]
 
@@ -97,13 +97,12 @@ function PaymentStep({
   return (
     <div className={styles.layout}>
       <div role="note" className={styles.sandboxBanner}>
-        <strong>Payment Sandbox — entorno de simulación.</strong>{' '}
-        No se procesará ningún pago real. Usa únicamente datos ficticios de demostración en los campos de tarjeta.
-        Deben estar completos para continuar, pero nunca se envían a ningún servidor ni se guardan en ningún lado.
+        <strong>Payment Sandbox · Entorno de simulación</strong>
+        <span>No se realizan cargos reales ni se procesan datos bancarios. Usa solo datos ficticios: los campos de tarjeta no se envían ni se guardan.</span>
       </div>
 
       <dl className={styles.orderSummary}>
-        <div>
+        <div className={styles.orderIdentity}>
           <dt>Orden</dt>
           <dd>{order.orderNumber}</dd>
         </div>
@@ -118,7 +117,23 @@ function PaymentStep({
       </dl>
 
       <fieldset className={styles.cardFields} disabled={disabled}>
-        <legend>Datos de la tarjeta (demostrativo, no se guarda)</legend>
+        <legend>Tarjeta de demostración</legend>
+        <div className={styles.demoMethods}>
+          <ul aria-labelledby="payment-demo-methods" className={styles.methodBadges}>
+            <li>
+              <span aria-hidden="true" className={`${styles.methodEmblem} ${styles.visaEmblem}`}>V</span>
+              <span>VISA</span>
+            </li>
+            <li>
+              <span aria-hidden="true" className={`${styles.methodEmblem} ${styles.mastercardEmblem}`}>MC</span>
+              <span>Mastercard</span>
+            </li>
+            <li>
+              <span aria-hidden="true" className={`${styles.methodEmblem} ${styles.paypalEmblem}`}>PP</span>
+              <span className={styles.methodLabel}>PayPal <small></small></span>
+            </li>
+          </ul>
+        </div>
 
         <label className={styles.field}>
           <span>Número de tarjeta</span>
@@ -189,7 +204,6 @@ function PaymentStep({
             />
             <span className={styles.scenarioText}>
               <strong>{scenario.label}</strong>
-              <code>{scenario.id}</code>
               <span className={styles.scenarioDescription}>{scenario.description}</span>
             </span>
           </label>
@@ -210,10 +224,10 @@ function PaymentStep({
         </p>
       ) : null}
 
-      <div className={pageStyles.actions}>
+      <div className={`${pageStyles.actions} ${styles.actions}`}>
         <button
           type="button"
-          className={pageStyles.continue}
+          className={`${pageStyles.continue} ${styles.paymentButton}`}
           disabled={!selectedScenario || !cardComplete || disabled}
           onClick={onProcessPayment}
         >
