@@ -135,6 +135,7 @@ test('F2 fallo de red conserva Order, escenario y key incluso ante callback de s
   flow.respond(() => { throw new TypeError('Fallo simulado') })
   await flow.payment().onProcessPayment(); flow.render()
   assert.equal(flow.payment().order, snapshot)
+  assert.equal(runtime.cleanupCount, 0)
   assert.equal(flow.payment().scenarioLocked, true)
   flow.payment().onScenarioChange('PAYMENT_APPROVED'); flow.render()
   assert.equal(flow.payment().selectedScenario, 'PAYMENT_DECLINED')
@@ -148,6 +149,7 @@ for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR']) {
   test('F2 nuevo intento tras ' + scenario + ' usa nueva key en la misma Order', async t => {
     const flow = await paymentFlow(t, scenario)
     await flow.payment().onProcessPayment(); flow.render()
+    assert.equal(runtime.cleanupCount, 0)
     flow.find('PaymentResultPanel').onRetry(); flow.render()
     assert.equal(flow.payment().selectedScenario, null)
     flow.payment().onScenarioChange(scenario); flow.render()
@@ -164,6 +166,7 @@ test('F1 Approved bloquea más pagos, incluidos callbacks previos al render', as
   await handler()
   await handler()
   flow.render()
+  assert.equal(runtime.cleanupCount, 0)
   assert.equal(flow.find('PaymentResultPanel').onRetry, undefined)
   assert.equal(flow.find('PaymentResultPanel').order.orderStatus, 'CONFIRMED')
   assert.equal(flow.requests.length, 2)

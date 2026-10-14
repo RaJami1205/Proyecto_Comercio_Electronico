@@ -37,7 +37,7 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
 
 /** Buyer, Delivery, intento y Order viven exclusivamente dentro de este Checkout. */
 function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated }: CheckoutPageProps) {
-  const { items, clearCart } = useCart()
+  const { items } = useCart()
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
@@ -69,12 +69,14 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     || reviewItems.length === 0 || reviewItems.some(item => !Number.isSafeInteger(item.quantity) || item.quantity <= 0)
 
   useEffect(() => {
+    // El panel administra el foco cuando se presenta un resultado de pago.
+    if (currentStep === 'payment' && paymentResult) return
     const frame = requestAnimationFrame(() => {
       const target = stageChangedRef.current ? stageHeadingRef.current : pageHeadingRef.current
       target?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
-  }, [currentStep, order])
+  }, [currentStep, order, paymentResult])
 
   function changeStep(next: CheckoutStep) {
     if (submittingRef.current || paymentSubmittingRef.current || confirmed) return
@@ -166,9 +168,6 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       setOrder(result.order)
       setPaymentResult(result)
 
-      if (result.result === 'PAYMENT_APPROVED') {
-        clearCart()
-      }
     } catch (failure) {
       setPaymentError(paymentErrorMessage(failure))
     } finally {

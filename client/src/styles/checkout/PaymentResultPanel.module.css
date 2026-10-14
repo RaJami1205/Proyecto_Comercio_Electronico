@@ -36,6 +36,10 @@
   font-size: 1.05rem;
 }
 
+.text > h3[tabindex="-1"]:focus {
+  outline: none;
+}
+
 .badge {
   font-size: 0.7rem;
   font-weight: 700;

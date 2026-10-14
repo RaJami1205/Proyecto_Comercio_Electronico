@@ -98,7 +98,7 @@ function PaymentStep({
     <div className={styles.layout}>
       <div role="note" className={styles.sandboxBanner}>
         <strong>Payment Sandbox — entorno de simulación.</strong>{' '}
-        No se procesará ningún pago real: cualquier valor sirve en los campos de tarjeta.
+        No se procesará ningún pago real. Usa únicamente datos ficticios de demostración en los campos de tarjeta.
         Deben estar completos para continuar, pero nunca se envían a ningún servidor ni se guardan en ningún lado.
       </div>
 
@@ -199,6 +199,14 @@ function PaymentStep({
       {error ? (
         <p role="alert" className={styles.error}>
           {error}
+        </p>
+      ) : null}
+
+      {scenarioLocked && !isProcessingPayment ? (
+        <p role="status">
+          El resultado de este intento aún no está confirmado. Reintentar conserva la misma solicitud.
+          Al salir conservas los productos del carrito, pero se perderán los datos temporales del Checkout y la identidad del intento.
+          Salir no cancela el pago ni confirma su resultado; iniciar otro Checkout puede crear una nueva operación.
         </p>
       ) : null}
 
