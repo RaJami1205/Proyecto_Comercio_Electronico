@@ -7,7 +7,7 @@ import PaymentStep from '../components/checkout/PaymentStep'
 import PaymentResultPanel from '../components/checkout/PaymentResultPanel'
 import type { CheckoutData } from '../types/checkout'
 import type { CreateOrderRequest, Order } from '../types/order'
-import type { PaymentResult, PaymentScenario } from '../types/payment'
+import type { PaymentResult, PaymentScenario, ProcessPaymentRequest } from '../types/payment'
 import type { CartItem } from '../types/cart'
 import { useCart } from '../hooks/useCart'
 import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalculations'
@@ -27,6 +27,7 @@ interface CheckoutPageProps {
   onOrderCreated: () => void
 }
 interface CreationAttempt { request: CreateOrderRequest; items: CartItem[] }
+type PaymentAttempt = Readonly<ProcessPaymentRequest & { orderId: string }>
 const stages: Record<CheckoutStep, { title: string; description: string }> = {
   buyer: { title: 'Comprador', description: 'Completa tus datos de contacto.' },
   delivery: { title: 'Entrega', description: 'Indica la dirección de entrega.' },
@@ -46,13 +47,16 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [attempt, setAttempt] = useState<CreationAttempt>()
   const [selectedPaymentScenario, setSelectedPaymentScenario] = useState<PaymentScenario | null>(null)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
+  const [hasPendingPayment, setHasPendingPayment] = useState(false)
   const [paymentError, setPaymentError] = useState<string>()
   // Último PaymentResult crudo del Server; es la fuente para decidir qué pantalla de
   // resultado mostrar (CN-32). Se limpia al pedir un Retry, lo que vuelve a mostrar el form.
   const [paymentResult, setPaymentResult] = useState<PaymentResult>()
   const attemptRef = useRef<CreationAttempt | undefined>(undefined)
   const submittingRef = useRef(false)
-  const idempotencyKeyRef = useRef<string | undefined>(undefined)
+  const paymentAttemptRef = useRef<PaymentAttempt | undefined>(undefined)
+  const paymentSubmittingRef = useRef(false)
+  const paymentResultRef = useRef<PaymentResult | undefined>(undefined)
   const pageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageChangedRef = useRef(false)
@@ -73,7 +77,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   }, [currentStep, order])
 
   function changeStep(next: CheckoutStep) {
-    if (submittingRef.current || isProcessingPayment || confirmed) return
+    if (submittingRef.current || paymentSubmittingRef.current || confirmed) return
     if (next === 'payment' && !order) return
     if (attemptRef.current && next !== 'review' && next !== 'payment') return
     stageChangedRef.current = true
@@ -82,7 +86,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   }
 
   async function confirmOrder() {
-    if (submittingRef.current || confirmed || (!order && invalid)) return
+    if (submittingRef.current || paymentSubmittingRef.current || confirmed || (!order && invalid)) return
     if (order) {
       setDifferences([])
       onNavigationLockChange(false)
@@ -130,30 +134,33 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     }
   }
 
-  function getIdempotencyKey(): string {
-    if (!idempotencyKeyRef.current) {
-      idempotencyKeyRef.current = crypto.randomUUID()
-    }
-    return idempotencyKeyRef.current
+  function changePaymentScenario(scenario: PaymentScenario) {
+    if (paymentSubmittingRef.current || paymentAttemptRef.current || paymentResultRef.current || confirmed) return
+    setSelectedPaymentScenario(scenario)
   }
 
   async function handleProcessPayment() {
     // Guarda de doble-submit / múltiples Retry concurrentes: el ref cubre clicks antes
-    // del siguiente render, isProcessingPayment cubre los renders posteriores.
-    if (isProcessingPayment || submittingRef.current || !order || !selectedPaymentScenario) return
+    // del siguiente render; isProcessingPayment refleja el bloqueo en la UI.
+    if (paymentSubmittingRef.current || submittingRef.current || paymentResultRef.current || confirmed || !order || !selectedPaymentScenario) return
 
+    paymentSubmittingRef.current = true
     setIsProcessingPayment(true)
     setPaymentError(undefined)
     onNavigationLockChange(true)
 
     try {
-      const result = await paymentApi.processPayment(order.id, {
-        scenario: selectedPaymentScenario,
-        idempotencyKey: getIdempotencyKey(),
+      const activeAttempt = paymentAttemptRef.current ?? Object.freeze({
+        orderId: order.id, scenario: selectedPaymentScenario, idempotencyKey: crypto.randomUUID(),
       })
+      paymentAttemptRef.current = activeAttempt
+      setHasPendingPayment(true)
+      const result = await paymentApi.processPayment(activeAttempt.orderId, activeAttempt)
       // Resultado concluyente (APPROVED/DECLINED/ERROR): el intento queda cerrado,
       // así que el próximo "Procesar pago"/Retry debe generar una idempotencyKey nueva.
-      idempotencyKeyRef.current = undefined
+      paymentAttemptRef.current = undefined
+      setHasPendingPayment(false)
+      paymentResultRef.current = result
       // La Order que viene en la respuesta reemplaza por completo el snapshot anterior;
       // nunca inferimos o simulamos orderStatus/paymentStatus en el Client.
       setOrder(result.order)
@@ -165,23 +172,26 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     } catch (failure) {
       setPaymentError(paymentErrorMessage(failure))
     } finally {
+      paymentSubmittingRef.current = false
       setIsProcessingPayment(false)
       onNavigationLockChange(false)
     }
   }
 
   function handlePaymentRetry() {
-    if (isProcessingPayment) return
+    if (paymentSubmittingRef.current || paymentAttemptRef.current || confirmed
+      || !paymentResultRef.current || paymentResultRef.current.result === 'PAYMENT_APPROVED') return
     // Retry: misma Order, nuevo intento. El usuario vuelve a elegir escenario
     // explícitamente (nunca queda uno preseleccionado) y la próxima llamada a
-    // processPayment generará una idempotencyKey nueva vía getIdempotencyKey().
+    // processPayment generará una idempotencyKey nueva para el siguiente intento.
+    paymentResultRef.current = undefined
     setPaymentResult(undefined)
     setSelectedPaymentScenario(null)
     setPaymentError(undefined)
   }
 
   function abandonCheckout() {
-    if (submittingRef.current || isProcessingPayment) return
+    if (submittingRef.current || paymentSubmittingRef.current) return
     // La salida es explícita: no cancela ni recrea la Order y no modifica Cart.
     onNavigationLockChange(false)
     onBackToCart()
@@ -218,10 +228,11 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                   <PaymentStep
                     order={order}
                     selectedScenario={selectedPaymentScenario}
-                    onScenarioChange={setSelectedPaymentScenario}
+                    onScenarioChange={changePaymentScenario}
                     onProcessPayment={handleProcessPayment}
                     isProcessingPayment={isProcessingPayment}
                     locked={confirmed}
+                    scenarioLocked={hasPendingPayment}
                     error={paymentError}
                   />
                 )}

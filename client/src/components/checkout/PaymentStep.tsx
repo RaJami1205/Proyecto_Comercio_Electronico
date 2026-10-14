@@ -12,6 +12,7 @@ interface PaymentStepProps {
   isProcessingPayment: boolean
   /** true cuando la orden ya quedó CONFIRMED/APPROVED: no debe aceptar más intentos de pago. */
   locked?: boolean
+  scenarioLocked?: boolean
   error?: string
 }
 
@@ -79,6 +80,7 @@ function PaymentStep({
   onProcessPayment,
   isProcessingPayment,
   locked,
+  scenarioLocked,
   error,
 }: PaymentStepProps) {
   const [cardNumber, setCardNumber] = useState('')
@@ -169,7 +171,7 @@ function PaymentStep({
         </div>
       </fieldset>
 
-      <fieldset className={styles.scenarios} disabled={disabled}>
+      <fieldset className={styles.scenarios} disabled={disabled || scenarioLocked}>
         <legend>Selecciona un escenario</legend>
         {scenarios.map((scenario) => (
           <label
