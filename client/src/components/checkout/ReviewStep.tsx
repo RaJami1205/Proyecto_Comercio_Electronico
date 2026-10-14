@@ -68,10 +68,10 @@ function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retry
         {onConfirm ? <div className={pageStyles.actions}><button type="button" className={pageStyles.continue} disabled={busy || invalid} onClick={onConfirm}>{busy ? 'Creando orden…' : differences.length > 0 ? 'Aceptar cambios y continuar al pago' : order ? 'Continuar al pago' : retryPending ? 'Reintentar la misma solicitud' : 'Confirmar y continuar al pago'}</button></div> : null}
         {onAbandon && !busy ? <div className={styles.orderInfo}>
           <p id="checkout-exit-warning">{confirmed
-            ? 'Salir elimina tu carrito y no modifica la orden confirmada ni realiza otro pago.'
+            ? 'Al salir conservas los productos del carrito. Los datos temporales del Checkout se perderán; la orden confirmada no cambia ni se realiza otro pago.'
             : order
-            ? 'La orden pendiente ya existe. Salir no la cancela ni realiza un pago.No conservaremos tu carrito y se perderán los datos de este Checkout. Si vuelves a comprar, podrías crear otra orden.'
-            : 'Puedes salir, pero no conservarás tu carrito. No sabemos si la orden existe y salir no la cancela ni realiza un pago. Se perderán los datos y la identidad de este intento; si vuelves a comprar, podrías crear una orden duplicada.'}</p>
+            ? 'Al salir conservas los productos del carrito, pero se perderán los datos temporales del Checkout. La orden no se cancela. Si un pago quedó sin resolver, salir no lo cancela ni confirma su resultado. Iniciar otro Checkout puede crear una nueva orden.'
+            : 'Al salir conservas los productos del carrito, pero se perderán los datos del comprador, entrega y la identidad de este intento. La orden podría haberse creado; salir no la cancela. Iniciar otro Checkout podría crear una orden duplicada.'}</p>
           <div className={pageStyles.actions}><button type="button" className={pageStyles.back} aria-describedby="checkout-exit-warning" onClick={onAbandon}>Salir del Checkout</button></div>
         </div> : null}
         <p role="status" aria-live="polite">{busy ? 'Estamos confirmando tu orden. Espera un momento.' : ''}</p>

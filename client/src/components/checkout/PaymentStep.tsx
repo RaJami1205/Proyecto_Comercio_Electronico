@@ -12,6 +12,7 @@ interface PaymentStepProps {
   isProcessingPayment: boolean
   /** true cuando la orden ya quedó CONFIRMED/APPROVED: no debe aceptar más intentos de pago. */
   locked?: boolean
+  scenarioLocked?: boolean
   error?: string
 }
 
@@ -29,7 +30,7 @@ const scenarios: { id: PaymentScenario; label: string; description: string }[] =
   {
     id: 'PAYMENT_ERROR',
     label: 'Error del servicio',
-    description: 'Simula un error del Sandbox. Podrás intentarlo de nuevo.',
+    description: 'Simula un error del Servidor. Podrás intentarlo de nuevo.',
   },
 ]
 
@@ -79,6 +80,7 @@ function PaymentStep({
   onProcessPayment,
   isProcessingPayment,
   locked,
+  scenarioLocked,
   error,
 }: PaymentStepProps) {
   const [cardNumber, setCardNumber] = useState('')
@@ -95,13 +97,12 @@ function PaymentStep({
   return (
     <div className={styles.layout}>
       <div role="note" className={styles.sandboxBanner}>
-        <strong>Payment Sandbox — entorno de simulación.</strong>{' '}
-        No se procesará ningún pago real: cualquier valor sirve en los campos de tarjeta.
-        Deben estar completos para continuar, pero nunca se envían a ningún servidor ni se guardan en ningún lado.
+        <strong>Payment Sandbox · Entorno de simulación</strong>
+        <span>No se realizan cargos reales ni se procesan datos bancarios. Usa solo datos ficticios: los campos de tarjeta no se envían ni se guardan.</span>
       </div>
 
       <dl className={styles.orderSummary}>
-        <div>
+        <div className={styles.orderIdentity}>
           <dt>Orden</dt>
           <dd>{order.orderNumber}</dd>
         </div>
@@ -116,7 +117,23 @@ function PaymentStep({
       </dl>
 
       <fieldset className={styles.cardFields} disabled={disabled}>
-        <legend>Datos de la tarjeta (demostrativo, no se guarda)</legend>
+        <legend>Tarjeta de demostración</legend>
+        <div className={styles.demoMethods}>
+          <ul aria-labelledby="payment-demo-methods" className={styles.methodBadges}>
+            <li>
+              <span aria-hidden="true" className={`${styles.methodEmblem} ${styles.visaEmblem}`}>V</span>
+              <span>VISA</span>
+            </li>
+            <li>
+              <span aria-hidden="true" className={`${styles.methodEmblem} ${styles.mastercardEmblem}`}>MC</span>
+              <span>Mastercard</span>
+            </li>
+            <li>
+              <span aria-hidden="true" className={`${styles.methodEmblem} ${styles.paypalEmblem}`}>PP</span>
+              <span className={styles.methodLabel}>PayPal <small></small></span>
+            </li>
+          </ul>
+        </div>
 
         <label className={styles.field}>
           <span>Número de tarjeta</span>
@@ -169,7 +186,7 @@ function PaymentStep({
         </div>
       </fieldset>
 
-      <fieldset className={styles.scenarios} disabled={disabled}>
+      <fieldset className={styles.scenarios} disabled={disabled || scenarioLocked}>
         <legend>Selecciona un escenario</legend>
         {scenarios.map((scenario) => (
           <label
@@ -187,7 +204,6 @@ function PaymentStep({
             />
             <span className={styles.scenarioText}>
               <strong>{scenario.label}</strong>
-              <code>{scenario.id}</code>
               <span className={styles.scenarioDescription}>{scenario.description}</span>
             </span>
           </label>
@@ -200,10 +216,18 @@ function PaymentStep({
         </p>
       ) : null}
 
-      <div className={pageStyles.actions}>
+      {scenarioLocked && !isProcessingPayment ? (
+        <p role="status">
+          El resultado de este intento aún no está confirmado. Reintentar conserva la misma solicitud.
+          Al salir conservas los productos del carrito, pero se perderán los datos temporales del Checkout y la identidad del intento.
+          Salir no cancela el pago ni confirma su resultado; iniciar otro Checkout puede crear una nueva operación.
+        </p>
+      ) : null}
+
+      <div className={`${pageStyles.actions} ${styles.actions}`}>
         <button
           type="button"
-          className={pageStyles.continue}
+          className={`${pageStyles.continue} ${styles.paymentButton}`}
           disabled={!selectedScenario || !cardComplete || disabled}
           onClick={onProcessPayment}
         >

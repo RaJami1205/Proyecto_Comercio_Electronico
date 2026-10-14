@@ -40,11 +40,17 @@ function isOrder(value: unknown): value is Order {
       && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && money(item.lineSubtotal))
 }
 
-function isPaymentResult(value: unknown): value is PaymentResult {
+function isPaymentResult(value: unknown, orderId: string, scenario: PaymentScenario): value is PaymentResult {
   return isRecord(value)
     && SCENARIOS.includes(value.result as PaymentScenario)
     && typeof value.processedAt === 'string' && Number.isFinite(Date.parse(value.processedAt))
     && isOrder(value.order)
+    && value.order.id === orderId
+    && value.result === scenario
+    && (value.result === 'PAYMENT_APPROVED'
+      ? value.order.orderStatus === 'CONFIRMED' && value.order.paymentStatus === 'APPROVED'
+      : value.order.orderStatus === 'PENDING'
+        && value.order.paymentStatus === (value.result === 'PAYMENT_DECLINED' ? 'DECLINED' : 'ERROR'))
 }
 
 async function processPayment(orderId: string, request: ProcessPaymentRequest): Promise<PaymentResult> {
@@ -61,7 +67,7 @@ async function processPayment(orderId: string, request: ProcessPaymentRequest): 
     // "conclusive" = sabemos con certeza qué pasó (no hace falta reintentar con la misma key a ciegas).
     throw new PaymentApiError(known.includes(String(code)) ? code as ApiErrorResponse['error']['code'] : 'UNEXPECTED_ERROR', [400, 404, 409, 422].includes(response.status))
   }
-  if (!isPaymentResult(body)) throw new PaymentApiError('UNEXPECTED_ERROR', false)
+  if (!isPaymentResult(body, orderId, payload.scenario)) throw new PaymentApiError('UNEXPECTED_ERROR', false)
   return body
 }
 
