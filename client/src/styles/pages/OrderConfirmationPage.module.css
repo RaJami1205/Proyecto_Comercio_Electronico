@@ -194,15 +194,19 @@
   padding: 0.75rem 2rem;
   border-radius: 0.5rem;
   border: none;
-  background: var(--color-accent, #1f5eff);
+  background: linear-gradient(135deg, #1e40af, #312e81);
   color: #fff;
   font-weight: 600;
   font-size: 1rem;
   cursor: pointer;
 }
 
+.catalogButton:hover {
+  filter: brightness(1.08);
+}
+
 .catalogButton:focus-visible {
-  outline: 2px solid var(--color-accent, #1f5eff);
+  outline: 2px solid #1f5eff;
   outline-offset: 2px;
 }
 

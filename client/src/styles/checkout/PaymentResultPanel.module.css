@@ -71,18 +71,18 @@
   color: #0f6b47;
 }
 
-/* Declined: tono violeta/magenta oscuro, distinto del rojo de error técnico. */
+/* Declined: rojo de rechazo, distinto del ámbar de error de servicio. */
 .declined {
-  background: #f6eefc;
-  border-color: #6d3fae;
+  background: #fef2f2;
+  border-color: #b91c1c;
 }
 .declined .icon {
-  background: #6d3fae;
+  background: #b91c1c;
   color: #fff;
 }
 .declined .badge {
-  background: #e6d7f6;
-  color: #4a2578;
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 /* Error / Unexpected: ámbar, para no confundirse con "rechazo" ni "aprobado". */
