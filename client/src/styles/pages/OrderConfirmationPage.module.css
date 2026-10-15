@@ -50,6 +50,10 @@
   font-size: 1.4rem;
 }
 
+.bannerText > h1[tabindex="-1"]:focus {
+  outline: none;
+}
+
 .orderNumber {
   margin: 0;
   font-size: 1rem;

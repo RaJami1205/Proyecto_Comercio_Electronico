@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { Order } from '../types/order'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
@@ -19,6 +20,11 @@ function OrderConfirmationPage({ order, onCatalogClick, onCartClick }: OrderConf
   // Order CONFIRMED/APPROVED, nunca se presenta una confirmación falsa
   // si por algún estado inconsistente se llegara a invocar sin cumplirlo.
   const isConfirmed = order.orderStatus === 'CONFIRMED' && order.paymentStatus === 'APPROVED'
+  const headingRef = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => {
+    if (isConfirmed) headingRef.current?.focus()
+  }, [isConfirmed])
 
   const money = (value: number) =>
     new Intl.NumberFormat('es-CR', { style: 'currency', currency: order.currency }).format(value)
@@ -56,7 +62,7 @@ function OrderConfirmationPage({ order, onCatalogClick, onCartClick }: OrderConf
           <div className={styles.banner} role="status">
             <span className={styles.bannerIcon} aria-hidden="true">✓</span>
             <div className={styles.bannerText}>
-              <h1>Compra confirmada</h1>
+              <h1 ref={headingRef} tabIndex={-1}>Compra confirmada</h1>
               <p className={styles.orderNumber}>
                 Orden <strong>{order.orderNumber}</strong>
               </p>

@@ -9,6 +9,14 @@ interface PersistedCart {
   items: CartItem[]
 }
 
+function parseLineage(value: unknown): CartItem['lineage'] {
+  if (typeof value !== 'object' || value === null) return undefined
+  const lineage = value as Record<string, unknown>
+  return typeof lineage.id === 'string' && lineage.id.length > 0
+    && typeof lineage.removed === 'number' && Number.isSafeInteger(lineage.removed) && lineage.removed >= 0
+    ? { id: lineage.id, removed: lineage.removed } : undefined
+}
+
 /** Valida el snapshot mínimo, precio finito y quantity entera positiva antes de hidratar. */
 function isValidCartItem(value: unknown): value is CartItem {
   if (typeof value !== 'object' || value === null) return false
@@ -43,13 +51,15 @@ export function parseStoredCart(raw: string | null): CartItem[] | null {
       byProductId.set(
         candidate.productId,
         existing
-          ? { ...existing, quantity: existing.quantity + candidate.quantity }
+          // Duplicados no permiten demostrar la identidad original: descartar solo metadatos.
+          ? { ...existing, quantity: existing.quantity + candidate.quantity, lineage: undefined }
           : {
               productId: candidate.productId,
               name: candidate.name,
               price: candidate.price,
               image: candidate.image,
               quantity: candidate.quantity,
+              ...(parseLineage(candidate.lineage) ? { lineage: parseLineage(candidate.lineage) } : {}),
             },
       )
     }

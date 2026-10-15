@@ -7,8 +7,8 @@ const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).t
 // Harness de handlers/estado; no sustituye las verificaciones DOM, foco o responsive.
 const runtimeUrl = dataUrl(`
   let slots = [], cursor = 0;
-  export let cart = [];
-  export function reset(items) { slots = []; cursor = 0; cart = items; }
+  export let cart = []; export let cleanupCount = 0;
+  export function reset(items) { slots = []; cursor = 0; cart = items; cleanupCount = 0; }
   export function renderStart() { cursor = 0; }
   export function useState(initial) {
     const index = cursor++;
@@ -17,7 +17,7 @@ const runtimeUrl = dataUrl(`
   }
   export function useRef(initial) { const [value] = useState(() => ({current:initial})); return value; }
   export function useEffect() {}
-  export function useCart() { return {items:cart, clearCart: () => { throw new Error('No se permite cleanup automático'); }}; }
+  export function useCart() { return {items:cart, cleanupPurchase: () => { cleanupCount++; throw new Error('No se permite cleanup automático'); }}; }
   export const Fragment = 'Fragment';
   export function jsx(type, props) { return {type, props}; }
   export const jsxs = jsx;
@@ -49,6 +49,7 @@ modules.set('../utils/orderReviewDifferences', differencesUrl)
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 modules.set('../services/paymentApi', compile('services/paymentApi.ts'))
+modules.set('./OrderConfirmationPage', dataUrl("export default 'OrderConfirmationPage'"))
 const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx'))
 const { default: ReviewStep } = await import(compile('components/checkout/ReviewStep.tsx'))
 const { orderReviewDifferences } = await import(differencesUrl)
@@ -74,7 +75,7 @@ function text(tree) {
 function checkout() {
   runtime.reset(structuredClone(cart))
   const events = []
-  const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => {}, onCartClick: () => {},
+  const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => events.push('catalog'), onCartClick: () => {},
     onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created') }
   let tree
   const render = () => { runtime.renderStart(); tree = CheckoutPage(props) }
@@ -246,6 +247,7 @@ for (const paymentStatus of ['PENDING', 'DECLINED', 'ERROR']) {
       flow.render()
       assert.equal(flow.step(), 'payment')
       assert.equal(flow.payment().order.paymentStatus, paymentStatus)
+      assert.equal(flow.find('OrderConfirmationPage'), undefined)
       assert.equal(requests.length, 1)
       assert.deepEqual(runtime.cart, cart)
       if (paymentStatus !== 'PENDING') {
@@ -272,19 +274,21 @@ for (const changed of [false, true]) {
       await flow.review().onConfirm()
       flow.render()
       assert.deepEqual(requests[1], requests[0])
-      assert.equal(flow.step(), 'review')
-      assert.equal(flow.review().retryPending, false)
-      assert.equal(flow.review().error, undefined)
-      assert.equal(flow.review().onConfirm, undefined)
-      assert.equal(flow.review().onEdit, undefined)
-      assert.deepEqual(flow.review().differences, [])
-      assert.deepEqual(flow.review().order, confirmed)
-      const message = text(ReviewStep(flow.review()))
-      assert.match(message, /ya está confirmada y su pago fue aprobado/)
-      assert.doesNotMatch(message, /Aceptar cambios|continuar al pago|orden pendiente|Reintentar/)
+      // CN-33 reemplaza Review por Confirmation: no hay edición, aceptación ni Retry.
+      const confirmation = flow.find('OrderConfirmationPage')
+      assert.ok(confirmation)
+      assert.deepEqual(confirmation.order, confirmed)
+      assert.equal(flow.review(), undefined)
+      assert.equal(flow.payment(), undefined)
+      assert.equal(flow.find('CheckoutStepper'), undefined)
+      assert.equal(flow.find('PaymentResultPanel'), undefined)
+      assert.equal(confirmation.onConfirm, undefined)
+      assert.equal(confirmation.onEdit, undefined)
+      assert.equal(flow.events.at(-1), false)
+      assert.equal(runtime.cleanupCount, 0)
       assert.deepEqual(runtime.cart, cart)
-      flow.review().onAbandon()
-      assert.deepEqual(flow.events.slice(-2), [false, 'exit'])
+      confirmation.onCatalogClick()
+      assert.equal(flow.events.at(-1), 'catalog')
       assert.equal(requests.length, 2)
       assert.deepEqual(runtime.cart, cart)
     })
