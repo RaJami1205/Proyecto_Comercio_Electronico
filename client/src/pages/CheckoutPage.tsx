@@ -5,6 +5,7 @@ import DeliveryStep from '../components/checkout/DeliveryStep'
 import ReviewStep from '../components/checkout/ReviewStep'
 import PaymentStep from '../components/checkout/PaymentStep'
 import PaymentResultPanel from '../components/checkout/PaymentResultPanel'
+import OrderConfirmationPage from './OrderConfirmationPage'
 import type { CheckoutData } from '../types/checkout'
 import type { CreateOrderRequest, Order } from '../types/order'
 import type { PaymentResult, PaymentScenario, ProcessPaymentRequest } from '../types/payment'
@@ -37,7 +38,7 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
 
 /** Buyer, Delivery, intento y Order viven exclusivamente dentro de este Checkout. */
 function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated }: CheckoutPageProps) {
-  const { items } = useCart()
+  const { items, cleanupPurchase } = useCart()
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
@@ -57,6 +58,10 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const paymentAttemptRef = useRef<PaymentAttempt | undefined>(undefined)
   const paymentSubmittingRef = useRef(false)
   const paymentResultRef = useRef<PaymentResult | undefined>(undefined)
+  // Garantiza que el Cart se limpie una sola vez por confirmación (CN-33), incluso si
+  // algo disparara un re-render extra del mismo resultado APPROVED.
+  const cartClearedRef = useRef(false)
+  const purchaseBaselineRef = useRef<{ orderId: string; items: CartItem[] } | undefined>(undefined)
   const pageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageChangedRef = useRef(false)
@@ -69,14 +74,14 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     || reviewItems.length === 0 || reviewItems.some(item => !Number.isSafeInteger(item.quantity) || item.quantity <= 0)
 
   useEffect(() => {
-    // El panel administra el foco cuando se presenta un resultado de pago.
-    if (currentStep === 'payment' && paymentResult) return
+    // Confirmation y el panel de resultado administran el foco de sus propias vistas.
+    if (confirmed || (currentStep === 'payment' && paymentResult)) return
     const frame = requestAnimationFrame(() => {
       const target = stageChangedRef.current ? stageHeadingRef.current : pageHeadingRef.current
       target?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
-  }, [currentStep, order, paymentResult])
+  }, [confirmed, currentStep, order, paymentResult])
 
   function changeStep(next: CheckoutStep) {
     if (submittingRef.current || paymentSubmittingRef.current || confirmed) return
@@ -114,6 +119,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       setAttempt(activeAttempt)
       const created = await orderApi.createOrder(activeAttempt.request)
       const alreadyConfirmed = created.orderStatus === 'CONFIRMED' && created.paymentStatus === 'APPROVED'
+      purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, items: activeAttempt.items }
       const changes = alreadyConfirmed ? [] : orderReviewDifferences(activeAttempt.items, created)
       requiresAcceptance = changes.length > 0
       setDifferences(changes)
@@ -168,6 +174,14 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       setOrder(result.order)
       setPaymentResult(result)
 
+      // Solo el cierre iniciado aquí puede retirar las unidades originales todavía presentes.
+      const baseline = purchaseBaselineRef.current
+      if (result.result === 'PAYMENT_APPROVED' && result.order.orderStatus === 'CONFIRMED'
+        && result.order.paymentStatus === 'APPROVED' && baseline?.orderId === result.order.id
+        && !cartClearedRef.current) {
+        cartClearedRef.current = true
+        cleanupPurchase({ baseline: baseline.items, purchased: result.order.items })
+      }
     } catch (failure) {
       setPaymentError(paymentErrorMessage(failure))
     } finally {
@@ -194,6 +208,15 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     // La salida es explícita: no cancela ni recrea la Order y no modifica Cart.
     onNavigationLockChange(false)
     onBackToCart()
+  }
+
+  // CN-33: a partir de aquí existe una Order CONFIRMED/APPROVED. Se presenta la vista
+  // dedicada de Confirmation en vez del layout de Checkout — ya no hay stepper, ya no
+  // hay forma de volver a Payment, y "Volver al catálogo" reemplaza cualquier acción
+  // de edición. La Order sigue viva en este mismo state, independiente del Cart (que
+  // pudo conservar nuevas incorporaciones): Confirmation nunca depende de CartState para renderizarse.
+  if (confirmed && order) {
+    return <OrderConfirmationPage order={order} onCatalogClick={onCatalogClick} onCartClick={onCartClick} />
   }
 
   const displayItems = order?.items ?? reviewItems.map(item => ({ productId: item.productId, name: item.name, image: item.image, unitPrice: item.price, quantity: item.quantity, lineSubtotal: calculateLineSubtotal(item.price, item.quantity) }))
@@ -235,20 +258,9 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                     error={paymentError}
                   />
                 )}
-
-                {confirmed ? (
-                  <ReviewStep
-                    buyer={order.buyer} delivery={order.delivery}
-                    items={order.items} totals={order.totals} order={order}
-                    busy={false} retryPending={false} invalid={false}
-                    differences={[]}
-                    onAbandon={abandonCheckout}
-                  />
-                ) : (
-                  <div className={styles.actions}>
-                    <button type="button" className={styles.back} disabled={isProcessingPayment} onClick={() => changeStep('review')}>Revisar orden</button>
-                  </div>
-                )}
+                <div className={styles.actions}>
+                  <button type="button" className={styles.back} disabled={isProcessingPayment} onClick={() => changeStep('review')}>Revisar orden</button>
+                </div>
               </>
             ) : (
               <>

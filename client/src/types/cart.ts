@@ -7,6 +7,13 @@ export interface CartItem {
   image: string
   // quantity pertenece al estado del carrito: el reducer la gestiona y mantiene siempre >= 1.
   quantity: number
+  // Identidad de la incorporación y retiros acumulados; no contiene información de Orders.
+  lineage?: { id: string; removed: number }
+}
+
+export interface CartPurchaseCleanup {
+  baseline: readonly CartItem[]
+  purchased: readonly { productId: string; quantity: number }[]
 }
 
 // items es la única fuente de verdad del CartState; el estado de UI se mantiene separado.
@@ -17,6 +24,7 @@ export interface CartState {
 
 export type CartAction =
   | { type: 'CLEAR_CART' }
+  | { type: 'CLEANUP_PURCHASE'; payload: CartPurchaseCleanup }
   | { type: 'ADD_ITEM'; payload: Omit<CartItem, 'quantity'> }
   | { type: 'INCREMENT_ITEM'; payload: { productId: string } }
   | { type: 'DECREMENT_ITEM'; payload: { productId: string } }

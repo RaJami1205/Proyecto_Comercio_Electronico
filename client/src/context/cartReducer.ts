@@ -9,6 +9,26 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     case 'CLEAR_CART': {
       return state.items.length ? { items: [] } : state
     }
+    case 'CLEANUP_PURCHASE': {
+      const items = state.items.flatMap((item) => {
+        const baseline = action.payload.baseline.find(line => line.productId === item.productId)
+        const purchased = action.payload.purchased.find(line => line.productId === item.productId)
+        if (!baseline?.lineage || !item.lineage || !purchased
+          || baseline.lineage.id !== item.lineage.id) return [item]
+        const removedSince = item.lineage.removed - baseline.lineage.removed
+        // Retiros consumen primero unidades originales. Nunca atribuir una línea incierta.
+        if (!Number.isSafeInteger(removedSince) || removedSince < 0) return [item]
+        const quantity = Math.min(item.quantity, Math.max(0,
+          Math.min(baseline.quantity, purchased.quantity) - removedSince))
+        if (!Number.isSafeInteger(quantity) || quantity <= 0) return [item]
+        if (quantity === item.quantity) return []
+        const removed = item.lineage.removed + quantity
+        return [{ ...item, quantity: item.quantity - quantity,
+          lineage: Number.isSafeInteger(removed) ? { ...item.lineage, removed } : undefined }]
+      })
+      return items.length === state.items.length && items.every((item, index) => item === state.items[index])
+        ? state : { items }
+    }
     case 'ADD_ITEM': {
       const existing = state.items.find((item) => item.productId === action.payload.productId)
       // ADD_ITEM crea una línea con quantity = 1 o incrementa la existente conservando su snapshot.
@@ -36,7 +56,9 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       if (!existing || existing.quantity <= 1) return state
       return {
         items: state.items.map((item) => item.productId === action.payload.productId
-          ? { ...item, quantity: item.quantity - 1 }
+          ? { ...item, quantity: item.quantity - 1,
+              lineage: item.lineage && Number.isSafeInteger(item.lineage.removed + 1)
+                ? { ...item.lineage, removed: item.lineage.removed + 1 } : undefined }
           : item),
       }
     }

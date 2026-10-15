@@ -5,7 +5,9 @@ import ts from 'typescript'
 
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 // Harness de handlers/estado; no sustituye las verificaciones DOM, foco o responsive.
+const reducerUrl = dataUrl(ts.transpileModule(readFileSync(new URL('../src/context/cartReducer.ts', import.meta.url), 'utf8'), {compilerOptions:{target:ts.ScriptTarget.ES2023, module:ts.ModuleKind.ESNext}}).outputText)
 const runtimeUrl = dataUrl(`
+  import { cartReducer } from '${reducerUrl}';
   let slots = [], cursor = 0;
   export let cart = []; export let cleanupCount = 0;
   export function reset(items) { slots = []; cursor = 0; cart = items; cleanupCount = 0; }
@@ -17,7 +19,7 @@ const runtimeUrl = dataUrl(`
   }
   export function useRef(initial) { const [value] = useState(() => ({current:initial})); return value; }
   export function useEffect() {}
-  export function useCart() { return {items:cart, clearCart: () => { cleanupCount++; }}; }
+  export function useCart() { return {items:cart, cleanupPurchase: payload => { cleanupCount++; cart = cartReducer({items:cart}, {type:'CLEANUP_PURCHASE', payload}).items; }}; }
   export const Fragment = 'Fragment';
   export function jsx(type, props) { return {type, props}; }
   export const jsxs = jsx;
@@ -51,11 +53,12 @@ modules.set('../services/orderApi', apiUrl)
 const paymentApiUrl = compile('services/paymentApi.ts');
 modules.set('../services/paymentApi', paymentApiUrl);
 const { paymentApi, PaymentApiError } = await import(paymentApiUrl);
+modules.set('./OrderConfirmationPage', dataUrl("export default 'OrderConfirmationPage'"))
 const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx'))
 const { calculateCartTotals } = await import(calculationsUrl)
 const buyer = { fullName: 'Prueba', email: 'test@example.com', phone: '88888888' }
 const delivery = { province: 'San José', canton: 'Central', address: 'Dirección' }
-const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quantity: 1 }]
+const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quantity: 1, lineage:{id:'original', removed:0} }]
 function order() {
   return { id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
     items:[{productId:'p', name:'Producto', image:'', unitPrice:10000, quantity:1, lineSubtotal:10000}],
@@ -137,6 +140,7 @@ test('F2 fallo de red conserva Order, escenario y key incluso ante callback de s
   flow.respond(() => { throw new TypeError('Fallo simulado') })
   await flow.payment().onProcessPayment(); flow.render()
   assert.equal(flow.payment().order, snapshot)
+  assert.equal(flow.find('OrderConfirmationPage'), undefined)
   assert.equal(runtime.cleanupCount, 0)
   assert.equal(flow.payment().scenarioLocked, true)
   flow.payment().onScenarioChange('PAYMENT_APPROVED'); flow.render()
@@ -152,6 +156,7 @@ for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR']) {
     const flow = await paymentFlow(t, scenario)
     await flow.payment().onProcessPayment(); flow.render()
     assert.equal(runtime.cleanupCount, 0)
+    assert.equal(flow.find('OrderConfirmationPage'), undefined)
     flow.find('PaymentResultPanel').onRetry(); flow.render()
     assert.equal(flow.payment().selectedScenario, null)
     flow.payment().onScenarioChange(scenario); flow.render()
@@ -168,9 +173,13 @@ test('F1 Approved bloquea más pagos, incluidos callbacks previos al render', as
   await handler()
   await handler()
   flow.render()
-  assert.equal(runtime.cleanupCount, 0)
-  assert.equal(flow.find('PaymentResultPanel').onRetry, undefined)
-  assert.equal(flow.find('PaymentResultPanel').order.orderStatus, 'CONFIRMED')
+  assert.equal(runtime.cleanupCount, 1)
+  assert.deepEqual(runtime.cart, [])
+  assert.equal(flow.find('PaymentResultPanel'), undefined)
+  assert.equal(flow.find('PaymentStep'), undefined)
+  assert.equal(flow.find('OrderConfirmationPage').onRetry, undefined)
+  assert.equal(flow.find('OrderConfirmationPage').order.orderStatus, 'CONFIRMED')
+  assert.deepEqual(flow.find('OrderConfirmationPage').order, result('PAYMENT_APPROVED').order)
   assert.equal(flow.requests.length, 2)
 })
 
@@ -192,13 +201,14 @@ for (const [name, invalid] of invalidResults) {
     await flow.payment().onProcessPayment(); flow.render()
     assert.equal(flow.payment().order, snapshot)
     assert.equal(flow.find('PaymentResultPanel'), undefined)
+    assert.equal(flow.find('OrderConfirmationPage'), undefined)
     assert.equal(runtime.cleanupCount, 0)
     assert.ok(flow.payment().error)
     assert.equal(flow.payment().scenarioLocked, true)
     flow.respond(() => Response.json(result('PAYMENT_APPROVED')))
     await flow.payment().onProcessPayment(); flow.render()
     assert.deepEqual(flow.requests[1], flow.requests[2])
-    assert.equal(flow.find('PaymentResultPanel').order.orderStatus, 'CONFIRMED')
+    assert.equal(flow.find('OrderConfirmationPage').order.orderStatus, 'CONFIRMED')
   })
 }
 
