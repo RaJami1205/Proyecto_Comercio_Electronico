@@ -1016,11 +1016,8 @@ El proyecto sigue las siguientes prácticas:
 <div align="center">
 
 ![Proyecto II](https://img.shields.io/badge/Proyecto_II-Completado-20D9D2?style=for-the-badge)
-
 ![Client](https://img.shields.io/badge/Client-Operativo-2563EB?style=for-the-badge)
-
 ![Server](https://img.shields.io/badge/Server-Operativo-5B5BF7?style=for-the-badge)
-
 ![Deploy](https://img.shields.io/badge/Deployment-Activo-0EA5E9?style=for-the-badge)
 
 </div>
