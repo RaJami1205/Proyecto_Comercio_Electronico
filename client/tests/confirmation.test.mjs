@@ -1,8 +1,10 @@
+/** Verifica Confirmation y las guardas de App mediante hooks simulados; no sustituye pruebas de foco en navegador. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 
+/** Codifica el código recibido como módulo importable en memoria. */
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 // Simula hooks y commit; no es un DOM ni una implementación completa de React.
 const runtimeUrl = dataUrl(`
@@ -34,6 +36,7 @@ const modules = new Map([['react',runtimeUrl],['react/jsx-runtime',runtimeUrl],[
 for (const name of ['Header','Footer']) modules.set('../components/layout/'+name,dataUrl(`export default '${name}'`))
 for (const name of ['ProductListingPage','CartPage','CheckoutPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
 modules.set('./components/cart/CartPreviewDrawer',dataUrl("export default 'CartPreviewDrawer'"))
+/** Transpila el archivo indicado y resuelve únicamente las dependencias aisladas del harness. */
 function compile(file) {
   const source=readFileSync(new URL('../src/'+file,import.meta.url),'utf8')
   const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}}).outputText
@@ -45,10 +48,12 @@ function compile(file) {
 }
 const {default:Confirmation}=await import(compile('pages/OrderConfirmationPage.tsx'))
 const {default:App}=await import(compile('App.tsx'))
+/** Recorre el árbol JSX simulado y devuelve sus nodos para inspeccionar propiedades. */
 function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes)
   return tree && typeof tree==='object' ? [tree,...nodes(tree.props?.children)] : []
 }
+/** Extrae el texto del árbol JSX simulado para comprobar los mensajes presentados. */
 function text(tree) {
   if (Array.isArray(tree)) return tree.map(text).join(' ')
   if (tree && typeof tree==='object') return text(tree.props?.children)
@@ -61,6 +66,7 @@ const order={id:'order-1',orderNumber:'CN-authoritative',createdAt:'2026-10-12T1
   items:[{productId:'p',name:'Producto comprado',image:'',quantity:2,unitPrice:12000,lineSubtotal:24000}],
   totals:{subtotal:24000,tax:3120,shipping:3500,total:30620}}
 const props={order,onCatalogClick:()=>{},onCartClick:()=>{}}
+/** Renderiza Confirmation con las propiedades sustituidas e inicia el ciclo de hooks simulado. */
 function renderConfirmation(overrides={}) { runtime.renderStart(); return Confirmation({...props,...overrides}) }
 
 for (const orderStatus of ['PENDING','CONFIRMED']) {
@@ -80,6 +86,7 @@ for (const orderStatus of ['PENDING','CONFIRMED']) {
 test('Confirmation usa snapshot autoritativo con Cart vacío o diferente, sin requests, y permite Catalog',t=>{
   const requests=[]
   t.mock.method(globalThis,'fetch',(...args)=>{requests.push(args); throw new Error('Request inesperado')})
+  /** Formatea el importe esperado en CRC para comparar la presentación de la Order. */
   const money=value=>new Intl.NumberFormat('es-CR',{style:'currency',currency:'CRC'}).format(value)
   for (const cart of [[],[{productId:'other',price:1,quantity:99}]]) {
     runtime.reset(cart)
@@ -116,6 +123,7 @@ test('F3 destino semántico, foco tras commit y sin reenfocar por renders ordina
   assert.equal(calls,2)
 })
 
+/** Prepara Cart e historial simulados para App y registra la restauración del entorno al terminar la prueba. */
 function appEnvironment(t,items) {
   const previous=globalThis.window
   globalThis.window={location:{hash:'#checkout',pathname:'/',search:''},history:{

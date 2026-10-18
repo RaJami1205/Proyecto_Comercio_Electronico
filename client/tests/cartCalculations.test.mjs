@@ -1,3 +1,4 @@
+/** Verifica IVA, envío y conservación de precisión en los cálculos del Cart mediante casos límite. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -6,6 +7,7 @@ import ts from 'typescript'
 const source = readFileSync(new URL('../src/utils/cartCalculations.ts', import.meta.url), 'utf8')
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText
 const { calculateCartTotals, calculateLineSubtotal } = await import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'))
+/** Crea una línea de prueba con el precio y la cantidad indicados. */
 const item = (price, quantity = 1) => ({ productId: String(price), name: 'Producto', image: '', price, quantity })
 
 // Mismos vectores explícitos del Server; sin importar código entre aplicaciones.

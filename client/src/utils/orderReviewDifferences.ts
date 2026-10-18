@@ -1,3 +1,4 @@
+/** Compara el Cart preliminar con la Order autoritativa y describe las diferencias que requieren aceptación. */
 import type { CartItem } from '../types/cart'
 import type { Order } from '../types/order'
 import { calculateCartTotals, calculateLineSubtotal } from './cartCalculations'
@@ -7,8 +8,10 @@ export function orderReviewDifferences(items: readonly CartItem[], order: Order)
   const differences: string[] = []
   const remaining = [...order.items]
   const number = new Intl.NumberFormat('es-CR', { maximumSignificantDigits: 21 })
+  /** Añade una descripción de la diferencia entre valores numéricos; no usa el formato visual para decidir igualdad. */
   function compare(label: string, before: number, after: number, money = true) {
     if (before === after) return
+    /** Presenta el valor de la diferencia con precisión significativa y símbolo monetario cuando corresponde. */
     const format = (value: number) => `${money ? '₡' : ''}${number.format(value)}`
     differences.push(`${label}: antes ${format(before)}; ahora ${format(after)}.`)
   }

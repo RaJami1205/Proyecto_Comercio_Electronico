@@ -1,3 +1,4 @@
+/** Define variables visuales, estilos base y reglas globales compartidas por el Client. */
 :root {
   --color-background-dark: #040a1c;
   --color-surface: #f2f5fb;

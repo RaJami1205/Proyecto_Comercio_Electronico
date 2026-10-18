@@ -9,6 +9,7 @@ interface PersistedCart {
   items: CartItem[]
 }
 
+/** Recupera identidad y retiros válidos de un valor desconocido; devuelve undefined si no puede validarlos. */
 function parseLineage(value: unknown): CartItem['lineage'] {
   if (typeof value !== 'object' || value === null) return undefined
   const lineage = value as Record<string, unknown>

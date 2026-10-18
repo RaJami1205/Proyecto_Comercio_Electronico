@@ -1,3 +1,4 @@
+/** Define los datos de comprador y entrega utilizados durante Checkout y creación de Orders. */
 export interface BuyerInfo {
   fullName: string
   email: string

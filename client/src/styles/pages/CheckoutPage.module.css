@@ -1,3 +1,4 @@
+/** Define los estilos de página de Checkout, incluidos sus ajustes de presentación. */
 .page { display: flex; flex-direction: column; min-height: 100vh; background: var(--color-surface); }
 .main { flex: 1; padding: clamp(2rem, 6vw, 5rem) 1rem; }
 .container { width: min(100%, var(--content-max-width)); margin: 0 auto; }

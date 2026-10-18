@@ -1,3 +1,4 @@
+/** Verifica stock, identidad de creación y cálculos con módulos aislados, sin importar configuración ni contactar Algolia. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -5,6 +6,7 @@ import { stripTypeScriptTypes } from 'node:module'
 
 // Compila únicamente estos módulos puros en memoria. Nunca importa app, env o Algolia.
 const sources = new Map()
+/** Codifica el código recibido como módulo importable en memoria. */
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 sources.set('services/productService', dataUrl('export async function getProductById() { throw new Error("Debe inyectarse el catálogo simulado") }'))
 for (const name of ['domain/orderError', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderStore', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
@@ -21,17 +23,21 @@ const { OrderService } = await import(sources.get('services/orderService'))
 const { InMemoryOrderStore } = await import(sources.get('stores/orderStore'))
 const { PaymentService } = await import(sources.get('services/paymentService'))
 const { calculateOrderTotals } = await import(sources.get('domain/orderCalculations'))
+/** Construye una solicitud de compra con datos y clave de idempotencia de prueba. */
 const request = () => ({
   buyer: { fullName: ' Usuario ', email: 'user@example.com', phone: '88888888' },
   delivery: { province: 'San José', canton: 'Central', address: 'Dirección' },
   items: [{ productId: 'p', quantity: 1 }], idempotencyKey: 'creation',
 })
 const product = { objectID: 'p', title: 'Producto', image_url: '', price: 10000, in_stock: true, stock_quantity: 3 }
+/** Crea un store y un servicio de Orders con la consulta de productos simulada recibida. */
 const setup = (lookup = async id => ({ ...product, objectID: id })) => {
   const store = new InMemoryOrderStore()
   return { store, service: new OrderService(store, lookup) }
 }
+/** Reconoce el error público de validación esperado por los casos de entrada inválida. */
 const invalid = error => error.status === 400 && error.code === 'CHECKOUT_VALIDATION_ERROR'
+/** Reconoce el conflicto de identidad asociado a una clave de idempotencia reutilizada. */
 const conflict = error => error.status === 409 && error.code === 'CHECKOUT_VALIDATION_ERROR' && Boolean(error.fieldErrors.idempotencyKey)
 
 for (const [name, overrides, quantity] of [

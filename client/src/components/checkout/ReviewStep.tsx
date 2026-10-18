@@ -1,3 +1,4 @@
+/** Presenta datos de compra e importes preliminares o autoritativos antes de continuar al pago. */
 import type { BuyerInfo, DeliveryInfo } from '../../types/checkout'
 import type { Order, OrderItem, OrderTotals } from '../../types/order'
 import styles from '../../styles/checkout/ReviewStep.module.css'
@@ -19,8 +20,10 @@ interface ReviewStepProps {
   onConfirm?: () => void
 }
 
+/** Presenta comprador, entrega, productos y totales recibidos; expone las acciones permitidas por los callbacks y bloqueos. */
 function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retryPending = false, invalid = false, error, differences = [], onAbandon, onEdit, onConfirm }: ReviewStepProps) {
   const confirmed = order?.orderStatus === 'CONFIRMED' && order.paymentStatus === 'APPROVED'
+  /** Formatea el importe recibido para presentación sin modificar el valor financiero original. */
   const money = (value: number) => new Intl.NumberFormat('es-CR', { style: 'currency', currency: order?.currency ?? 'CRC' }).format(value)
   return (
     <div className={styles.layout}>

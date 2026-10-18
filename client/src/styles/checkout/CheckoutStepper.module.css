@@ -1,3 +1,4 @@
+/** Define los estilos de indicador de etapas del Checkout, incluidos sus ajustes de presentación. */
 .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
 .step { display: flex; align-items: center; gap: 0.6rem; min-width: 0; padding: 1rem 0.75rem; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
 .step strong { overflow-wrap: anywhere; }

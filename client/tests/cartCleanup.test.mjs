@@ -1,8 +1,10 @@
+/** Verifica CLEAR_CART y persistencia utilizando el reducer y las utilidades reales en memoria. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 
+/** Transpila e importa el módulo indicado en memoria sin crear archivos de salida. */
 async function loadSource(file) {
   const source = readFileSync(new URL('../src/' + file, import.meta.url), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText

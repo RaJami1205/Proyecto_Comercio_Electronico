@@ -18,6 +18,7 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
   maximumFractionDigits: 0,
 })
 
+/** Presenta el resumen del Cart en un diálogo modal y delega cierre y navegación a los callbacks recibidos. */
 function CartPreviewDrawer({
   onClose, onViewCart, onContinueShopping, onCheckoutRequested, shouldRestoreFocus,
 }: CartPreviewDrawerProps) {
@@ -53,6 +54,7 @@ function CartPreviewDrawer({
       if (shouldRestoreFocus && !shouldRestoreFocus()) return
       // Espera al commit de navegación: el trigger anterior puede quedar hidden/inert.
       restoreFrameRef.current = requestAnimationFrame(() => {
+        /** Comprueba que el elemento siga conectado, visible y fuera de regiones hidden o inert antes de devolverle el foco. */
         const isAvailable = (element: HTMLElement | null): element is HTMLElement =>
           element !== null && element.isConnected &&
           !element.closest('[hidden], [inert]') && element.getClientRects().length > 0

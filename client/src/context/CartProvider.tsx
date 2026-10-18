@@ -28,7 +28,7 @@ function CartProvider({ children }: CartProviderProps) {
   }, [state])
 
   // CN-11: si el usuario tiene la tienda abierta en otra pestaña, el evento storage
-  // sincroniza este carrito con el guardado más reciente.
+  // aplica el snapshot recibido. No ofrece transacciones atómicas entre pestañas.
   useEffect(() => {
     /** Hidrata el Cart con datos validados cuando cambia su clave en otra pestaña. */
     function handleStorage(event: StorageEvent) {
@@ -40,7 +40,9 @@ function CartProvider({ children }: CartProviderProps) {
     return () => window.removeEventListener('storage', handleStorage)
   }, [])
 
+  /** Solicita el vaciado explícito del carrito mediante una única acción del reducer. */
   const clearCart = useCallback(() => dispatch({ type: 'CLEAR_CART' }), [])
+  /** Envía el baseline y las cantidades compradas al reducer para limpiar sobre el Cart vigente. */
   const cleanupPurchase = useCallback((purchase: CartPurchaseCleanup) =>
     dispatch({ type: 'CLEANUP_PURCHASE', payload: purchase }), [])
 

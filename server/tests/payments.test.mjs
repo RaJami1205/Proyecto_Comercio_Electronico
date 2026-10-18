@@ -1,3 +1,4 @@
+/** Verifica servicios de pago y endpoints locales con fixtures de Orders y un catálogo simulado. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import app from '../dist/app.js'
@@ -6,6 +7,7 @@ import { PaymentService, paymentService } from '../dist/services/paymentService.
 import { PaymentSandboxService } from '../dist/services/paymentSandboxService.js'
 import { InMemoryOrderStore } from '../dist/stores/orderStore.js'
 
+/** Devuelve una Order pendiente de prueba con el identificador recibido y datos conocidos. */
 const fixture = (id = 'order-1') => ({
   id, orderNumber: 'CN-2026-' + id, createdAt: '2026-10-12T12:00:00Z',
   buyer: { fullName: 'Usuario Prueba', email: 'prueba@example.com', phone: '88888888' },
@@ -14,7 +16,9 @@ const fixture = (id = 'order-1') => ({
   totals: { subtotal: 20000, tax: 2600, shipping: 3500, total: 26100 },
   currency: 'CRC', orderStatus: 'PENDING', paymentStatus: 'PENDING',
 })
+/** Construye una solicitud de pago con escenario y clave de idempotencia de prueba. */
 const request = (scenario = 'PAYMENT_APPROVED', idempotencyKey = 'attempt-1') => ({scenario, idempotencyKey})
+/** Crea un store independiente y un servicio de pago con el Sandbox recibido. */
 const setup = (sandbox = new PaymentSandboxService()) => {
   const store = new InMemoryOrderStore()
   store.create(fixture(), 'creation-1')
@@ -139,7 +143,9 @@ test('HTTP: tres resultados 200, GET actualizado, replay, concurrencia y errores
   const server = app.listen(0,'127.0.0.1')
   await new Promise(resolve => server.once('listening',resolve))
   const base = 'http://127.0.0.1:' + server.address().port + '/api/orders'
+  /** Envía el cuerpo JSON indicado al endpoint del servidor local levantado por la prueba. */
   const post = (url, body) => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+  /** Crea una Order de prueba por HTTP con la clave indicada y devuelve su respuesta JSON. */
   const create = async key => {
     const response = await post(base, {buyer:fixture().buyer, delivery:fixture().delivery, items:[{productId:'product-1',quantity:2}], idempotencyKey:key})
     assert.equal(response.status,201)

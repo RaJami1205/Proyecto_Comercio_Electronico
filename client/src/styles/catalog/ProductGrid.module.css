@@ -1,3 +1,4 @@
+/** Define los estilos de cuadrícula de productos, incluidos sus ajustes de presentación. */
 .section {
   position: relative;
   animation: gridReveal 220ms ease-out both;

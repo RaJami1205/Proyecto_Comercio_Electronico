@@ -41,6 +41,7 @@ function getPaginationItems(currentPage: number, totalPages: number): Pagination
   return items
 }
 
+/** Orienta el icono de paginación según la dirección recibida. */
 function ArrowIcon({ direction }: { direction: 'left' | 'right' }) {
   return (
     <svg

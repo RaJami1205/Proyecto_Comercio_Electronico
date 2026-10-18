@@ -1,6 +1,8 @@
+/** Valida y normaliza el cuerpo desconocido de creación de Order antes de consultar productos. */
 import type { CreateOrderRequest } from '../types/order.js'
 import { OrderError } from './orderError.js'
 
+/** Devuelve el objeto recibido o un objeto vacío cuando la entrada no tiene forma de registro. */
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown> : {}
@@ -12,6 +14,7 @@ export function validateCreateOrderRequest(value: unknown): CreateOrderRequest {
   const buyer = record(body.buyer)
   const delivery = record(body.delivery)
   const errors: Record<string, string> = {}
+  /** Lee y recorta un campo de texto; registra su error y devuelve vacío si falta o no es válido. */
   const text = (object: Record<string, unknown>, key: string, field: string): string => {
     const value = object[key]
     if (typeof value !== 'string' || !value.trim()) {

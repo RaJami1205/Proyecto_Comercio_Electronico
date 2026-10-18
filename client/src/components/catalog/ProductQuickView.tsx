@@ -20,6 +20,7 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
   maximumFractionDigits: 0,
 })
 
+/** Devuelve el icono decorativo del control de cierre del diálogo. */
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -28,6 +29,7 @@ function CloseIcon() {
   )
 }
 
+/** Devuelve el icono decorativo de carrito utilizado en la acción de añadir productos. */
 function CartIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
