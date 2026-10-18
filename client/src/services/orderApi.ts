@@ -6,11 +6,14 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || '').replace(/
 export class OrderApiError extends Error {
   readonly code: ApiErrorResponse['error']['code']
   readonly conclusive: boolean
-  constructor(code: ApiErrorResponse['error']['code'], conclusive: boolean) {
+  readonly fieldErrors?: Record<string, string>
+
+  constructor(code: ApiErrorResponse['error']['code'], conclusive: boolean, fieldErrors?: Record<string, string>) {
     super('No se pudo crear la orden.')
     this.name = 'OrderApiError'
     this.code = code
     this.conclusive = conclusive
+    this.fieldErrors = fieldErrors
   }
 }
 
@@ -35,7 +38,6 @@ function isOrder(value: unknown): value is Order {
 }
 
 async function createOrder(request: CreateOrderRequest): Promise<Order> {
-  // Construye explícitamente el contrato, incluso si el caller tiene campos adicionales.
   const payload: CreateOrderRequest = {
     buyer: request.buyer, delivery: request.delivery,
     items: request.items.map(({ productId, quantity }) => ({ productId, quantity })),
@@ -46,22 +48,32 @@ async function createOrder(request: CreateOrderRequest): Promise<Order> {
     body: JSON.stringify(payload), signal: AbortSignal.timeout(20000),
   })
   const body: unknown = await response.json().catch(() => null)
-  if (response.status !== 201) {
+  
+  // ¡AQUÍ EL CAMBIO! Aceptamos tanto 201 (Nueva) como 200 (Replay/Idempotencia)
+  if (response.status !== 201 && response.status !== 200) {
     const code = isRecord(body) && isRecord(body.error) ? body.error.code : undefined
+    const fieldErrors = isRecord(body) && isRecord(body.error) && isRecord(body.error.fieldErrors) 
+      ? body.error.fieldErrors as Record<string, string> 
+      : undefined
+
     const known = ['CHECKOUT_VALIDATION_ERROR', 'EMPTY_CART', 'PRODUCT_NOT_FOUND']
-    throw new OrderApiError(known.includes(String(code)) ? code as ApiErrorResponse['error']['code'] : 'UNEXPECTED_ERROR', [400, 404, 413, 422].includes(response.status))
+    throw new OrderApiError(
+      known.includes(String(code)) ? code as ApiErrorResponse['error']['code'] : 'UNEXPECTED_ERROR', 
+      [400, 404, 413, 422].includes(response.status),
+      fieldErrors
+    )
   }
+  
   if (!isOrder(body)) throw new OrderApiError('UNEXPECTED_ERROR', false)
   return body
 }
-
 export const orderApi = { createOrder }
 
 export function orderErrorMessage(error: unknown): string {
   if (error instanceof OrderApiError) {
-    if (error.code === 'PRODUCT_NOT_FOUND') return 'Uno de los productos ya no está disponible. Revisa tu carrito antes de continuar.'
+    if (error.code === 'PRODUCT_NOT_FOUND') return 'Uno de los productos ya no esta disponible. Revisa tu carrito antes de continuar.'
     if (error.code === 'EMPTY_CART') return 'Agrega productos al carrito para continuar.'
-    if (error.code === 'CHECKOUT_VALIDATION_ERROR') return 'Revisa los datos del comprador, la entrega y las cantidades antes de confirmar.'
+    if (error.code === 'CHECKOUT_VALIDATION_ERROR') return 'Revisa los datos del comprador y la entrega. Corrige los campos para continuar.'
   }
-  return 'No pudimos confirmar la creación de tu orden. Inténtalo de nuevo; conservaremos este intento para evitar duplicados.'
+  return 'Ocurrio un problema inesperado. Intentalo nuevamente.'
 }

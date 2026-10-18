@@ -75,10 +75,10 @@ export const paymentApi = { processPayment }
 
 export function paymentErrorMessage(error: unknown): string {
   if (error instanceof PaymentApiError) {
-    if (error.code === 'ORDER_NOT_FOUND') return 'No encontramos la orden asociada a este pago.'
+    if (error.code === 'ORDER_NOT_FOUND') return 'No encontramos la orden asociada a este pago. Vuelve al carrito e intenta de nuevo.'
     if (error.code === 'ORDER_ALREADY_CONFIRMED') return 'Esta orden ya fue confirmada; no es necesario procesar otro pago.'
     if (error.code === 'PAYMENT_IN_PROGRESS') return 'Ya hay un pago en proceso para esta orden. Espera un momento.'
     if (error.code === 'INVALID_PAYMENT_SCENARIO') return 'Selecciona un escenario de pago válido.'
   }
-  return 'No pudimos procesar el pago. Inténtalo de nuevo; conservaremos este intento para evitar duplicados.'
+  return 'Ocurrió un problema inesperado. Inténtalo nuevamente.'
 }

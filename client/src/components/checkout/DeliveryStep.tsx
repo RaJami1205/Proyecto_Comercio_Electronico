@@ -6,6 +6,7 @@ import pageStyles from '../../styles/pages/CheckoutPage.module.css'
 
 interface DeliveryStepProps {
   value: DeliveryInfo
+  errors?: Record<string, string> // <-- NUEVO: Recibe los fieldErrors del servidor
   onChange: (value: DeliveryInfo) => void
   onContinue: (value: DeliveryInfo) => void
   onBack: () => void
@@ -18,16 +19,16 @@ const fields: { name: keyof DeliveryInfo; label: string; multiline?: boolean; au
   { name: 'additionalInfo', label: 'Información adicional (opcional)', multiline: true, optional: true },
 ]
 
-function DeliveryStep({ value, onChange, onContinue, onBack }: DeliveryStepProps) {
+function DeliveryStep({ value, errors: serverErrors = {}, onChange, onContinue, onBack }: DeliveryStepProps) {
   const [touched, setTouched] = useState<Partial<Record<keyof DeliveryInfo, boolean>>>({})
   const [attempted, setAttempted] = useState(false)
   const inputs = useRef<Partial<Record<keyof DeliveryInfo, HTMLInputElement | HTMLTextAreaElement | null>>>({})
-  const errors = validateDelivery(value)
+  const localErrors = validateDelivery(value)
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setAttempted(true)
-    const firstInvalid = fields.find((field) => errors[field.name])
+    const firstInvalid = fields.find((field) => localErrors[field.name])
     if (firstInvalid) {
       inputs.current[firstInvalid.name]?.focus()
       return
@@ -40,7 +41,9 @@ function DeliveryStep({ value, onChange, onContinue, onBack }: DeliveryStepProps
       <div className={styles.fields}>
         {fields.map((field) => {
           const id = `delivery-${field.name}`
-          const error = touched[field.name] || attempted ? errors[field.name] : undefined
+          // Prioriza el error del servidor; si no hay, usa el local
+          const error = serverErrors[field.name] || (touched[field.name] || attempted ? localErrors[field.name] : undefined)
+          
           const props = {
             id, name: field.name, autoComplete: field.autoComplete,
             required: !field.optional, value: value[field.name] ?? '',

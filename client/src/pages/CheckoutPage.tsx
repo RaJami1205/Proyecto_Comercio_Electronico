@@ -42,10 +42,11 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
+  const [error, setError] = useState<string>()
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [attempt, setAttempt] = useState<CreationAttempt>()
   const [differences, setDifferences] = useState<string[]>([])
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
-  const [error, setError] = useState<string>()
-  const [attempt, setAttempt] = useState<CreationAttempt>()
   const [selectedPaymentScenario, setSelectedPaymentScenario] = useState<PaymentScenario | null>(null)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [hasPendingPayment, setHasPendingPayment] = useState(false)
@@ -73,6 +74,13 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const invalid = Object.keys(validateBuyer(data.buyer)).length > 0 || Object.keys(validateDelivery(data.delivery)).length > 0
     || reviewItems.length === 0 || reviewItems.some(item => !Number.isSafeInteger(item.quantity) || item.quantity <= 0)
 
+    //Revisa si hay carrito vacío (EMPTY_CART)
+  useEffect(() => {
+    if (items.length === 0 && !order && !confirmed) {
+      onBackToCart()
+    }
+  }, [items.length, order, confirmed, onBackToCart])
+  
   useEffect(() => {
     // Confirmation y el panel de resultado administran el foco de sus propias vistas.
     if (confirmed || (currentStep === 'payment' && paymentResult)) return
@@ -129,10 +137,23 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       setAttempt(undefined)
       stageChangedRef.current = true
       setCurrentStep(alreadyConfirmed || requiresAcceptance ? 'review' : 'payment')
+      // El ref protege incluso clicks ocurridos antes del siguiente render de React.
+      submittingRef.current = true
+      setIsCreatingOrder(true)
+      onNavigationLockChange(true)
+      setError(undefined)
+      setFieldErrors({}) // <-- LIMPIAR ERRORES ANTERIORES
     } catch (failure) {
-      if (failure instanceof OrderApiError && failure.conclusive) {
-        attemptRef.current = undefined
-        setAttempt(undefined)
+      if (failure instanceof OrderApiError) {
+        if (failure.conclusive) {
+          attemptRef.current = undefined
+          setAttempt(undefined)
+        }
+        // Si el servidor nos devuelve errores de validación precisos
+        if (failure.code === 'CHECKOUT_VALIDATION_ERROR' && failure.fieldErrors) {
+           setFieldErrors(failure.fieldErrors) // <-- GUARDAR LOS ERRORES DEL SERVER
+           setCurrentStep('buyer') 
+        }
       }
       setError(orderErrorMessage(failure))
     } finally {
@@ -234,10 +255,14 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
             <p>{stage.description}</p>
             {currentStep === 'buyer' ? (
               <BuyerStep value={data.buyer} onChange={buyer => setData(current => ({ ...current, buyer }))}
-                onContinue={buyer => { setData(current => ({ ...current, buyer })); changeStep('delivery') }} onBack={onBackToCart} />
+                onContinue={buyer => { setData(current => ({ ...current, buyer })); changeStep('delivery') }} 
+                onBack={onBackToCart} 
+                errors={fieldErrors} />
             ) : currentStep === 'delivery' ? (
               <DeliveryStep value={data.delivery} onChange={delivery => setData(current => ({ ...current, delivery }))}
-                onContinue={delivery => { setData(current => ({ ...current, delivery })); changeStep('review') }} onBack={() => changeStep('buyer')} />
+                onContinue={delivery => { setData(current => ({ ...current, delivery })); changeStep('review') }} 
+                onBack={() => changeStep('buyer')} 
+                errors={fieldErrors} />
             ) : currentStep === 'payment' && order ? (
               <>
                 {paymentResult ? (
