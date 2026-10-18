@@ -220,9 +220,7 @@ Los errores técnicos de comunicación se distinguen de los escenarios simulados
 ## Frontend
 
 ![React](https://img.shields.io/badge/React-Frontend-2563EB?style=flat-square&logo=react&logoColor=white)
-
 ![TypeScript](https://img.shields.io/badge/TypeScript-Language-3178C6?style=flat-square&logo=typescript&logoColor=white)
-
 ![Vite](https://img.shields.io/badge/Vite-Build-646CFF?style=flat-square&logo=vite&logoColor=white)
 
 - React
@@ -238,9 +236,7 @@ Los errores técnicos de comunicación se distinguen de los escenarios simulados
 ## Backend
 
 ![Node.js](https://img.shields.io/badge/Node.js-Runtime-339933?style=flat-square&logo=node.js&logoColor=white)
-
 ![Express](https://img.shields.io/badge/Express-API-111827?style=flat-square&logo=express&logoColor=white)
-
 ![Algolia](https://img.shields.io/badge/Algolia-Search-5468FF?style=flat-square&logo=algolia&logoColor=white)
 
 - Node.js
@@ -253,9 +249,7 @@ Los errores técnicos de comunicación se distinguen de los escenarios simulados
 ## Desarrollo y DevOps
 
 ![Git](https://img.shields.io/badge/Git-Version_Control-F05032?style=flat-square&logo=git&logoColor=white)
-
 ![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?style=flat-square&logo=github&logoColor=white)
-
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?style=flat-square&logo=githubactions&logoColor=white)
 
 - Git
