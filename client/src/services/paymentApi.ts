@@ -1,3 +1,4 @@
+/** Envía intentos al Payment Sandbox y valida que la respuesta corresponda a la Order y al escenario solicitados. */
 import type { ApiErrorResponse } from '../types/apiError'
 import type { Order } from '../types/order'
 import type { PaymentResult, PaymentScenario, ProcessPaymentRequest } from '../types/payment'
@@ -7,6 +8,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || '').replace(/
 export class PaymentApiError extends Error {
   readonly code: ApiErrorResponse['error']['code']
   readonly conclusive: boolean
+  /** Conserva el código público y la certeza del fallo para distinguir errores del intento de pago. */
   constructor(code: ApiErrorResponse['error']['code'], conclusive: boolean) {
     super('No se pudo procesar el pago.')
     this.name = 'PaymentApiError'
@@ -15,6 +17,7 @@ export class PaymentApiError extends Error {
   }
 }
 
+/** Comprueba que el valor desconocido sea un objeto no nulo y no un arreglo. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -23,9 +26,12 @@ const SCENARIOS: readonly PaymentScenario[] = ['PAYMENT_APPROVED', 'PAYMENT_DECL
 
 // Misma validación de forma que orderApi.ts (duplicada a propósito: cada
 // servicio Client valida su propia respuesta, sin depender de internals del otro).
+/** Comprueba estructura, moneda y estados de la Order recibida antes de aceptar el resultado de pago. */
 function isOrder(value: unknown): value is Order {
   if (!isRecord(value) || !isRecord(value.buyer) || !isRecord(value.delivery) || !isRecord(value.totals)) return false
+  /** Comprueba que el valor recibido sea texto no vacío después de recortar espacios. */
   const text = (v: unknown) => typeof v === 'string' && v.trim().length > 0
+  /** Comprueba que el valor recibido sea un importe numérico finito y no negativo. */
   const money = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0
   return text(value.id) && text(value.orderNumber) && typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt))
     && ['fullName', 'email', 'phone'].every(key => text((value.buyer as Record<string, unknown>)[key]))
@@ -40,6 +46,7 @@ function isOrder(value: unknown): value is Order {
       && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && money(item.lineSubtotal))
 }
 
+/** Valida estructura y coherencia del resultado, incluyendo la Order y el escenario esperados. */
 function isPaymentResult(value: unknown, orderId: string, scenario: PaymentScenario): value is PaymentResult {
   return isRecord(value)
     && SCENARIOS.includes(value.result as PaymentScenario)
@@ -53,6 +60,7 @@ function isPaymentResult(value: unknown, orderId: string, scenario: PaymentScena
         && value.order.paymentStatus === (value.result === 'PAYMENT_DECLINED' ? 'DECLINED' : 'ERROR'))
 }
 
+/** Envía escenario y clave para la Order indicada; devuelve únicamente un resultado validado y coherente. */
 async function processPayment(orderId: string, request: ProcessPaymentRequest): Promise<PaymentResult> {
   const payload: ProcessPaymentRequest = { scenario: request.scenario, idempotencyKey: request.idempotencyKey }
   const response = await fetch(`${API_BASE_URL}/api/orders/${encodeURIComponent(orderId)}/payment`, {
@@ -73,6 +81,7 @@ async function processPayment(orderId: string, request: ProcessPaymentRequest): 
 
 export const paymentApi = { processPayment }
 
+/** Convierte errores de pago en un mensaje público para la recuperación del intento. */
 export function paymentErrorMessage(error: unknown): string {
   if (error instanceof PaymentApiError) {
     if (error.code === 'ORDER_NOT_FOUND') return 'No encontramos la orden asociada a este pago. Vuelve al carrito e intenta de nuevo.'

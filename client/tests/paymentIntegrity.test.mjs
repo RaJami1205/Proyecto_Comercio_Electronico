@@ -1,8 +1,10 @@
+/** Verifica intentos de pago, validación de respuestas y campos demostrativos con servicios reales y fetch simulado. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 
+/** Codifica el código recibido como módulo importable en memoria. */
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 // Harness de handlers/estado; no sustituye las verificaciones DOM, foco o responsive.
 const reducerUrl = dataUrl(ts.transpileModule(readFileSync(new URL('../src/context/cartReducer.ts', import.meta.url), 'utf8'), {compilerOptions:{target:ts.ScriptTarget.ES2023, module:ts.ModuleKind.ESNext}}).outputText)
@@ -33,6 +35,7 @@ for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep'
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 }
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
+/** Transpila el archivo indicado y resuelve únicamente las dependencias aisladas del harness. */
 function compile(file) {
   const source = readFileSync(new URL('../src/' + file, import.meta.url), 'utf8').replace('import.meta.env.VITE_API_BASE_URL', 'undefined')
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX } }).outputText
@@ -59,23 +62,28 @@ const { calculateCartTotals } = await import(calculationsUrl)
 const buyer = { fullName: 'Prueba', email: 'test@example.com', phone: '88888888' }
 const delivery = { province: 'San José', canton: 'Central', address: 'Dirección' }
 const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quantity: 1, lineage:{id:'original', removed:0} }]
+/** Devuelve un snapshot pendiente de prueba con comprador, entrega e importes conocidos. */
 function order() {
   return { id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
     items:[{productId:'p', name:'Producto', image:'', unitPrice:10000, quantity:1, lineSubtotal:10000}],
     totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING' }
 }
+/** Recorre el árbol JSX simulado y devuelve sus nodos para inspeccionar propiedades. */
 function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes)
   if (!tree || typeof tree !== 'object') return []
   return [tree, ...nodes(tree.props?.children)]
 }
+/** Inicializa el Cart y recorre Buyer y Delivery; devuelve controles del harness para probar Review y Payment. */
 function checkout() {
   runtime.reset(structuredClone(cart))
   const events = []
   const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => {}, onCartClick: () => {},
     onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created') }
   let tree
+  /** Actualiza el árbol simulado de Checkout conservando sus slots de estado. */
   const render = () => { runtime.renderStart(); tree = CheckoutPage(props) }
+  /** Devuelve las propiedades del primer componente del tipo solicitado en el árbol simulado. */
   const find = type => nodes(tree).find(node => node.type === type)?.props
   render()
   find('BuyerStep').onContinue(buyer)
@@ -85,16 +93,18 @@ function checkout() {
   return { render, find, review: () => find('ReviewStep'), step: () => find('CheckoutStepper').currentStep, events }
 }
 
-// Pruebas dirigidas de integridad y preservación del Cart.
+/** Construye un resultado de pago coherente con el escenario; permite sustituir campos para probar respuestas inválidas. */
 const result = (scenario, changes = {}) => ({
   result: scenario, processedAt: order().createdAt,
   order: {...order(), orderStatus: scenario === 'PAYMENT_APPROVED' ? 'CONFIRMED' : 'PENDING',
     paymentStatus: scenario.replace('PAYMENT_', '')}, ...changes,
 })
+/** Prepara la Order y el escenario solicitado con fetch simulado; devuelve handlers y requests capturados. */
 async function paymentFlow(t, scenario = 'PAYMENT_DECLINED') {
   const original = globalThis.fetch
   t.after(() => { globalThis.fetch = original })
   const requests = []
+  /** Construye la respuesta simulada para el escenario incluido en la solicitud de pago. */
   let respond = request => Response.json(result(request.scenario))
   globalThis.fetch = async (url, options) => {
     assert.equal(options.method, 'POST')
@@ -264,9 +274,13 @@ test('Sandbox conserva campos demo, validación, escenarios y payload sin datos 
     onScenarioChange: scenario => { props.selectedScenario = scenario },
     onProcessPayment: () => paymentApi.processPayment('order-1', {scenario:props.selectedScenario, idempotencyKey:'demo-key'})}
   let tree
+  /** Actualiza el árbol simulado del formulario de pago con las propiedades actuales. */
   const render = () => { runtime.renderStart(); tree = PaymentStep(props) }
+  /** Devuelve los campos demostrativos del formulario, excluyendo los selectores de escenario. */
   const inputs = () => nodes(tree).filter(n => n.type === 'input' && n.props.type !== 'radio')
+  /** Devuelve las propiedades del botón de procesamiento del formulario simulado. */
   const button = () => nodes(tree).find(n => n.type === 'button').props
+  /** Devuelve los grupos del formulario para comprobar su estado habilitado o bloqueado. */
   const fieldsets = () => nodes(tree).filter(n => n.type === 'fieldset')
   render()
   assert.equal(inputs().length, 4)

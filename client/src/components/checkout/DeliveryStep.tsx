@@ -1,3 +1,4 @@
+/** Implementa el formulario controlado de entrega y muestra errores locales o recibidos del servidor. */
 import { useRef, useState, type FormEvent } from 'react'
 import type { DeliveryInfo } from '../../types/checkout'
 import { normalizeDelivery, validateDelivery } from '../../utils/checkoutValidation'
@@ -19,12 +20,14 @@ const fields: { name: keyof DeliveryInfo; label: string; multiline?: boolean; au
   { name: 'additionalInfo', label: 'Información adicional (opcional)', multiline: true, optional: true },
 ]
 
+/** Muestra la dirección controlada y comunica cambios, continuación o regreso mediante callbacks. */
 function DeliveryStep({ value, errors: serverErrors = {}, onChange, onContinue, onBack }: DeliveryStepProps) {
   const [touched, setTouched] = useState<Partial<Record<keyof DeliveryInfo, boolean>>>({})
   const [attempted, setAttempted] = useState(false)
   const inputs = useRef<Partial<Record<keyof DeliveryInfo, HTMLInputElement | HTMLTextAreaElement | null>>>({})
   const localErrors = validateDelivery(value)
 
+  /** Evita el envío nativo; enfoca el primer campo inválido o entrega los datos normalizados al callback de continuación. */
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setAttempted(true)

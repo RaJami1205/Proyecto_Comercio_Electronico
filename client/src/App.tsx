@@ -1,3 +1,4 @@
+/** Coordina las vistas de catálogo, carrito y Checkout, sus callbacks y la navegación mediante History API. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ProductListingPage, { type CartFeedback } from './pages/ProductListingPage'
 import CartPage from './pages/CartPage'
@@ -12,11 +13,13 @@ interface NavigationState {
   emptyCartNotice: boolean
 }
 
+/** Interpreta el hash actual y devuelve la vista de catálogo, carrito o Checkout. */
 function viewFromLocation(): AppView {
   if (window.location.hash === '#checkout') return 'checkout'
   return window.location.hash === '#cart-page' ? 'cart' : 'catalog'
 }
 
+/** Mantiene la vista activa, protege la navegación durante operaciones y conecta las páginas con el Cart compartido. */
 function App() {
   const { items } = useCart()
   const checkoutLockedRef = useRef(false)
@@ -30,6 +33,7 @@ function App() {
   const [feedback, setFeedback] = useState<CartFeedback | null>(null)
   const feedbackTimeoutRef = useRef<number | null>(null)
   const restoreDrawerFocusRef = useRef(true)
+  /** Indica si el cierre del Drawer debe devolver el foco al control que lo abrió. */
   const shouldRestoreDrawerFocus = useCallback(() => restoreDrawerFocusRef.current, [])
 
   // Ajuste antes del commit: nunca se monta Checkout con un Cart vacío.
@@ -40,6 +44,7 @@ function App() {
   const { view, emptyCartNotice } = navigation
 
   useEffect(() => {
+    /** Sincroniza la vista con el historial o conserva Checkout cuando la navegación está bloqueada. */
     function syncLocation() {
       if (checkoutLockedRef.current) {
         window.history.replaceState({ view: 'checkout' }, '', '#checkout')
@@ -80,6 +85,7 @@ function App() {
     if (feedbackTimeoutRef.current !== null) clearTimeout(feedbackTimeoutRef.current)
   }, [])
 
+  /** Publica un aviso temporal para el producto y origen indicados, sustituyendo el aviso anterior. */
   function showCartFeedback(product: Pick<Product, 'id' | 'name'>, source: CartFeedback['source']) {
     if (feedbackTimeoutRef.current !== null) clearTimeout(feedbackTimeoutRef.current)
     setFeedback({ productId: product.id, productName: product.name, source })
@@ -89,6 +95,7 @@ function App() {
     }, 2500)
   }
 
+  /** Solicita una vista y actualiza el historial respetando el bloqueo y la guarda de carrito vacío. */
   function navigate(requestedView: AppView, catalogHash: '' | '#top' | '#catalog' = '') {
     if (checkoutLockedRef.current) return
     if (requestedView !== 'checkout') setCheckoutHasOrder(false)
@@ -109,6 +116,7 @@ function App() {
     setNavigation({ view: nextView, emptyCartNotice: denied })
   }
 
+  /** Abre el preview cuando la navegación está permitida y habilita el retorno del foco al trigger. */
   function openCartPreview() {
     if (checkoutLockedRef.current) return
     restoreDrawerFocusRef.current = true

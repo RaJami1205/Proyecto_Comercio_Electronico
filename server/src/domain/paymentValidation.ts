@@ -1,6 +1,8 @@
+/** Valida escenarios y claves de idempotencia recibidos para un intento de pago simulado. */
 import { OrderError } from './orderError.js'
 import type { PaymentScenario, ProcessPaymentRequest } from '../types/payment.js'
 
+/** Indica si el valor pertenece a los tres escenarios permitidos del Sandbox. */
 export function isPaymentScenario(value: unknown): value is PaymentScenario {
   return value === 'PAYMENT_APPROVED' || value === 'PAYMENT_DECLINED' || value === 'PAYMENT_ERROR'
 }

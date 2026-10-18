@@ -1,3 +1,4 @@
+/** Coordina las etapas de Checkout, la creación de Order, los intentos de pago y el cierre de compra. */
 import { useEffect, useRef, useState } from 'react'
 import CheckoutStepper, { type CheckoutStep } from '../components/checkout/CheckoutStepper'
 import BuyerStep from '../components/checkout/BuyerStep'
@@ -91,6 +92,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     return () => cancelAnimationFrame(frame)
   }, [confirmed, currentStep, order, paymentResult])
 
+  /** Cambia a la etapa solicitada si las guardas del intento y del pago permiten navegar. */
   function changeStep(next: CheckoutStep) {
     if (submittingRef.current || paymentSubmittingRef.current || confirmed) return
     if (next === 'payment' && !order) return
@@ -100,6 +102,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     setCurrentStep(next)
   }
 
+  /** Crea o recupera la Order con el mismo intento ante incertidumbre; exige aceptar diferencias antes del pago. */
   async function confirmOrder() {
     if (submittingRef.current || paymentSubmittingRef.current || confirmed || (!order && invalid)) return
     if (order) {
@@ -142,7 +145,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       setIsCreatingOrder(true)
       onNavigationLockChange(true)
       setError(undefined)
-      setFieldErrors({}) // <-- LIMPIAR ERRORES ANTERIORES
+      setFieldErrors({}) // Descarta errores de campo tras recibir la Order.
     } catch (failure) {
       if (failure instanceof OrderApiError) {
         if (failure.conclusive) {
@@ -151,7 +154,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
         }
         // Si el servidor nos devuelve errores de validación precisos
         if (failure.code === 'CHECKOUT_VALIDATION_ERROR' && failure.fieldErrors) {
-           setFieldErrors(failure.fieldErrors) // <-- GUARDAR LOS ERRORES DEL SERVER
+           setFieldErrors(failure.fieldErrors) // Conserva los errores por campo para mostrarlos en el formulario.
            setCurrentStep('buyer') 
         }
       }
@@ -163,11 +166,13 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     }
   }
 
+  /** Selecciona el escenario solicitado solo cuando no existe un intento pendiente ni un resultado cerrado. */
   function changePaymentScenario(scenario: PaymentScenario) {
     if (paymentSubmittingRef.current || paymentAttemptRef.current || paymentResultRef.current || confirmed) return
     setSelectedPaymentScenario(scenario)
   }
 
+  /** Procesa el escenario con una identidad estable; actualiza la Order y limpia unidades originales solo ante aprobación válida. */
   async function handleProcessPayment() {
     // Guarda de doble-submit / múltiples Retry concurrentes: el ref cubre clicks antes
     // del siguiente render; isProcessingPayment refleja el bloqueo en la UI.
@@ -212,6 +217,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     }
   }
 
+  /** Prepara otro intento sobre la misma Order tras Declined o Error y exige volver a elegir escenario. */
   function handlePaymentRetry() {
     if (paymentSubmittingRef.current || paymentAttemptRef.current || confirmed
       || !paymentResultRef.current || paymentResultRef.current.result === 'PAYMENT_APPROVED') return
@@ -224,6 +230,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     setPaymentError(undefined)
   }
 
+  /** Vuelve al carrito si no hay una operación en curso; no cancela la Order ni modifica sus productos. */
   function abandonCheckout() {
     if (submittingRef.current || paymentSubmittingRef.current) return
     // La salida es explícita: no cancela ni recrea la Order y no modifica Cart.

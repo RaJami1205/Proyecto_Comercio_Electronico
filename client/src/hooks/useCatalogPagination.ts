@@ -56,6 +56,7 @@ export function useCatalogPagination() {
     return () => mediaQuery.removeEventListener('change', handleMediaQueryChange)
   }, [])
 
+  /** Limita la página solicitada al rango disponible antes de actualizar la paginación. */
   const setCurrentPage = useCallback((currentPage: number) => {
     setPagination((current) =>
       current.currentPage === currentPage

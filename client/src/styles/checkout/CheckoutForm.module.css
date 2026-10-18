@@ -1,3 +1,4 @@
+/** Define los estilos de formularios de comprador y entrega, incluidos sus ajustes de presentación. */
 .fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

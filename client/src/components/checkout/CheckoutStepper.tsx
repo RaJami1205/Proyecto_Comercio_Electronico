@@ -1,3 +1,4 @@
+/** Representa la etapa actual y las etapas recorridas del Checkout sin gestionar navegación. */
 import styles from '../../styles/checkout/CheckoutStepper.module.css'
 
 export type CheckoutStep = 'buyer' | 'delivery' | 'review' | 'payment'

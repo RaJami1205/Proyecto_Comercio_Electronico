@@ -1,3 +1,4 @@
+/** Presenta el resultado coherente del pago y permite solicitar un nuevo intento cuando corresponde. */
 import { useEffect, useRef } from 'react'
 import type { Order } from '../../types/order'
 import type { PaymentScenario } from '../../types/payment'
@@ -63,6 +64,7 @@ const content: Record<Verdict, { icon: string; badge: string; title: string; bod
   },
 }
 
+/** Cruza resultado y Order para presentar el mensaje, enfocar su heading y ofrecer el retry recibido cuando corresponde. */
 function PaymentResultPanel({ result, order, onRetry }: PaymentResultPanelProps) {
   const verdict = resolveVerdict(result, order)
   const data = content[verdict]

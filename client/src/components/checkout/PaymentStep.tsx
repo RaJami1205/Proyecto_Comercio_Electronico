@@ -1,3 +1,4 @@
+/** Presenta escenarios del Payment Sandbox y campos demostrativos locales que no se envían al servidor. */
 import { useState } from 'react'
 import type { Order } from '../../types/order'
 import type { PaymentScenario } from '../../types/payment'
@@ -47,6 +48,7 @@ function formatExpiry(raw: string): string {
   return `${digits.slice(0, 2)}/${digits.slice(2)}`
 }
 
+/** Conserva hasta tres dígitos del texto demostrativo; no valida ni procesa una tarjeta real. */
 function formatCvv(raw: string): string {
   return raw.replace(/\D/g, '').slice(0, 3)
 }
@@ -91,6 +93,7 @@ function PaymentStep({
   const disabled = isProcessingPayment || Boolean(locked)
   const cardComplete = isCardComplete(cardNumber, cardName, cardExpiry, cardCvv)
 
+  /** Formatea el importe recibido para presentación sin modificar el valor financiero original. */
   const money = (value: number) =>
     new Intl.NumberFormat('es-CR', { style: 'currency', currency: order.currency }).format(value)
 

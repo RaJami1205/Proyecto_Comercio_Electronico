@@ -1,3 +1,4 @@
+/** Crea Orders con precios y stock del catálogo; coordina replay y solicitudes concurrentes por clave de idempotencia. */
 import { randomUUID } from 'node:crypto'
 import { calculateLineSubtotal, calculateOrderTotals } from '../domain/orderCalculations.js'
 import { OrderError } from '../domain/orderError.js'
@@ -9,6 +10,7 @@ import { getProductById } from './productService.js'
 
 type ProductLookup = (id: string) => Promise<ProductRecord | undefined>
 
+/** Agrupa cantidades por producto y rechaza sumas que exceden el rango de enteros seguros. */
 function quantities(items: CreateOrderRequest['items']): Map<string, number> {
   const result = new Map<string, number>()
   for (const { productId, quantity } of items) {
@@ -28,14 +30,17 @@ function identity({ buyer, delivery, items }: Pick<CreateOrderRequest, 'buyer' |
   ])
 }
 
+/** Rechaza una clave reutilizada cuando las identidades de compra esperada y recibida difieren. */
 function requireCompatible(expected: string, received: string): void {
   if (expected !== received) throw new OrderError(409, 'CHECKOUT_VALIDATION_ERROR', 'La clave de idempotencia ya está asociada a una solicitud diferente.', { idempotencyKey: 'Utiliza la misma clave únicamente para repetir la misma compra.' })
 }
 
 export class OrderService {
   private readonly pending = new Map<string, { identity: string; task: Promise<Order> }>()
+  /** Recibe el store y la consulta de productos que usará el servicio para crear y recuperar Orders. */
   constructor(private readonly store: OrderStore = orderStore, private readonly lookup: ProductLookup = getProductById) {}
 
+  /** Valida la solicitud, reutiliza una Order compatible o comparte la creación concurrente con la misma identidad. */
   async create(value: unknown): Promise<Order> {
     const request = validateCreateOrderRequest(value)
     const fingerprint = identity(request)
@@ -57,12 +62,14 @@ export class OrderService {
     finally { this.pending.delete(request.idempotencyKey) }
   }
 
+  /** Devuelve la Order identificada o lanza ORDER_NOT_FOUND si no existe. */
   findById(id: string): Order {
     const order = this.store.findById(id)
     if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
     return order
   }
 
+  /** Consulta productos y stock, calcula precios autoritativos y almacena la Order completa solo tras validar todas sus líneas. */
   private async buildOrder(request: CreateOrderRequest): Promise<Order> {
     const products = new Map<string, ProductRecord>()
     for (const [productId, quantity] of quantities(request.items)) {

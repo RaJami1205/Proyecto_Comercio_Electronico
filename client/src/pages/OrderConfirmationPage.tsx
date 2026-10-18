@@ -1,3 +1,4 @@
+/** Presenta el snapshot de la compra aprobada y el acceso de regreso al catálogo. */
 import { useEffect, useRef } from 'react'
 import type { Order } from '../types/order'
 import Header from '../components/layout/Header'
@@ -26,6 +27,7 @@ function OrderConfirmationPage({ order, onCatalogClick, onCartClick }: OrderConf
     if (isConfirmed) headingRef.current?.focus()
   }, [isConfirmed])
 
+  /** Formatea el importe recibido para presentación sin modificar el valor financiero original. */
   const money = (value: number) =>
     new Intl.NumberFormat('es-CR', { style: 'currency', currency: order.currency }).format(value)
 

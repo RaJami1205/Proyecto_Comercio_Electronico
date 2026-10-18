@@ -1,3 +1,4 @@
+/** Define los códigos y la estructura pública de errores de la API. */
 export type ApiErrorCode =
   | 'CHECKOUT_VALIDATION_ERROR'
   | 'EMPTY_CART'

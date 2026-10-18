@@ -1,4 +1,4 @@
-/** Configura Express, CORS y rutas de productos; traduce errores a responses sin detalles internos. */
+/** Configura Express, CORS y rutas de catálogo, Orders y pagos; traduce errores a respuestas públicas. */
 import cors from 'cors'
 import express, { type NextFunction, type Request, type Response } from 'express'
 
@@ -21,6 +21,7 @@ app.use(
 app.use('/api/products', productsRouter)
 app.use('/api/orders', express.json(), ordersRouter)
 
+// Convierte errores de Orders y del catálogo a sus contratos HTTP sin exponer detalles internos.
 app.use(
   (error: unknown, _request: Request, response: Response, _next: NextFunction) => {
     if (_request.path === '/api/orders' || _request.path.startsWith('/api/orders/')) {

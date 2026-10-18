@@ -1,3 +1,4 @@
+/** Define solicitudes de creación y snapshots de Order con productos, importes y estados transaccionales. */
 import type { BuyerInfo, DeliveryInfo } from './checkout'
 
 export interface CreateOrderItemRequest {
@@ -5,6 +6,7 @@ export interface CreateOrderItemRequest {
   quantity: number
 }
 
+/** Solicitud del navegador con datos y referencias; no contiene precios ni estados confiables. */
 export interface CreateOrderRequest {
   buyer: BuyerInfo
   delivery: DeliveryInfo
@@ -12,6 +14,7 @@ export interface CreateOrderRequest {
   idempotencyKey: string
 }
 
+/** Snapshot de producto con precio y subtotal determinados por el Server. */
 export interface OrderItem {
   productId: string
   name: string
@@ -38,6 +41,7 @@ export type PaymentStatus =
   | 'DECLINED'
   | 'ERROR'
 
+/** Snapshot autoritativo de la compra, independiente del Cart editable. */
 export interface Order {
   id: string
   orderNumber: string

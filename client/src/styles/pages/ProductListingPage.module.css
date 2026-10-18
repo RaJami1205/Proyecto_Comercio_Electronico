@@ -1,3 +1,4 @@
+/** Define los estilos de página del catálogo, incluidos sus ajustes de presentación. */
 .page {
   min-height: 100vh;
   background: var(--color-surface);

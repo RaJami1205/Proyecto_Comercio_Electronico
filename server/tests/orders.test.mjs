@@ -1,3 +1,4 @@
+/** Verifica creación, validación e idempotencia de Orders mediante servicios y endpoints locales. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import app from '../dist/app.js'
@@ -5,6 +6,7 @@ import { OrderService, orderService } from '../dist/services/orderService.js'
 import { InMemoryOrderStore } from '../dist/stores/orderStore.js'
 import { calculateOrderTotals } from '../dist/domain/orderCalculations.js'
 
+/** Construye una solicitud de compra con datos y clave de idempotencia de prueba. */
 const request = (key = 'purchase-1') => ({
   buyer: { fullName: ' Usuario Prueba ', email: 'usuario@example.com', phone: '88888888' },
   delivery: { province: 'San José', canton: 'San José', address: 'Dirección de prueba' },
@@ -91,6 +93,7 @@ test('API: POST 201, GET 200, errores del contrato, JSON inválido y CORS', asyn
   const server = app.listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
   const base = 'http://127.0.0.1:' + server.address().port + '/api/orders'
+  /** Envía el cuerpo JSON indicado al endpoint del servidor local levantado por la prueba. */
   const post = (body) => fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   try {
     const created = await post(request('http-test'))

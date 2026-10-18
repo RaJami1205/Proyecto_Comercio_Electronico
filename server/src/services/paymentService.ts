@@ -1,3 +1,4 @@
+/** Coordina pagos simulados, estados de Order, replay de resultados y exclusión de pagos concurrentes en este proceso. */
 import { OrderError } from '../domain/orderError.js'
 import { isPaymentScenario, validateProcessPaymentRequest } from '../domain/paymentValidation.js'
 import { orderStore, type OrderStore } from '../stores/orderStore.js'
@@ -10,11 +11,13 @@ export class PaymentService {
   // Las claves se aíslan por Order: nunca se devuelve el pago de otra compra.
   private readonly results = new Map<string, Map<string, PaymentResult>>()
 
+  /** Recibe el store de Orders y el Sandbox que resolverá los intentos de pago. */
   constructor(
     private readonly store: OrderStore = orderStore,
     private readonly sandbox: PaymentSandbox = new PaymentSandboxService(),
   ) {}
 
+  /** Valida el intento, recupera replay o bloquea la Order mientras procesa y guarda su resultado autoritativo. */
   async process(orderId: string, value: unknown): Promise<PaymentResult> {
     const request = validateProcessPaymentRequest(value)
     const order = this.store.findById(orderId)

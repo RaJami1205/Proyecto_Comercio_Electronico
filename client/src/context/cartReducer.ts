@@ -9,6 +9,8 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     case 'CLEAR_CART': {
       return state.items.length ? { items: [] } : state
     }
+    // Retira solo unidades originales asociadas a la compra aprobada; conserva incorporaciones posteriores.
+    // La identidad distingue una línea nueva del mismo producto y los retiros evitan un segundo descuento.
     case 'CLEANUP_PURCHASE': {
       const items = state.items.flatMap((item) => {
         const baseline = action.payload.baseline.find(line => line.productId === item.productId)

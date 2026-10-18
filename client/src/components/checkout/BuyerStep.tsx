@@ -1,3 +1,4 @@
+/** Implementa el formulario controlado del comprador y muestra errores locales o recibidos del servidor. */
 import { useRef, useState, type FormEvent } from 'react'
 import type { BuyerInfo } from '../../types/checkout'
 import { normalizeBuyer, validateBuyer } from '../../utils/checkoutValidation'
@@ -18,12 +19,14 @@ const fields: { name: keyof BuyerInfo; label: string; type: string; autoComplete
   { name: 'phone', label: 'Teléfono', type: 'tel', autoComplete: 'tel' },
 ]
 
+/** Muestra los datos controlados del comprador y comunica cambios, continuación o regreso mediante callbacks. */
 function BuyerStep({ value, errors: serverErrors = {}, onChange, onContinue, onBack }: BuyerStepProps) {
   const [touched, setTouched] = useState<Partial<Record<keyof BuyerInfo, boolean>>>({})
   const [attempted, setAttempted] = useState(false)
   const inputs = useRef<Partial<Record<keyof BuyerInfo, HTMLInputElement | null>>>({})
   const localErrors = validateBuyer(value)
 
+  /** Evita el envío nativo; enfoca el primer campo inválido o entrega los datos normalizados al callback de continuación. */
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setAttempted(true)

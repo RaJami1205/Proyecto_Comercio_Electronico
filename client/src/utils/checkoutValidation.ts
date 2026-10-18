@@ -1,12 +1,15 @@
+/** Normaliza y valida datos de comprador y entrega para los formularios del Client. */
 import type { BuyerInfo, DeliveryInfo } from '../types/checkout'
 
 export type BuyerErrors = Partial<Record<keyof BuyerInfo, string>>
 export type DeliveryErrors = Partial<Record<keyof DeliveryInfo, string>>
 
+/** Devuelve los datos del comprador sin espacios en los extremos. */
 export function normalizeBuyer(value: BuyerInfo): BuyerInfo {
   return { fullName: value.fullName.trim(), email: value.email.trim(), phone: value.phone.trim() }
 }
 
+/** Devuelve la dirección sin espacios en los extremos y normaliza las notas opcionales vacías. */
 export function normalizeDelivery(value: DeliveryInfo): DeliveryInfo {
   return {
     province: value.province.trim(),
@@ -16,6 +19,7 @@ export function normalizeDelivery(value: DeliveryInfo): DeliveryInfo {
   }
 }
 
+/** Devuelve errores por campo para nombre, correo y teléfono tras normalizar los datos recibidos. */
 export function validateBuyer(value: BuyerInfo): BuyerErrors {
   const buyer = normalizeBuyer(value)
   const errors: BuyerErrors = {}
@@ -32,6 +36,7 @@ export function validateBuyer(value: BuyerInfo): BuyerErrors {
   return errors
 }
 
+/** Devuelve errores por campo cuando faltan provincia, cantón o dirección normalizados. */
 export function validateDelivery(value: DeliveryInfo): DeliveryErrors {
   const delivery = normalizeDelivery(value)
   const errors: DeliveryErrors = {}

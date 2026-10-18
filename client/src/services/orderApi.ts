@@ -1,3 +1,4 @@
+/** Envía solicitudes de creación de Order y valida las respuestas y errores recibidos por HTTP. */
 import type { ApiErrorResponse } from '../types/apiError'
 import type { CreateOrderRequest, Order } from '../types/order'
 
@@ -8,6 +9,7 @@ export class OrderApiError extends Error {
   readonly conclusive: boolean
   readonly fieldErrors?: Record<string, string>
 
+  /** Conserva código, certeza del fallo y errores de campo para orientar la recuperación de Checkout. */
   constructor(code: ApiErrorResponse['error']['code'], conclusive: boolean, fieldErrors?: Record<string, string>) {
     super('No se pudo crear la orden.')
     this.name = 'OrderApiError'
@@ -17,12 +19,16 @@ export class OrderApiError extends Error {
   }
 }
 
+/** Comprueba que el valor desconocido sea un objeto no nulo y no un arreglo. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
+/** Comprueba la estructura pública, moneda y coherencia de estados de una Order recibida por HTTP. */
 function isOrder(value: unknown): value is Order {
   if (!isRecord(value) || !isRecord(value.buyer) || !isRecord(value.delivery) || !isRecord(value.totals)) return false
+  /** Comprueba que el valor recibido sea texto no vacío después de recortar espacios. */
   const text = (value: unknown) => typeof value === 'string' && value.trim().length > 0
+  /** Comprueba que el valor recibido sea un importe numérico finito y no negativo. */
   const money = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0
   return text(value.id) && text(value.orderNumber) && typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt))
     && ['fullName', 'email', 'phone'].every(key => text((value.buyer as Record<string, unknown>)[key]))
@@ -37,6 +43,7 @@ function isOrder(value: unknown): value is Order {
       && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && money(item.lineSubtotal))
 }
 
+/** Envía solo datos de comprador, entrega, referencias y clave; devuelve una Order validada o un error público. */
 async function createOrder(request: CreateOrderRequest): Promise<Order> {
   const payload: CreateOrderRequest = {
     buyer: request.buyer, delivery: request.delivery,
@@ -49,7 +56,7 @@ async function createOrder(request: CreateOrderRequest): Promise<Order> {
   })
   const body: unknown = await response.json().catch(() => null)
   
-  // ¡AQUÍ EL CAMBIO! Aceptamos tanto 201 (Nueva) como 200 (Replay/Idempotencia)
+  // Acepta respuestas de creación o replay; ambas deben contener una Order válida.
   if (response.status !== 201 && response.status !== 200) {
     const code = isRecord(body) && isRecord(body.error) ? body.error.code : undefined
     const fieldErrors = isRecord(body) && isRecord(body.error) && isRecord(body.error.fieldErrors) 
@@ -69,6 +76,7 @@ async function createOrder(request: CreateOrderRequest): Promise<Order> {
 }
 export const orderApi = { createOrder }
 
+/** Convierte un error de creación en un mensaje público sin exponer detalles internos. */
 export function orderErrorMessage(error: unknown): string {
   if (error instanceof OrderApiError) {
     if (error.code === 'PRODUCT_NOT_FOUND') return 'Uno de los productos ya no esta disponible. Revisa tu carrito antes de continuar.'

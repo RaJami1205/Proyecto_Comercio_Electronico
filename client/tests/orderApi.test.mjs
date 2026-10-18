@@ -1,3 +1,4 @@
+/** Verifica serialización, validación y errores del cliente HTTP de Orders con respuestas simuladas. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'

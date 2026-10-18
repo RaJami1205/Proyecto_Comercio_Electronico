@@ -8,6 +8,7 @@ import SearchBox from './SearchBox'
 
 export type ActivePanel = 'filters' | 'categories' | 'price' | null
 
+/** Devuelve el icono decorativo que identifica el control de filtros. */
 function FilterIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true">
@@ -16,6 +17,7 @@ function FilterIcon() {
   )
 }
 
+/** Devuelve el icono decorativo de cuadrícula usado por la barra del catálogo. */
 function GridIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true">
@@ -27,6 +29,7 @@ function GridIcon() {
   )
 }
 
+/** Devuelve el icono decorativo del control de ordenamiento. */
 function SortIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true">
