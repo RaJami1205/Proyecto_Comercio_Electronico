@@ -1,3 +1,4 @@
+/** Configura React y la ruta base de Vite utilizada para construir y servir el Client. */
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 

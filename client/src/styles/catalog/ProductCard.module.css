@@ -1,3 +1,4 @@
+/** Define los estilos de tarjetas de producto, incluidos sus ajustes de presentación. */
 .card {
   position: relative;
   display: flex;

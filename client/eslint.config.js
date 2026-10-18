@@ -1,3 +1,4 @@
+/** Configura las reglas de análisis estático de TypeScript, React Hooks y React Refresh del Client. */
 import js from '@eslint/js'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'

@@ -1,6 +1,8 @@
+/** Presenta la introducción del catálogo y su ilustración visual. */
 import HeroVisual from './HeroVisual'
 import styles from '../../styles/catalog/CatalogHero.module.css'
 
+/** Presenta el título, la descripción y la ilustración introductoria del catálogo. */
 function CatalogHero() {
   return (
     <section className={styles.hero} id="top" aria-labelledby="hero-title">

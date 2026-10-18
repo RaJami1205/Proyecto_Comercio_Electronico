@@ -1,3 +1,4 @@
+/** Define los estilos de paneles de filtros, incluidos sus ajustes de presentación. */
 .panel {
   display: grid;
   gap: 1.1rem;

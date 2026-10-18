@@ -1,6 +1,6 @@
 /** Define la frontera tipada entre el Cart compartido y sus consumidores mediante useCart. */
 import { createContext } from 'react'
-import type { CartItem } from '../types/cart'
+import type { CartItem, CartPurchaseCleanup } from '../types/cart'
 
 // Contrato público compartido: separa los detalles internos del estado de sus componentes consumidores.
 // Se consume mediante useCart(), sin acceder al reducer; dispatch permanece interno al Provider.
@@ -10,6 +10,8 @@ export interface CartContextValue {
   incrementItem: (productId: string) => void
   decrementItem: (productId: string) => void
   removeItem: (productId: string) => void
+  clearCart: () => void
+  cleanupPurchase: (purchase: CartPurchaseCleanup) => void
   totalUnits: number
 }
 

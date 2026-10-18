@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ProductSearchResult } from '../../services/productApi'
 import styles from '../../styles/catalog/SearchBox.module.css'
 
+/** Devuelve el icono decorativo de búsqueda, oculto a tecnologías asistivas. */
 function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -12,6 +13,7 @@ function SearchIcon() {
   )
 }
 
+/** Devuelve el icono decorativo del control que borra la búsqueda. */
 function ClearIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">

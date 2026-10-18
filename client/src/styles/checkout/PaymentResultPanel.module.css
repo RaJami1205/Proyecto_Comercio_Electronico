@@ -1,0 +1,115 @@
+/** Define los estilos de resultados de pago y sus estados, incluidos sus ajustes de presentación. */
+.panel {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid var(--color-border, #d8dce1);
+}
+
+.icon {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.text h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 1.05rem;
+}
+
+.text > h3[tabindex="-1"]:focus {
+  outline: none;
+}
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.text p {
+  margin: 0;
+  color: #3a4150;
+  line-height: 1.5;
+}
+
+/* Approved: tratamiento "success" dentro de la paleta navy/cyan/violet
+   (verde reservado solo para el acento, el resto se apoya en ícono + texto). */
+.approved {
+  background: #eafaf3;
+  border-color: #1f9d6c;
+}
+.approved .icon {
+  background: #1f9d6c;
+  color: #fff;
+}
+.approved .badge {
+  background: #cdf1e1;
+  color: #0f6b47;
+}
+
+/* Declined: rojo de rechazo, distinto del ámbar de error de servicio. */
+.declined {
+  background: #fef2f2;
+  border-color: #b91c1c;
+}
+.declined .icon {
+  background: #b91c1c;
+  color: #fff;
+}
+.declined .badge {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Error / Unexpected: ámbar, para no confundirse con "rechazo" ni "aprobado". */
+.error,
+.unexpected {
+  background: #fff6e5;
+  border-color: #9a6b00;
+}
+.error .icon,
+.unexpected .icon {
+  background: #9a6b00;
+  color: #fff;
+}
+.error .badge,
+.unexpected .badge {
+  background: #fbe8b8;
+  color: #5c4000;
+}
+
+@media (max-width: 480px) {
+  .panel {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .text h3 {
+    font-size: 1rem;
+  }
+}

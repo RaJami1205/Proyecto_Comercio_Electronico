@@ -3,7 +3,7 @@ import styles from '../../styles/layout/Footer.module.css'
 import { handleAnchorNavigation } from '../../utils/scrollToAnchor'
 
 /** Presenta las secciones informativas y delega el desplazamiento por anclas. */
-function Footer() {
+function Footer({ onCatalogClick }: { onCatalogClick?: (hash: '#top' | '#catalog') => void }) {
   return (
     <footer className={styles.footer} id="about">
       <div className={styles.container}>
@@ -32,12 +32,18 @@ function Footer() {
             <h3 id="footer-links">Explorar</h3>
             <ul>
               <li>
-                <a href="#top" onClick={handleAnchorNavigation}>
+                <a href="#top" onClick={(event) => {
+                  if (onCatalogClick) { event.preventDefault(); onCatalogClick('#top') }
+                  else handleAnchorNavigation(event)
+                }}>
                   Inicio
                 </a>
               </li>
               <li>
-                <a href="#catalog" onClick={handleAnchorNavigation}>
+                <a href="#catalog" onClick={(event) => {
+                  if (onCatalogClick) { event.preventDefault(); onCatalogClick('#catalog') }
+                  else handleAnchorNavigation(event)
+                }}>
                   Catálogo
                 </a>
               </li>

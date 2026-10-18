@@ -6,6 +6,7 @@ const DEFAULT_CLIENT_ORIGIN = process.env.CLIENT_ORIGIN
 
 /** Distingue una configuración incompleta de otros fallos para responder con servicio no disponible. */
 export class ConfigurationError extends Error {
+  /** Crea un error de configuración con el mensaje recibido para distinguirlo de errores inesperados. */
   constructor(message: string) {
     super(message)
     this.name = 'ConfigurationError'

@@ -1,0 +1,160 @@
+/** Define los estilos de formulario del Payment Sandbox, incluidos sus ajustes de presentación. */
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.sandboxBanner {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--color-primary, #164ed6);
+  border-radius: 0.6rem;
+  background: #edf3ff;
+  color: #24395d;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.sandboxBanner strong { color: #152b50; }
+
+.orderSummary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin: 0;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: var(--color-surface, #f5f7fb);
+  border: 1px solid var(--color-border, #d8dce1);
+}
+.orderSummary div { min-width: 0; }
+.orderIdentity { grid-column: 1 / -1; }
+.orderSummary dt { color: #52617a; font-size: 0.8rem; margin-bottom: 0.2rem; }
+.orderSummary dd { margin: 0; font-weight: 650; color: #192f54; overflow-wrap: anywhere; }
+.orderSummary .total { font-size: clamp(1.25rem, 3vw, 1.65rem); font-weight: 800; letter-spacing: -0.025em; }
+
+.cardFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.85rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--color-border, #d8dce1);
+  border-radius: 0.75rem;
+}
+.cardFields legend,
+.scenarios legend { color: #192f54; font-size: 1rem; font-weight: 750; padding: 0 0.3rem; }
+.demoMethods { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.demoMethods > span { color: #52617a; font-size: 0.8rem; }
+.methodBadges { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.85rem; padding: 0; margin: 0; list-style: none; }
+.methodBadges li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  color: #24395d;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+.methodEmblem {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  box-shadow: 0 2px 4px rgba(25, 47, 84, 0.12);
+}
+.visaEmblem { background: linear-gradient(135deg, #172f69, #2157c4); font-size: 1.15rem; font-style: italic; }
+.mastercardEmblem { background: linear-gradient(120deg, #b43127, #a65306); }
+.paypalEmblem { background: linear-gradient(135deg, #13549b, #08738c); font-style: italic; }
+.methodLabel { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.methodLabel small { color: #52617a; font-size: 0.75rem; font-weight: 400; overflow-wrap: anywhere; }
+
+.field { display: flex; flex-direction: column; min-width: 0; gap: 0.35rem; color: #24395d; font-size: 0.875rem; font-weight: 650; }
+.field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  border: 1px solid #b9c5d8;
+  border-radius: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  background: #f8faff;
+  color: var(--color-text-primary, #192f54);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 400;
+}
+.field input::placeholder { color: #62718a; }
+.field input:focus-visible { outline: 3px solid var(--color-primary, #164ed6); outline-offset: 2px; background: #fff; }
+.field input:disabled { background: #eef1f5; color: #637087; cursor: not-allowed; }
+.fieldRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; grid-column: 1 / -1; min-width: 0; }
+
+.scenarios { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.6rem; min-width: 0; border: 0; padding: 0; margin: 0; }
+.scenarios legend { margin-bottom: 0.6rem; padding: 0; }
+.scenarioCard {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  gap: 0.65rem;
+  border: 1px solid var(--color-border, #d8dce1);
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.scenarios:not(:disabled) .scenarioCard:hover { border-color: var(--color-primary, #164ed6); background: #f5f8ff; }
+.scenarioCard:has(input:focus-visible) { outline: 3px solid var(--color-primary, #164ed6); outline-offset: 2px; }
+.scenarioCardSelected { border-color: var(--color-primary, #164ed6); background: #edf3ff; box-shadow: inset 3px 0 0 var(--color-primary, #164ed6); }
+.scenarios:disabled .scenarioCard { cursor: not-allowed; }
+.scenarioCard input[type='radio'] { width: 1.1rem; height: 1.1rem; margin: 0.1rem 0 0; flex-shrink: 0; accent-color: var(--color-primary, #164ed6); }
+.scenarioText { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; overflow-wrap: anywhere; }
+.scenarioText strong { color: #192f54; font-size: 0.95rem; }
+.scenarioDescription { font-size: 0.85rem; color: #52617a; line-height: 1.45; }
+
+.layout .actions { margin-top: 0.25rem; }
+.actions .paymentButton {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  padding: 0.8rem 1.5rem;
+  background: linear-gradient(110deg, var(--color-primary, #164ed6), #5842b5);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(30, 58, 138, 0.14);
+  font-size: 1rem;
+}
+.actions .paymentButton:focus-visible { outline: 3px solid var(--color-primary, #164ed6); outline-offset: 3px; }
+.actions .paymentButton:disabled { background: #e8edf5; color: #59677f; box-shadow: none; opacity: 1; cursor: not-allowed; filter: none; }
+.layout .hint { margin: 0; font-size: 0.85rem; line-height: 1.45; }
+.layout .error { color: #a3293d; font-size: 0.9rem; margin: 0; }
+.visuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (min-width: 600px) {
+  .orderSummary { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) auto; }
+  .orderIdentity { grid-column: auto; }
+  .cardFields { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 1rem; }
+  .actions .paymentButton { width: auto; min-width: 14rem; }
+}
+@media (min-width: 1000px) {
+  .scenarios { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 359px) {
+  .cardFields, .orderSummary, .sandboxBanner { padding: 0.75rem; }
+  .fieldRow { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scenarioCard { transition: none; }
+}

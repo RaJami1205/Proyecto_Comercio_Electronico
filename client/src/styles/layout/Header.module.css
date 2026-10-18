@@ -1,3 +1,4 @@
+/** Define los estilos de cabecera y navegación, incluidos sus ajustes de presentación. */
 .header {
   position: sticky;
   z-index: 50;
@@ -93,6 +94,7 @@
 
 .action {
   display: inline-flex;
+  cursor: pointer;
   gap: 0.55rem;
   align-items: center;
   justify-content: center;

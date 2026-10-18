@@ -16,11 +16,12 @@ export function calculateCartTotals(items: readonly CartItem[]) {
     (sum, item) => sum + calculateLineSubtotal(item.price, item.quantity),
     0,
   )
-  const tax = subtotal * VAT_RATE
+  // Mismo redondeo a centavos y orden de operaciones que el Server.
+  const tax = Math.round(subtotal * 100 * VAT_RATE) / 100
 
-  // CN-17 evalúa el subtotal antes de IVA y sin redondeos de presentación.
+  // Redondea la suma completa a CRC enteros solo para elegibilidad, antes del IVA.
   let shipping = 0
-  if (subtotal > 0 && subtotal < FREE_SHIPPING_THRESHOLD) {
+  if (subtotal > 0 && Math.round(subtotal) < FREE_SHIPPING_THRESHOLD) {
     shipping = STANDARD_SHIPPING_FEE
   }
 

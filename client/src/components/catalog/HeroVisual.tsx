@@ -1,5 +1,7 @@
+/** Construye la ilustración decorativa del encabezado del catálogo con SVG y elementos de estilo. */
 import styles from '../../styles/catalog/HeroVisual.module.css'
 
+/** Compone la ilustración del catálogo sin introducir controles ni contenido accesible redundante. */
 function HeroVisual() {
   return (
     <div className={styles.visual} aria-hidden="true">
