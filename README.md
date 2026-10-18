@@ -4,24 +4,19 @@
 
 ### E-Commerce de Tecnología, Computación y Electrónica
 
-**Una experiencia de compra completa, desde el catálogo hasta la confirmación del pedido, construida con React, TypeScript, Node.js y Algolia.**
+**Una experiencia de compra moderna, responsive y orientada a búsqueda, construida con React, TypeScript, Node.js y Algolia.**
 
 <br>
 
 ![React](https://img.shields.io/badge/React-TypeScript-2563EB?style=for-the-badge&logo=react&logoColor=white)
-
 ![Vite](https://img.shields.io/badge/Vite-Build-646CFF?style=for-the-badge&logo=vite&logoColor=white)
-
 ![Node.js](https://img.shields.io/badge/Node.js-Express-111827?style=for-the-badge&logo=node.js&logoColor=white)
-
 ![Algolia](https://img.shields.io/badge/Search-Algolia-5B5BF7?style=for-the-badge&logo=algolia&logoColor=white)
 
 <br>
 
 [Ver sitio desplegado](https://rajami1205.github.io/Proyecto_Comercio_Electronico/) ·
-
 [API de producción](https://cibernova-api.onrender.com) ·
-
 [Repositorio](https://github.com/RaJami1205/Proyecto_Comercio_Electronico)
 
 </div>
@@ -30,7 +25,11 @@
 
 <div align="center">
 
-<img src="docs/assets/cibernova-panel.png" alt="Panel principal de CiberNova" width="100%" />
+<img
+  src="docs/assets/cibernova-panel.png"
+  alt="Panel principal de CiberNova"
+  width="100%"
+/>
 
 </div>
 
