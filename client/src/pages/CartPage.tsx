@@ -4,8 +4,10 @@ import CartSection from '../components/cart/CartSection'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
 import styles from '../styles/pages/ProductListingPage.module.css'
+import type { PolicyView } from '../utils/appNavigation'
 
 interface CartPageProps {
+  onPolicyNavigate: (view: PolicyView) => void
   feedbackProductName?: string
   onCartClick: () => void
   onContinueShopping: (hash?: '#top' | '#catalog') => void
@@ -14,7 +16,7 @@ interface CartPageProps {
 }
 
 /** Presenta el Cart y delega la navegación y el feedback temporal a la página owner. */
-function CartPage({ onCartClick, onContinueShopping, onCheckoutRequested, feedbackProductName, navigationNotice }: CartPageProps) {
+function CartPage({ onCartClick, onContinueShopping, onCheckoutRequested, feedbackProductName, navigationNotice, onPolicyNavigate }: CartPageProps) {
   return (
     <div className={styles.page}>
       {feedbackProductName ? <CartFeedbackToast productName={feedbackProductName} /> : null}
@@ -30,7 +32,7 @@ function CartPage({ onCartClick, onContinueShopping, onCheckoutRequested, feedba
             onCheckoutRequested={onCheckoutRequested}
           />
         </main>
-        <Footer onCatalogClick={onContinueShopping} />
+        <Footer onCatalogClick={onContinueShopping} onPolicyNavigate={onPolicyNavigate} />
     </div>
   )
 }

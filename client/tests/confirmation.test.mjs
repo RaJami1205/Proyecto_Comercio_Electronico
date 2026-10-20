@@ -34,7 +34,7 @@ const runtimeUrl = dataUrl(`
 const runtime = await import(runtimeUrl)
 const modules = new Map([['react',runtimeUrl],['react/jsx-runtime',runtimeUrl],['./hooks/useCart',runtimeUrl]])
 for (const name of ['Header','Footer']) modules.set('../components/layout/'+name,dataUrl(`export default '${name}'`))
-for (const name of ['ProductListingPage','CartPage','CheckoutPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
+for (const name of ['ProductListingPage','CartPage','CheckoutPage','PolicyPlaceholderPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
 modules.set('./components/cart/CartPreviewDrawer',dataUrl("export default 'CartPreviewDrawer'"))
 /** Transpila el archivo indicado y resuelve únicamente las dependencias aisladas del harness. */
 function compile(file) {
@@ -46,6 +46,7 @@ function compile(file) {
     return 'from '+JSON.stringify(target)
   }))
 }
+modules.set('./utils/appNavigation', compile('utils/appNavigation.ts'))
 const {default:Confirmation}=await import(compile('pages/OrderConfirmationPage.tsx'))
 const {default:App}=await import(compile('App.tsx'))
 /** Recorre el árbol JSX simulado y devuelve sus nodos para inspeccionar propiedades. */
