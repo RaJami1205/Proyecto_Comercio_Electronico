@@ -16,6 +16,7 @@ import { useProductCatalog } from '../hooks/useProductCatalog'
 import type { CatalogFilters as CatalogFiltersState } from '../services/productApi'
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
+import type { PolicyView } from '../utils/appNavigation'
 
 export interface CartFeedback {
   productId: string
@@ -24,6 +25,7 @@ export interface CartFeedback {
 }
 
 interface ProductListingPageProps {
+  onPolicyNavigate: (view: PolicyView) => void
   active: boolean
   isCartPreviewOpen: boolean
   onCartClick: () => void
@@ -40,7 +42,7 @@ const EMPTY_FILTERS: CatalogFiltersState = {
 }
 
 /** Posee filtros, query, selección de Quick View y feedback temporal de presentación. */
-function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, onProductAdded }: ProductListingPageProps) {
+function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, onProductAdded, onPolicyNavigate }: ProductListingPageProps) {
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
   const [catalogQuery, setCatalogQuery] = useState('')
@@ -164,7 +166,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
 
       </main>
 
-      <Footer />
+      <Footer onPolicyNavigate={onPolicyNavigate} />
 
       {selectedProduct && active && !isCartPreviewOpen ? (
         <ProductQuickView

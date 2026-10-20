@@ -6,8 +6,9 @@ import CheckoutPage from './pages/CheckoutPage'
 import CartPreviewDrawer from './components/cart/CartPreviewDrawer'
 import { useCart } from './hooks/useCart'
 import type { Product } from './types/product'
+import PolicyPlaceholderPage from './pages/PolicyPlaceholderPage'
+import { hashForView, policyDestinations, viewFromHash, type AppView, type CatalogHash } from './utils/appNavigation'
 
-type AppView = 'catalog' | 'cart' | 'checkout'
 interface NavigationState {
   view: AppView
   emptyCartNotice: boolean
@@ -15,8 +16,7 @@ interface NavigationState {
 
 /** Interpreta el hash actual y devuelve la vista de catálogo, carrito o Checkout. */
 function viewFromLocation(): AppView {
-  if (window.location.hash === '#checkout') return 'checkout'
-  return window.location.hash === '#cart-page' ? 'cart' : 'catalog'
+  return viewFromHash(window.location.hash)
 }
 
 /** Mantiene la vista activa, protege la navegación durante operaciones y conecta las páginas con el Cart compartido. */
@@ -42,6 +42,7 @@ function App() {
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }
   const { view, emptyCartNotice } = navigation
+  const policyDestination = policyDestinations.find(destination => destination.view === view)
 
   useEffect(() => {
     /** Sincroniza la vista con el historial o conserva Checkout cuando la navegación está bloqueada. */
@@ -96,7 +97,7 @@ function App() {
   }
 
   /** Solicita una vista y actualiza el historial respetando el bloqueo y la guarda de carrito vacío. */
-  function navigate(requestedView: AppView, catalogHash: '' | '#top' | '#catalog' = '') {
+  function navigate(requestedView: AppView, catalogHash: CatalogHash = '') {
     if (checkoutLockedRef.current) return
     if (requestedView !== 'checkout') setCheckoutHasOrder(false)
     restoreDrawerFocusRef.current = false
@@ -105,7 +106,7 @@ function App() {
     const nextView = denied ? 'cart' : requestedView
     const destination = nextView === 'catalog'
       ? `${window.location.pathname}${window.location.search}${catalogHash}`
-      : nextView === 'cart' ? '#cart-page' : '#checkout'
+      : hashForView(nextView)
     if (viewFromLocation() !== nextView || (nextView === 'catalog' && window.location.hash !== catalogHash)) {
       if (denied && window.location.hash === '#checkout') {
         window.history.replaceState({ view: nextView }, '', destination)
@@ -131,12 +132,14 @@ function App() {
         onCartClick={openCartPreview}
         feedback={feedback}
         onProductAdded={showCartFeedback}
+        onPolicyNavigate={navigate}
       />
       {view === 'cart' ? (
         <CartPage
           onCartClick={openCartPreview}
           onContinueShopping={(hash) => navigate('catalog', hash)}
           onCheckoutRequested={() => navigate('checkout')}
+          onPolicyNavigate={navigate}
           feedbackProductName={feedback?.source === 'catalog' ? feedback.productName : undefined}
           navigationNotice={emptyCartNotice ? 'Agrega productos al carrito para continuar con la compra.' : undefined}
         />
@@ -147,6 +150,14 @@ function App() {
           onOrderCreated={() => setCheckoutHasOrder(true)}
           onBackToCart={() => navigate('cart')}
           onCatalogClick={(hash) => navigate('catalog', hash)}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {policyDestination ? (
+        <PolicyPlaceholderPage
+          destination={policyDestination}
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
           onCartClick={openCartPreview}
         />
       ) : null}

@@ -4,21 +4,24 @@ import type { MouseEvent } from 'react'
 import { useCart } from '../../hooks/useCart'
 import styles from '../../styles/layout/Header.module.css'
 import { handleAnchorNavigation } from '../../utils/scrollToAnchor'
+import { isSameTabNavigation } from '../../utils/appNavigation'
 
 interface HeaderProps {
   cartView?: boolean
   checkoutView?: boolean
+  policyView?: boolean
   onCartClick?: () => void
   onCatalogClick?: () => void
 }
 
 /** Presenta los accesos según la vista activa usando totalUnits de useCart. */
-function Header({ cartView = false, checkoutView = false, onCartClick, onCatalogClick }: HeaderProps) {
+function Header({ cartView = false, checkoutView = false, policyView = false, onCartClick, onCatalogClick }: HeaderProps) {
   const { totalUnits } = useCart()
-  const outsideCatalog = cartView || checkoutView
+  const outsideCatalog = cartView || checkoutView || policyView
 
   /** Permite regresar al catálogo mediante el callback de navegación o un ancla. */
   function handleCatalogNavigation(event: MouseEvent<HTMLAnchorElement>) {
+    if (!isSameTabNavigation(event)) return
     if (onCatalogClick) {
       event.preventDefault()
       onCatalogClick()
