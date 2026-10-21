@@ -103,3 +103,13 @@ La fuente única es src/content/terms.ts: termsPolicy agrupa versión, fecha de 
 No se agregan consentimiento, Dialog, campos de aceptación, cambios de contratos ni lógica de Checkout o Backend. La política describe el alcance académico y el Sandbox, sin pagos reales ni entregas físicas.
 
 Verificación: npm run lint, npm run build y node --test tests/*.test.mjs. Las pruebas de navegación cubren la página real, sus cuatro secciones, versión, asociaciones accesibles, Footer, historial y base de despliegue.
+
+## Política de Devoluciones (CN-42)
+
+La ruta #returns-policy publica ReturnsPolicyPage reutilizando PolicyLayout, PolicySection y los estilos compartidos. Footer, History API, foco inicial y enlaces de Checkout conservan su comportamiento.
+
+La fuente src/content/returnsPolicy.ts centraliza el plazo voluntaryReturnWindowDays (15 días naturales desde la entrega hipotética), requestSummary y las cuatro secciones. La futura FAQ puede importar esos valores sin copiar la política completa. El día siguiente a la entrega es el día 1 y se incluyen fines de semana y feriados. El contenido distingue devoluciones voluntarias de reclamos por defectos y reconoce las garantías o derechos aplicables.
+
+El procedimiento es informativo: no hay canal operativo, formularios, reembolsos ni seguimiento logístico. La Order y el Sandbox siguen siendo demostrativos; esta página no modifica contratos ni estados transaccionales. Envíos, Privacidad y FAQ siguen como destinos en preparación; los términos publicados mantienen el mismo alcance académico.
+
+Verificación: npm run lint, npm run build y node --test tests/*.test.mjs. Las pruebas verifican contenido, secciones, plazo, PolicyLayout, Footer, navegación, asociaciones accesibles y ausencia de formularios.
