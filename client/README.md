@@ -93,3 +93,13 @@ Checkout observa su Order mediante useClearCartAfterPayment(order). Limpia solam
 Integración para el ticket de UI de pagos: al recibir PaymentResult, actualizar el estado existente mediante setOrder(paymentResult.order). Esto activa la limpieza automáticamente; no hace falta invocar clearCart() desde el componente de pagos. Esta implementación no incluye Payment UI ni solicita pagos.
 
 Pruebas: node --test tests/*.test.mjs.
+
+## Términos y condiciones (CN-41)
+
+La ruta hash #terms publica TermsPage con PolicyLayout y PolicySection. El Footer conserva su navegación existente, Browser Back y los enlaces en otra pestaña desde Checkout; la ruta funciona con la base de GitHub Pages.
+
+La fuente única es src/content/terms.ts: termsPolicy agrupa versión, fecha de publicación, título, introducción y secciones. Versión inicial: 2026-10-lab4-v1 (2026-10-21). Todo cambio comercial posterior debe actualizar la versión junto con el contenido. TermsContent presenta secciones y metadatos sin navegación propia; el futuro Dialog puede reutilizarlo y tomar título e introducción del mismo módulo.
+
+No se agregan consentimiento, Dialog, campos de aceptación, cambios de contratos ni lógica de Checkout o Backend. La política describe el alcance académico y el Sandbox, sin pagos reales ni entregas físicas.
+
+Verificación: npm run lint, npm run build y node --test tests/*.test.mjs. Las pruebas de navegación cubren la página real, sus cuatro secciones, versión, asociaciones accesibles, Footer, historial y base de despliegue.

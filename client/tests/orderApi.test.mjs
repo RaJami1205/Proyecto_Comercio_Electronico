@@ -58,12 +58,12 @@ test('errores controlados permiten corregir sin mostrar mensajes internos', asyn
 test('fallo técnico o respuesta 201 inválida mantienen el intento pendiente', async () => {
   const original = globalThis.fetch
   try {
-    for (const response of [Response.json({error:{code:'UNEXPECTED_ERROR'}}, {status:500}), Response.json({}, {status:201}), Response.json({...order, paymentStatus:'APPROVED'}, {status:201}), new Response('invalid-json', {status:201})]) {
+    for (const response of [Response.json({error:{code:'UNEXPECTED_ERROR'}}, {status:500}), Response.json({}, {status:201}), Response.json({...order, orderStatus:'PENDING', paymentStatus:'APPROVED'}, {status:201}), new Response('invalid-json', {status:201})]) {
       globalThis.fetch = async () => response
       await assert.rejects(orderApi.createOrder(request), error => error instanceof OrderApiError && !error.conclusive)
     }
     globalThis.fetch = async () => { throw new TypeError('Network failure') }
-    await assert.rejects(orderApi.createOrder(request), error => orderErrorMessage(error).includes('evitar duplicados'))
+    await assert.rejects(orderApi.createOrder(request), error => orderErrorMessage(error).includes('Intentalo nuevamente'))
   } finally { globalThis.fetch = original }
 })
 
