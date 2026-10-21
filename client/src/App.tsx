@@ -7,6 +7,8 @@ import CartPreviewDrawer from './components/cart/CartPreviewDrawer'
 import { useCart } from './hooks/useCart'
 import type { Product } from './types/product'
 import PolicyPlaceholderPage from './pages/PolicyPlaceholderPage'
+import TermsPage from './pages/TermsPage'
+import ReturnsPolicyPage from './pages/ReturnsPolicyPage'
 import { hashForView, policyDestinations, viewFromHash, type AppView, type CatalogHash } from './utils/appNavigation'
 
 interface NavigationState {
@@ -153,7 +155,19 @@ function App() {
           onCartClick={openCartPreview}
         />
       ) : null}
-      {policyDestination ? (
+      {view === 'terms' ? (
+        <TermsPage
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : view === 'returns-policy' ? (
+        <ReturnsPolicyPage
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : policyDestination ? (
         <PolicyPlaceholderPage
           destination={policyDestination}
           onCatalogClick={(hash) => navigate('catalog', hash)}
