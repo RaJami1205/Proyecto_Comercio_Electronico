@@ -7,11 +7,17 @@ export interface CreateOrderItemRequest {
 }
 
 /** Solicitud del navegador con datos y referencias; no contiene precios ni estados confiables. */
+export interface TermsAcceptanceRequest {
+  accepted: boolean
+  version: string
+}
+
 export interface CreateOrderRequest {
   buyer: BuyerInfo
   delivery: DeliveryInfo
   items: CreateOrderItemRequest[]
   idempotencyKey: string
+  termsAcceptance: TermsAcceptanceRequest
 }
 
 /** Snapshot de producto con precio y subtotal determinados por el Server. */
@@ -42,6 +48,12 @@ export type PaymentStatus =
   | 'ERROR'
 
 /** Snapshot autoritativo de la compra, independiente del Cart editable. */
+export interface OrderTermsAcceptance {
+  accepted: true
+  version: string
+  acceptedAt: string
+}
+
 export interface Order {
   id: string
   orderNumber: string
@@ -53,4 +65,5 @@ export interface Order {
   currency: 'CRC'
   orderStatus: OrderStatus
   paymentStatus: PaymentStatus
+  termsAcceptance: OrderTermsAcceptance
 }

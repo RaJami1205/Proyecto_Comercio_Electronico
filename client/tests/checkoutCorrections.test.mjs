@@ -66,7 +66,7 @@ const delivery = { province: 'San José', canton: 'Central', address: 'Direcció
 const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quantity: 1 }]
 /** Devuelve un snapshot pendiente de prueba con comprador, entrega e importes conocidos. */
 function order() {
-  return { id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
+  return { termsAcceptance:{accepted:true,version:'2026-10-lab4-v1',acceptedAt:'2026-10-12T00:00:00.000Z'}, id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
     items:[{productId:'p', name:'Producto', image:'', unitPrice:10000, quantity:1, lineSubtotal:10000}],
     totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING' }
 }

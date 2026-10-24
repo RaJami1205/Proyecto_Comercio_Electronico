@@ -16,6 +16,7 @@ const request = {
   idempotencyKey: 'same-attempt', totals: { total: 1 },
 }
 const order = {
+  termsAcceptance: {accepted:true, version:'2026-10-lab4-v1', acceptedAt:'2026-10-12T12:00:00.000Z'},
   id: 'server-id', orderNumber: 'CN-2026-001', createdAt: '2026-10-12T12:00:00Z',
   buyer: request.buyer, delivery: request.delivery,
   items: [{ productId: 'product-1', name: 'Producto', image: '', unitPrice: 5000, quantity: 2, lineSubtotal: 10000 }],
@@ -107,4 +108,20 @@ test('CN-46 serialización conserva accepted false y no inventa consentimiento',
     return Response.json(order,{status:201})
   })
   assert.deepEqual(await orderApi.createOrder({...request,termsAcceptance:{...request.termsAcceptance,accepted:false}}),order)
+})
+
+const invalidTerms = [
+  undefined, null, [], {},
+  ...[false, 'true', 1].map(accepted=>({...order.termsAcceptance, accepted})),
+  ...[undefined, '', ' ', 1, null].map(version=>({...order.termsAcceptance, version})),
+  ...[undefined, null, 1, '', 'invalid', '2026-10-12', '10/12/2026', '2026-02-30T00:00:00.000Z', '2026-10-12T12:00:00Z'].map(acceptedAt=>({...order.termsAcceptance, acceptedAt})),
+]
+for(const [index,termsAcceptance] of invalidTerms.entries()) test('CN-47 OrderApi rechaza metadata inválida '+index,async t=>{
+  t.mock.method(globalThis,'fetch',async()=>Response.json({...order,termsAcceptance},{status:201}))
+  await assert.rejects(orderApi.createOrder(request),error=>error instanceof OrderApiError && !error.conclusive)
+})
+test('CN-47 OrderApi permite versión histórica válida sin compararla con TermsPage',async t=>{
+  const historical={...order,termsAcceptance:{...order.termsAcceptance,version:'historical-test-version'}}
+  t.mock.method(globalThis,'fetch',async()=>Response.json(historical,{status:201}))
+  assert.deepEqual(await orderApi.createOrder(request),historical)
 })
