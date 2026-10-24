@@ -39,7 +39,7 @@ const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
 ])
-for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel']) {
+for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 }
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
@@ -53,6 +53,8 @@ function compile(file) {
     return 'from ' + JSON.stringify(target)
   }))
 }
+const termsUrl = compile('content/terms.ts')
+modules.set('../content/terms', termsUrl)
 const calculationsUrl = compile('utils/cartCalculations.ts')
 modules.set('./cartCalculations', calculationsUrl)
 modules.set('../utils/cartCalculations', calculationsUrl)
@@ -82,7 +84,7 @@ function nodes(tree) {
   return [tree, ...nodes(tree.props?.children)]
 }
 /** Inicializa el Cart y recorre Buyer y Delivery; devuelve controles del harness para probar Review y Payment. */
-function checkout() {
+function checkout({ acceptTerms = true } = {}) {
   runtime.reset(structuredClone(cart))
   const events = []
   const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => {}, onCartClick: () => {},
@@ -97,6 +99,7 @@ function checkout() {
   render()
   find('DeliveryStep').onContinue(delivery)
   render()
+  if (acceptTerms) { find('ReviewStep').onTermsAcceptedChange(true); render() }
   return { render, find, review: () => find('ReviewStep'), step: () => find('CheckoutStepper').currentStep, events }
 }
 

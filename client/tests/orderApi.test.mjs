@@ -12,6 +12,7 @@ const request = {
   buyer: { fullName: 'Prueba', email: 'prueba@example.com', phone: '88888888' },
   delivery: { province: 'San José', canton: 'San José', address: 'Dirección ficticia' },
   items: [{ productId: 'product-1', quantity: 2, unitPrice: 1, lineSubtotal: 2 }],
+  termsAcceptance: { accepted: true, version: '2026-10-lab4-v1', acceptedAt: 'forged' },
   idempotencyKey: 'same-attempt', totals: { total: 1 },
 }
 const order = {
@@ -34,7 +35,7 @@ test('serializa referencias sin importes y conserva el snapshot del servidor', a
   try {
     assert.deepEqual(await orderApi.createOrder(request), order)
     await orderApi.createOrder(request)
-    assert.deepEqual(sent[0], { buyer: request.buyer, delivery: request.delivery, items: [{ productId: 'product-1', quantity: 2 }], idempotencyKey: 'same-attempt' })
+    assert.deepEqual(sent[0], { buyer: request.buyer, delivery: request.delivery, items: [{ productId: 'product-1', quantity: 2 }], idempotencyKey: 'same-attempt', termsAcceptance: { accepted: true, version: request.termsAcceptance.version } })
     assert.equal(sent[1].idempotencyKey, sent[0].idempotencyKey)
   } finally { globalThis.fetch = original }
 })
@@ -96,4 +97,14 @@ test('un replay aprobado conserva toda la validación estructural', async () => 
       await assert.rejects(orderApi.createOrder(request), error => error instanceof OrderApiError && !error.conclusive)
     }
   } finally { globalThis.fetch = original }
+})
+
+test('CN-46 serialización conserva accepted false y no inventa consentimiento', async t => {
+  t.mock.method(globalThis, 'fetch', async (_, options) => {
+    const payload = JSON.parse(options.body)
+    assert.deepEqual(payload.termsAcceptance, {accepted:false, version:request.termsAcceptance.version})
+    assert.equal('acceptedAt' in payload.termsAcceptance,false)
+    return Response.json(order,{status:201})
+  })
+  assert.deepEqual(await orderApi.createOrder({...request,termsAcceptance:{...request.termsAcceptance,accepted:false}}),order)
 })

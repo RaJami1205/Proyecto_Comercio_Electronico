@@ -32,6 +32,7 @@ const runtimeUrl = dataUrl(`
   export const Fragment='Fragment';
   export function jsx(type,props) { return {type,props}; }
   export const jsxs=jsx;
+  export default {createElement: jsx};
 `)
 const runtime = await import(runtimeUrl)
 const modules = new Map()
@@ -75,6 +76,8 @@ const { default: PolicyLayout } = await import(compile('components/policies/Poli
 const { default: PolicySection } = await import(compile('components/policies/PolicySection.tsx'))
 const { ShippingPolicyPage } = await import(compile('pages/ShippingPolicyPage.tsx'))
 const { PrivacyPolicyPage } = await import(compile('pages/PrivacyPolicyPage.tsx'))
+const { default: FaqPage } = await import(compile('pages/FaqPage.tsx'))
+const policyPages = {terms: TermsPage, 'returns-policy': ReturnsPolicyPage, 'shipping-policy': ShippingPolicyPage, 'privacy-policy': PrivacyPolicyPage, faq: FaqPage}
 
 /** Recorre el árbol simulado sin ejecutar componentes hijos. */
 function nodes(tree) {
@@ -171,9 +174,9 @@ for (const destination of policyDestinations) {
     for (let reload = 0; reload < 2; reload++) {
       if (reload) { runtime.dispose(); runtime.reset([]) }
       const tree = app.render()
-      const page = nodes(tree).find(n => n.type === (destination.view === 'terms' ? TermsPage : destination.view === 'returns-policy' ? ReturnsPolicyPage : destination.view === 'shipping-policy' ? ShippingPolicyPage : PolicyPage))
+      const page = nodes(tree).find(n => n.type === policyPages[destination.view])
       assert.ok(page)
-      assert.equal(destination.view === 'terms' ? termsPolicy.title : destination.view === 'returns-policy' ? 'Política de devoluciones' : destination.view === 'shipping-policy' ? 'Política de envíos' : page.props.destination.title, destination.title)
+      assert.equal(page.type(page.props).props.title.toLocaleLowerCase(), destination.title.toLocaleLowerCase())
       assert.equal(nodes(tree).find(n => n.type === 'ProductListingPage').props.active, false)
       assert.equal(nodes(tree).some(n => n.type === 'CheckoutPage' || n.type === 'CartPage'), false)
       assert.equal(app.window.location.pathname, '/Proyecto_Comercio_Electronico/')
@@ -204,7 +207,7 @@ test('navegación desde Catalog y Cart preserva base, query y Back/Forward entre
   app.hashchange('#cart-page'); tree = app.render()
   nodes(tree).find(n => n.type === 'CartPage').props.onPolicyNavigate('shipping-policy')
   tree = app.render()
-  assert.equal(nodes(tree).find(n => n.type === PolicyPage).props.destination.view, 'shipping-policy')
+  assert.ok(nodes(tree).find(n => n.type === ShippingPolicyPage))
   assert.ok(!app.focused.includes('hidden'))
 })
 
@@ -219,7 +222,7 @@ test('Checkout bloqueado conserva guardas de callbacks e historial', t => {
   assert.equal(app.window.location.hash, '#checkout')
   assert.ok(app.visited.includes('replace'))
   assert.ok(nodes(tree).find(n => n.type === 'CheckoutPage'))
-  assert.equal(nodes(tree).some(n => n.type === PolicyPage || n.type === TermsPage || n.type === ReturnsPolicyPage), false)
+  assert.equal(nodes(tree).some(n => n.type === PolicyPage || Object.values(policyPages).includes(n.type)), false)
   checkout.onNavigationLockChange(false)
   checkout.onBackToCart(); tree = app.render()
   assert.ok(nodes(tree).find(n => n.type === 'CartPage'))

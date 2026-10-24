@@ -29,7 +29,7 @@ const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
 ])
-for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel']) {
+for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 }
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
@@ -43,6 +43,10 @@ function compile(file) {
     return 'from ' + JSON.stringify(target)
   }))
 }
+const termsUrl = compile('content/terms.ts')
+modules.set('../content/terms', termsUrl)
+modules.set('../../content/terms', termsUrl)
+const { termsPolicy } = await import(termsUrl)
 const calculationsUrl = compile('utils/cartCalculations.ts')
 modules.set('./cartCalculations', calculationsUrl)
 modules.set('../utils/cartCalculations', calculationsUrl)
@@ -79,7 +83,7 @@ function text(tree) {
   return typeof tree === 'string' ? tree : ''
 }
 /** Inicializa el Cart y recorre Buyer y Delivery; devuelve controles del harness para probar Review y Payment. */
-function checkout() {
+function checkout({ acceptTerms = true } = {}) {
   runtime.reset(structuredClone(cart))
   const events = []
   const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => events.push('catalog'), onCartClick: () => {},
@@ -94,6 +98,7 @@ function checkout() {
   render()
   find('DeliveryStep').onContinue(delivery)
   render()
+  if (acceptTerms) { find('ReviewStep').onTermsAcceptedChange(true); render() }
   return { render, find, review: () => find('ReviewStep'), payment: () => find('PaymentStep'), step: () => find('CheckoutStepper').currentStep, events }
 }
 /** Ejecuta el caso con un responder simulado, captura sus solicitudes y restaura fetch al terminar. */
@@ -304,3 +309,162 @@ for (const changed of [false, true]) {
     })
   })
 }
+
+// CN-46: el helper acepta explícitamente solo para preparar las regresiones anteriores.
+test('CN-46 sin aceptación: cero POST/UUID, Review y error asociado al checkbox', async t => {
+  let uuids = 0, focused = 0
+  t.mock.method(globalThis.crypto, 'randomUUID', () => { uuids++; return 'new-key' })
+  await withFetch(() => Response.json(order(), {status:201}), async requests => {
+    const flow = checkout({acceptTerms:false})
+    assert.equal(flow.review().termsAccepted, false)
+    flow.review().termsInputRef.current = {focus:()=>focused++}
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(requests.length, 0)
+    assert.equal(uuids, 0)
+    assert.equal(focused, 1)
+    assert.equal(flow.step(), 'review')
+    assert.equal(flow.review().retryPending, false)
+    assert.deepEqual(flow.review().buyer, buyer)
+    assert.deepEqual(flow.review().delivery, delivery)
+    const rendered = nodes(ReviewStep(flow.review()))
+    const checkbox = rendered.find(n=>n.type==='input')
+    assert.equal(checkbox.props.checked, false)
+    assert.equal(checkbox.props['aria-invalid'], true)
+    assert.ok(checkbox.props['aria-describedby'].includes('checkout-terms-error'))
+    assert.equal(rendered.find(n=>n.props.id==='checkout-terms-error').props.role, 'alert')
+    assert.equal(rendered.find(n=>n.type==='label').props.htmlFor, checkbox.props.id)
+    flow.review().onTermsAcceptedChange(true); flow.render()
+    assert.equal(flow.review().termsError, undefined)
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(uuids, 1)
+    assert.equal(requests.length, 1)
+    assert.deepEqual(requests[0].termsAcceptance, {accepted:true, version:termsPolicy.version})
+    assert.equal('acceptedAt' in requests[0].termsAcceptance, false)
+    assert.equal(flow.step(), 'payment')
+  })
+})
+
+test('CN-46 retirar consentimiento y nuevo Checkout requieren aceptación explícita', async () => {
+  await withFetch(() => Response.json(order(), {status:201}), async requests => {
+    const flow = checkout()
+    flow.review().onTermsAcceptedChange(false); flow.render()
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(requests.length,0)
+    flow.review().onTermsAcceptedChange(true); flow.render()
+    const fresh = checkout({acceptTerms:false})
+    assert.equal(fresh.review().termsAccepted,false)
+    await fresh.review().onConfirm()
+    assert.equal(requests.length,0)
+  })
+})
+
+test('CN-46 consulta y navegación entre pasos conservan datos sin aceptar automáticamente', () => {
+  const flow = checkout({acceptTerms:false})
+  flow.review().onOpenTerms(); flow.render()
+  assert.ok(flow.find('TermsDialog'))
+  assert.equal(flow.review().termsAccepted,false)
+  flow.find('TermsDialog').onClose(); flow.render()
+  assert.equal(flow.find('TermsDialog'),undefined)
+  assert.deepEqual(flow.review().buyer,buyer)
+  assert.deepEqual(flow.review().delivery,delivery)
+  assert.deepEqual(flow.events,[])
+  flow.review().onTermsAcceptedChange(true); flow.render()
+  flow.review().onEdit('buyer'); flow.render()
+  flow.find('BuyerStep').onContinue(buyer); flow.render()
+  flow.find('DeliveryStep').onContinue(delivery); flow.render()
+  assert.equal(flow.review().termsAccepted,true)
+})
+
+test('CN-46 doble submit y cambios programáticos no alteran el intento pendiente', async () => {
+  let resolve
+  await withFetch(() => new Promise(r=>{resolve=r}), async requests => {
+    const flow=checkout(), review=flow.review()
+    const pending=review.onConfirm()
+    await review.onConfirm()
+    review.onTermsAcceptedChange(false); flow.render()
+    assert.equal(flow.review().termsAccepted,true)
+    assert.equal(requests.length,1)
+    resolve(Response.json(order(),{status:201}))
+    await pending
+  })
+})
+
+for (const failure of ['timeout','invalid-response','terms-ambiguous']) {
+  test('CN-46 retry conserva versión y key incluso si cambia la fuente: '+failure, async () => {
+    const version=termsPolicy.version
+    try {
+      await withFetch(count=> {
+        if(count>1) return Response.json(order(),{status:201})
+        if(failure==='timeout') throw new DOMException('Timeout','TimeoutError')
+        if(failure==='terms-ambiguous') return Response.json({error:{code:'CHECKOUT_VALIDATION_ERROR',fieldErrors:{'termsAcceptance.version':'conflict'}}},{status:409})
+        return Response.json({}, {status:201})
+      }, async requests=> {
+        const flow=checkout()
+        await flow.review().onConfirm(); flow.render()
+        const original=structuredClone(requests[0])
+        termsPolicy.version='changed-after-attempt'
+        flow.review().onTermsAcceptedChange(false); flow.render()
+        assert.equal(flow.review().termsAccepted,true)
+        assert.equal(flow.review().retryPending,true)
+        assert.equal(flow.step(),'review')
+        await flow.review().onConfirm(); flow.render()
+        assert.deepEqual(requests[1],original)
+        assert.equal(flow.step(),'payment')
+      })
+    } finally { termsPolicy.version=version }
+  })
+}
+
+for (const field of ['termsAcceptance.accepted','termsAcceptance.version']) {
+  test('CN-46 rechazo concluyente permanece en Review: '+field, async () => {
+    await withFetch(count=>count===1
+      ? Response.json({error:{code:'CHECKOUT_VALIDATION_ERROR',fieldErrors:{[field]:'INTERNAL'}}},{status:400})
+      : Response.json(order(),{status:201}), async requests=> {
+      const flow=checkout()
+      await flow.review().onConfirm(); flow.render()
+      assert.equal(flow.step(),'review')
+      assert.equal(flow.review().termsAccepted,false)
+      assert.equal(flow.review().retryPending,false)
+      assert.ok(flow.review().termsError)
+      assert.equal(flow.review().termsError.includes('INTERNAL'),false)
+      flow.review().onTermsAcceptedChange(true); flow.render()
+      if(field.endsWith('version')) {
+        assert.equal(flow.review().termsAccepted,false)
+        assert.ok(flow.review().termsError)
+        assert.match(text(ReviewStep(flow.review())),/Versión local rechazada/)
+        flow.review().onOpenTerms(); flow.render()
+        assert.equal(flow.find('TermsDialog').versionRejected,true)
+        flow.find('TermsDialog').onClose(); flow.render()
+        await flow.review().onConfirm()
+        assert.equal(requests.length,1)
+      } else {
+        assert.equal(flow.review().termsError,undefined)
+        await flow.review().onConfirm(); flow.render()
+        assert.equal(requests.length,2)
+        assert.notEqual(requests[0].idempotencyKey,requests[1].idempotencyKey)
+      }
+    })
+  })
+}
+
+test('CN-46 validación ajena a términos conserva el destino Buyer', async () => {
+  await withFetch(()=>Response.json({error:{code:'CHECKOUT_VALIDATION_ERROR',fieldErrors:{'buyer.email':'Revisar'}}},{status:400}), async()=> {
+    const flow=checkout()
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(flow.step(),'buyer')
+    assert.deepEqual(flow.find('BuyerStep').errors,{'buyer.email':'Revisar'})
+  })
+})
+
+test('CN-46 Order existente continúa sin checkbox ni nuevo POST', async () => {
+  await withFetch(()=>Response.json(order(),{status:201}), async requests=> {
+    const flow=checkout()
+    await flow.review().onConfirm(); flow.render()
+    flow.find('button').onClick(); flow.render()
+    flow.review().onTermsAcceptedChange(false); flow.render()
+    assert.equal(nodes(ReviewStep(flow.review())).some(n=>n.type==='input'),false)
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(flow.step(),'payment')
+    assert.equal(requests.length,1)
+  })
+})

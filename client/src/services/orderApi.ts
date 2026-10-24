@@ -49,6 +49,7 @@ async function createOrder(request: CreateOrderRequest): Promise<Order> {
     buyer: request.buyer, delivery: request.delivery,
     items: request.items.map(({ productId, quantity }) => ({ productId, quantity })),
     idempotencyKey: request.idempotencyKey,
+    termsAcceptance: { accepted: request.termsAcceptance.accepted, version: request.termsAcceptance.version },
   }
   const response = await fetch(API_BASE_URL + '/api/orders', {
     method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
