@@ -1,6 +1,7 @@
 import React from 'react';
 import PolicyLayout from '../components/policies/PolicyLayout';
 import PolicySection from '../components/policies/PolicySection';
+import { isSameTabNavigation } from '../utils/appNavigation';
 import type { AppView, CatalogHash } from '../utils/appNavigation';
 
 interface PrivacyPolicyPageProps {
@@ -15,7 +16,7 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
   onPolicyNavigate
 }) => {
   return (
-    <PolicyLayout 
+    <PolicyLayout
       title="Política de Privacidad"
       onCatalogClick={onCatalogClick}
       onCartClick={onCartClick}
@@ -69,6 +70,14 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
         <p>
           Dado que CiberNova es un proyecto de demostración académica, no contamos con departamentos operativos de protección de datos, correos electrónicos oficiales de soporte, ni sistemas automatizados para la gestión de derechos ARCO. La información introducida no tiene impacto comercial real.
         </p>
+      </PolicySection>
+
+      <PolicySection title="7. Volver al catálogo">
+        <a href="#catalog" onClick={event => {
+          if (!isSameTabNavigation(event)) return
+          event.preventDefault()
+          onCatalogClick('#catalog')
+        }}>Volver al catálogo</a>
       </PolicySection>
     </PolicyLayout>
   );
