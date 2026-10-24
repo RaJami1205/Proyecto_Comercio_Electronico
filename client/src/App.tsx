@@ -10,6 +10,8 @@ import PolicyPlaceholderPage from './pages/PolicyPlaceholderPage'
 import TermsPage from './pages/TermsPage'
 import ReturnsPolicyPage from './pages/ReturnsPolicyPage'
 import { hashForView, policyDestinations, viewFromHash, type AppView, type CatalogHash } from './utils/appNavigation'
+import { ShippingPolicyPage } from './pages/ShippingPolicyPage';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 
 interface NavigationState {
   view: AppView
@@ -163,6 +165,18 @@ function App() {
         />
       ) : view === 'returns-policy' ? (
         <ReturnsPolicyPage
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : view === 'shipping-policy' ? (
+        <ShippingPolicyPage
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+        ) : view === 'privacy-policy' ? (
+        <PrivacyPolicyPage
           onCatalogClick={(hash) => navigate('catalog', hash)}
           onPolicyNavigate={navigate}
           onCartClick={openCartPreview}
