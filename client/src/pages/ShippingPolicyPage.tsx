@@ -1,6 +1,7 @@
 import React from 'react';
 import PolicyLayout from '../components/policies/PolicyLayout';
 import PolicySection from '../components/policies/PolicySection';
+import { isSameTabNavigation } from '../utils/appNavigation';
 import type { AppView, CatalogHash } from '../utils/appNavigation';
 
 interface ShippingPolicyPageProps {
@@ -15,13 +16,13 @@ export const ShippingPolicyPage: React.FC<ShippingPolicyPageProps> = ({
   onPolicyNavigate
 }) => {
   return (
-    <PolicyLayout 
+    <PolicyLayout
       title="Política de Envíos"
       onCatalogClick={onCatalogClick}
       onCartClick={onCartClick}
       onPolicyNavigate={onPolicyNavigate}
     >
-      
+
       <PolicySection title="1. Condiciones Generales">
         <p>
           La presente política describe las condiciones comerciales simuladas de entrega para los productos de tecnología, computación y electrónica disponibles en CiberNova. Actualmente no existe integración con operadores logísticos ni gestión de entregas físicas, dado su carácter estrictamente académico.
@@ -64,6 +65,14 @@ export const ShippingPolicyPage: React.FC<ShippingPolicyPageProps> = ({
           <li><strong>Información de entrega:</strong> Es responsabilidad del comprador proporcionar información correcta y suficiente durante la etapa de Delivery en el Checkout.</li>
           <li><strong>Zonas y productos especiales:</strong> Ciertos destinos remotos o productos electrónicos delicados podrían requerir precauciones o tiempos adicionales dentro de este escenario simulado.</li>
         </ul>
+      </PolicySection>
+
+      <PolicySection title="6. Volver al catálogo">
+        <a href="#catalog" onClick={event => {
+          if (!isSameTabNavigation(event)) return
+          event.preventDefault()
+          onCatalogClick('#catalog')
+        }}>Volver al catálogo</a>
       </PolicySection>
 
     </PolicyLayout>
