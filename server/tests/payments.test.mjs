@@ -10,6 +10,7 @@ import { InMemoryOrderStore } from '../dist/stores/orderStore.js'
 /** Devuelve una Order pendiente de prueba con el identificador recibido y datos conocidos. */
 const fixture = (id = 'order-1') => ({
   id, orderNumber: 'CN-2026-' + id, createdAt: '2026-10-12T12:00:00Z',
+  termsAcceptance: {accepted:true, version:'2026-10-lab4-v1', acceptedAt:'2026-10-12T12:00:00.000Z'},
   buyer: { fullName: 'Usuario Prueba', email: 'prueba@example.com', phone: '88888888' },
   delivery: { province: 'San José', canton: 'San José', address: 'Dirección ficticia' },
   items: [{ productId: 'product-1', name: 'Producto real', image: '', unitPrice: 10000, quantity: 2, lineSubtotal: 20000 }],
@@ -40,6 +41,7 @@ for (const [scenario, paymentStatus, orderStatus] of [
     assert.deepEqual(store.findById('order-1'), result.order)
     assert.deepEqual(result.order.totals, fixture().totals)
     assert.deepEqual(result.order.items, fixture().items)
+    assert.deepEqual(result.order.termsAcceptance, fixture().termsAcceptance)
   })
 }
 
@@ -66,6 +68,7 @@ for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR']) {
     assert.deepEqual(await service.process('order-1', request(scenario)), first)
     const approved = await service.process('order-1', request('PAYMENT_APPROVED', 'retry-key'))
     assert.equal(approved.order.id, first.order.id)
+    assert.deepEqual(approved.order.termsAcceptance, first.order.termsAcceptance)
     assert.equal(approved.order.paymentStatus, 'APPROVED')
     assert.equal(store.findById('order-1').orderStatus, 'CONFIRMED')
     assert.deepEqual(await service.process('order-1', request(scenario)), first)
@@ -147,7 +150,7 @@ test('HTTP: tres resultados 200, GET actualizado, replay, concurrencia y errores
   const post = (url, body) => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
   /** Crea una Order de prueba por HTTP con la clave indicada y devuelve su respuesta JSON. */
   const create = async key => {
-    const response = await post(base, {buyer:fixture().buyer, delivery:fixture().delivery, items:[{productId:'product-1',quantity:2}], idempotencyKey:key})
+    const response = await post(base, {buyer:fixture().buyer, delivery:fixture().delivery, items:[{productId:'product-1',quantity:2}], idempotencyKey:key, termsAcceptance:{accepted:true,version:'2026-10-lab4-v1'}})
     assert.equal(response.status,201)
     return response.json()
   }
@@ -160,6 +163,7 @@ test('HTTP: tres resultados 200, GET actualizado, replay, concurrencia y errores
       const result = await response.json()
       assert.equal(result.result,scenario)
       assert.deepEqual(result.order.totals,order.totals)
+      assert.deepEqual(result.order.termsAcceptance,order.termsAcceptance)
       assert.deepEqual(await (await fetch(base + '/' + order.id)).json(),result.order)
       assert.deepEqual(await (await post(url,request(scenario))).json(),result)
       if (scenario === 'PAYMENT_APPROVED') {

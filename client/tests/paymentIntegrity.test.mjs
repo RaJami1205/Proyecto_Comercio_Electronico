@@ -66,7 +66,7 @@ const delivery = { province: 'San José', canton: 'Central', address: 'Direcció
 const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quantity: 1, lineage:{id:'original', removed:0} }]
 /** Devuelve un snapshot pendiente de prueba con comprador, entrega e importes conocidos. */
 function order() {
-  return { id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
+  return { termsAcceptance:{accepted:true,version:'2026-10-lab4-v1',acceptedAt:'2026-10-12T00:00:00.000Z'}, id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
     items:[{productId:'p', name:'Producto', image:'', unitPrice:10000, quantity:1, lineSubtotal:10000}],
     totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING' }
 }
@@ -196,7 +196,14 @@ test('F1 Approved bloquea más pagos, incluidos callbacks previos al render', as
   assert.equal(flow.requests.length, 2)
 })
 
+const invalidTerms = [
+  undefined, null, [], {},
+  ...[false, 'true', 1].map(accepted=>({...order().termsAcceptance, accepted})),
+  ...[undefined, '', ' ', 1, null].map(version=>({...order().termsAcceptance, version})),
+  ...[undefined, null, 1, '', 'invalid', '2026-10-12', '10/12/2026', '2026-02-30T00:00:00.000Z', '2026-10-12T00:00:00Z'].map(acceptedAt=>({...order().termsAcceptance, acceptedAt})),
+]
 const invalidResults = [
+  ...invalidTerms.map((termsAcceptance,index)=>['CN-47 metadata inválida '+index,()=>result('PAYMENT_APPROVED',{order:{...result('PAYMENT_APPROVED').order,termsAcceptance}})]),
   ['Approved/Pending', () => result('PAYMENT_APPROVED', {order:order()})],
   ['Order ajena', () => result('PAYMENT_APPROVED', {order:{...result('PAYMENT_APPROVED').order, id:'other'}})],
   ['escenario ajeno', () => result('PAYMENT_DECLINED')],
@@ -327,3 +334,10 @@ for (const scenario of ['PAYMENT_APPROVED', 'PAYMENT_DECLINED', 'PAYMENT_ERROR']
     if (buttons.length) { buttons[0].props.onClick(); assert.equal(retries, 1) }
   })
 }
+
+test('CN-47 PaymentApi conserva consentimiento histórico válido',async t=>{
+  const historical=result('PAYMENT_APPROVED')
+  historical.order.termsAcceptance.version='historical-test-version'
+  t.mock.method(globalThis,'fetch',async()=>Response.json(historical))
+  assert.deepEqual(await paymentApi.processPayment('order-1',{scenario:'PAYMENT_APPROVED',idempotencyKey:'history'}),historical)
+})

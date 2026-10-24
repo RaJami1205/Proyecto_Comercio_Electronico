@@ -9,7 +9,7 @@ const sources = new Map()
 /** Codifica el código recibido como módulo importable en memoria. */
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 sources.set('services/productService', dataUrl('export async function getProductById() { throw new Error("Debe inyectarse el catálogo simulado") }'))
-for (const name of ['domain/orderError', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderStore', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
+for (const name of ['domain/termsPolicy', 'domain/orderError', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderStore', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
   const source = readFileSync(new URL('../src/' + name + '.ts', import.meta.url), 'utf8')
   const compiled = stripTypeScriptTypes(source, { mode: 'transform' })
   const isolated = compiled.replace(/from ['"](\.[^'"]+)['"]/g, (_, path) => {
@@ -25,6 +25,7 @@ const { PaymentService } = await import(sources.get('services/paymentService'))
 const { calculateOrderTotals } = await import(sources.get('domain/orderCalculations'))
 /** Construye una solicitud de compra con datos y clave de idempotencia de prueba. */
 const request = () => ({
+  termsAcceptance: {accepted:true, version:'2026-10-lab4-v1'},
   buyer: { fullName: ' Usuario ', email: 'user@example.com', phone: '88888888' },
   delivery: { province: 'San José', canton: 'Central', address: 'Dirección' },
   items: [{ productId: 'p', quantity: 1 }], idempotencyKey: 'creation',

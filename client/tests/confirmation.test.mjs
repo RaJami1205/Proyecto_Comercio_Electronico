@@ -61,7 +61,7 @@ function text(tree) {
   if (tree && typeof tree==='object') return text(tree.props?.children)
   return typeof tree==='string'||typeof tree==='number'?String(tree):''
 }
-const order={id:'order-1',orderNumber:'CN-authoritative',createdAt:'2026-10-12T12:00:00Z',
+const order={termsAcceptance:{accepted:true,version:'2026-10-lab4-v1',acceptedAt:'2026-10-12T12:00:00.000Z'},id:'order-1',orderNumber:'CN-authoritative',createdAt:'2026-10-12T12:00:00Z',
   orderStatus:'CONFIRMED',paymentStatus:'APPROVED',currency:'CRC',
   buyer:{fullName:'Comprador',email:'test@example.com',phone:'88888888'},
   delivery:{province:'San José',canton:'Central',address:'Dirección'},

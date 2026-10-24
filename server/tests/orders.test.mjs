@@ -8,6 +8,7 @@ import { calculateOrderTotals } from '../dist/domain/orderCalculations.js'
 
 /** Construye una solicitud de compra con datos y clave de idempotencia de prueba. */
 const request = (key = 'purchase-1') => ({
+  termsAcceptance: {accepted:true, version:'2026-10-lab4-v1'},
   buyer: { fullName: ' Usuario Prueba ', email: 'usuario@example.com', phone: '88888888' },
   delivery: { province: 'San José', canton: 'San José', address: 'Dirección de prueba' },
   items: [{ productId: 'product-1', quantity: 2 }], idempotencyKey: key,
@@ -20,9 +21,11 @@ test('snapshot autoritativo, consulta, estados y aislamiento del store', async (
   const input = request()
   input.items[0].unitPrice = 1
   input.totals = { total: 1 }
+  input.termsAcceptance.acceptedAt = 'forged'
   const order = await service.create(input)
   assert.deepEqual(order.totals, { subtotal: 20000, tax: 2600, shipping: 3500, total: 26100 })
   assert.deepEqual(order.items[0], { productId: 'product-1', name: 'Producto real', image: '/image.jpg', unitPrice: 10000, quantity: 2, lineSubtotal: 20000 })
+  assert.deepEqual(order.termsAcceptance, {accepted:true,version:input.termsAcceptance.version,acceptedAt:order.createdAt})
   assert.equal(order.currency, 'CRC')
   assert.equal(order.orderStatus, 'PENDING')
   assert.equal(order.paymentStatus, 'PENDING')
