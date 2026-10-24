@@ -73,6 +73,8 @@ const { default: Header } = await import(compile('components/layout/Header.tsx')
 const { default: PolicyPage } = await import(compile('pages/PolicyPlaceholderPage.tsx'))
 const { default: PolicyLayout } = await import(compile('components/policies/PolicyLayout.tsx'))
 const { default: PolicySection } = await import(compile('components/policies/PolicySection.tsx'))
+const { ShippingPolicyPage } = await import(compile('pages/ShippingPolicyPage.tsx'))
+const { PrivacyPolicyPage } = await import(compile('pages/PrivacyPolicyPage.tsx'))
 
 /** Recorre el árbol simulado sin ejecutar componentes hijos. */
 function nodes(tree) {
@@ -169,9 +171,9 @@ for (const destination of policyDestinations) {
     for (let reload = 0; reload < 2; reload++) {
       if (reload) { runtime.dispose(); runtime.reset([]) }
       const tree = app.render()
-      const page = nodes(tree).find(n => n.type === (destination.view === 'terms' ? TermsPage : destination.view === 'returns-policy' ? ReturnsPolicyPage : PolicyPage))
+      const page = nodes(tree).find(n => n.type === (destination.view === 'terms' ? TermsPage : destination.view === 'returns-policy' ? ReturnsPolicyPage : destination.view === 'shipping-policy' ? ShippingPolicyPage : PolicyPage))
       assert.ok(page)
-      assert.equal(destination.view === 'terms' ? termsPolicy.title : destination.view === 'returns-policy' ? 'Política de devoluciones' : page.props.destination.title, destination.title)
+      assert.equal(destination.view === 'terms' ? termsPolicy.title : destination.view === 'returns-policy' ? 'Política de devoluciones' : destination.view === 'shipping-policy' ? 'Política de envíos' : page.props.destination.title, destination.title)
       assert.equal(nodes(tree).find(n => n.type === 'ProductListingPage').props.active, false)
       assert.equal(nodes(tree).some(n => n.type === 'CheckoutPage' || n.type === 'CartPage'), false)
       assert.equal(app.window.location.pathname, '/Proyecto_Comercio_Electronico/')
