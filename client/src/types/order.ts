@@ -7,11 +7,17 @@ export interface CreateOrderItemRequest {
 }
 
 /** Solicitud del navegador con datos y referencias; no contiene precios ni estados confiables. */
+export interface TermsAcceptanceRequest {
+  readonly accepted: boolean
+  readonly version: string
+}
+
 export interface CreateOrderRequest {
   buyer: BuyerInfo
   delivery: DeliveryInfo
   items: CreateOrderItemRequest[]
   idempotencyKey: string
+  termsAcceptance: TermsAcceptanceRequest
 }
 
 /** Snapshot de producto con precio y subtotal determinados por el Server. */

@@ -3,11 +3,11 @@ import PolicySection from './PolicySection'
 import styles from '../../styles/policies/PolicyLayout.module.css'
 
 /** Contenido reutilizable sin Header, Footer, navegación ni controles de consentimiento. */
-function TermsContent() {
+function TermsContent({ versionRejected = false }: { versionRejected?: boolean } = {}) {
   const publishedDate = new Intl.DateTimeFormat('es-CR', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(termsPolicy.publishedAt + 'T00:00:00Z'))
   return (
     <>
-      <p className={styles.introduction}>Versión vigente: <strong>{termsPolicy.version}</strong><br />
+      <p className={styles.introduction}>{versionRejected ? 'Versión local rechazada por el servidor' : 'Versión vigente'}: <strong>{termsPolicy.version}</strong><br />
         Publicada el <time dateTime={termsPolicy.publishedAt}>{publishedDate}</time>.
       </p>
       {termsPolicy.sections.map(section => (
