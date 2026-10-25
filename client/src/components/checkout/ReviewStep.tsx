@@ -1,6 +1,5 @@
 /** Presenta datos e importes de Review; CheckoutPage controla consentimiento, bloqueos y confirmación. */
 import type { Ref } from 'react'
-import { termsPolicy } from '../../content/terms'
 import type { BuyerInfo, DeliveryInfo } from '../../types/checkout'
 import type { Order, OrderItem, OrderTotals } from '../../types/order'
 import styles from '../../styles/checkout/ReviewStep.module.css'
