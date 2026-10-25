@@ -41,7 +41,9 @@
 
 El proyecto fue desarrollado como parte del curso de **Comercio Electrónico** del Tecnológico de Costa Rica y busca ofrecer una experiencia de compra moderna, intuitiva y adaptable a distintos dispositivos.
 
-La plataforma integra un catálogo conectado con **Algolia**, búsqueda predictiva, filtros, paginación, Product Quick View y un carrito de compras persistente. El **Proyecto II** amplió esta base con un Checkout de cuatro etapas, creación de Orders autoritativas, Payment Sandbox, resultados de pago, Purchase Confirmation y Safe Cart Cleanup.
+La plataforma integra un catálogo conectado con **Algolia**, búsqueda predictiva, filtros, paginación, Product Quick View y un carrito de compras persistente, un Checkout de cuatro etapas, creación de Orders autoritativas, Payment Sandbox, resultados de pago, Purchase Confirmation y Safe Cart Cleanup.
+
+Además cuenta con políticas comerciales, FAQ y aceptación obligatoria de Términos y Condiciones durante Checkout. 
 
 La arquitectura separa claramente el frontend y backend: el Server protege las credenciales de Algolia, valida disponibilidad y calcula los importes definitivos. El Payment Sandbox simula los pagos sin realizar transacciones bancarias reales.
 
@@ -51,6 +53,7 @@ La arquitectura separa claramente el frontend y backend: el Server protege las c
 
 - [Características principales](#-características-principales)
 - [Experiencia de compra](#-experiencia-de-compra)
+- [Confianza digital y políticas comerciales](#-confianza-digital-y-políticas-comerciales)
 - [Tecnologías](#-tecnologías)
 - [Arquitectura](#-arquitectura)
 - [Arquitectura del carrito](#-arquitectura-del-carrito)
@@ -151,6 +154,14 @@ CiberNova incorpora las principales funcionalidades de un E-Commerce B2C, desarr
 - Conservación del carrito ante pagos rechazados, errores y resultados inciertos.
 - Regreso al catálogo sin crear otra Order ni reprocesar el pago.
 
+### Confianza Digital
+
+- Cuatro páginas de políticas comerciales y FAQ con Accordion accesible.
+- Navegación mediante Hash Routing y layout informativo reutilizable.
+- TermsDialog para consultar los términos dentro de Checkout.
+- Consentimiento explícito y versionado antes de crear una nueva Order.
+- Validación autoritativa en Server y registro de aceptación en el snapshot de Order.
+
 ---
 
 # 🛒 Experiencia de compra
@@ -170,6 +181,10 @@ Modificar cantidades y revisar el resumen
       ↓
 Checkout: Comprador → Entrega → Revisión
       ↓
+Consulta de Términos y Condiciones
+      ↓
+Aceptación explícita y obligatoria
+      ↓
 Crear Order (POST /api/orders)
       ↓
 Payment Sandbox
@@ -182,6 +197,8 @@ Payment Sandbox
       ↓
 Volver al catálogo tras la confirmación
 ```
+
+Una nueva Order requiere aceptación válida. Client administra el Checkbox y permite consultar TermsDialog sin abandonar Checkout; abrir el diálogo no registra consentimiento ni es una condición técnica adicional. Server valida la declaración antes de construir el snapshot.
 
 El carrito muestra cálculos preliminares; el Server calcula los importes definitivos de cada Order utilizando los precios vigentes del catálogo.
 
@@ -212,6 +229,52 @@ En **Review**, si el Server devuelve precios o importes diferentes, el usuario d
 | `PAYMENT_ERROR` | `PENDING` | `ERROR` | Retry sobre la misma Order |
 
 Los errores técnicos de comunicación se distinguen de los escenarios simulados. Los intentos inciertos conservan su identidad (`orderId`, `scenario` e `idempotencyKey`) mientras el Checkout permanezca activo. No se procesan pagos reales.
+
+---
+
+# 🔐 Confianza digital y políticas comerciales
+
+## Políticas comerciales
+
+CiberNova incorpora cuatro páginas informativas originales que describen las condiciones comerciales simuladas y el alcance académico de la plataforma:
+
+| Página | Destino en la aplicación |
+|---|---|
+| Términos y Condiciones | `#terms` |
+| Política de Devoluciones | `#returns-policy` |
+| Política de Envíos | `#shipping-policy` |
+| Política de Privacidad | `#privacy-policy` |
+
+Reutilizan `PolicyLayout` y `PolicySection`, con navegación hash y la identidad responsive del sitio. Estas políticas no representan procesamiento de devoluciones ni entregas reales y no sustituyen los derechos aplicables de los consumidores.
+
+## Preguntas Frecuentes
+
+La página `#faq` organiza preguntas sobre compras, Payment Sandbox, costos y tiempos de envío, devoluciones, privacidad y atención al cliente. Utiliza un Accordion con elementos nativos `<details>` y `<summary>` para interacción por teclado y exposición del estado de expansión. Las respuestas remiten a las políticas correspondientes; el soporte se describe dentro del contexto académico, sin un canal operativo real.
+
+## Aceptación obligatoria en Checkout
+
+El Checkbox de Review inicia desmarcado y exige una aceptación explícita antes de crear una nueva Order. `TermsDialog` reutiliza el contenido versionado de CN-41 mediante `TermsContent` y permite consultarlo sin salir de Checkout; consultarlo no equivale a aceptarlo.
+
+El consentimiento permanece en memoria del Client, sin persistencia en `localStorage`. Se captura en `CreationAttempt` como `termsAcceptance: { accepted, version }`, junto con la solicitud y su `idempotencyKey`. Ante un resultado ambiguo, Retry conserva ese payload y su versión original.
+
+Una Order existente conserva su aceptación y no requiere generar una nueva. La aceptación posterior de diferencias financieras es una decisión independiente: permite continuar con los importes autoritativos de la misma Order, sin reemplazar el consentimiento de términos.
+
+## Validación autoritativa en Server
+
+El Server:
+
+- exige `accepted === true`, sin coerción de tipos, y una versión reconocida;
+- consulta Orders e intentos pendientes compatibles antes de exigir la versión vigente para una creación nueva;
+- permite Replay compatible de versiones históricas que sigan reconocidas, pero no nuevas Orders con una versión retirada;
+- incorpora `accepted` y `version` al Idempotency Fingerprint, excluyendo `acceptedAt`;
+- registra `accepted`, `version` y `acceptedAt` en el snapshot, generando el timestamp ISO en Backend con el mismo instante de `createdAt`;
+- ignora timestamps enviados por Client y conserva la metadata durante GET, Payment y Retry.
+
+Una declaración inválida produce HTTP 400; reutilizar una key con otra identidad válida produce HTTP 409. `OrderApi` y `PaymentApi` exigen metadata válida en las Orders recibidas, incluido un timestamp ISO canónico, sin rechazar versiones históricas por ser distintas de la versión local vigente.
+
+## Limitaciones del entorno académico
+
+No existen pagos bancarios reales ni procesamiento automatizado real de devoluciones. Orders y consentimiento residen en `InMemoryOrderStore`: no hay persistencia transaccional entre reinicios del Server. `acceptedAt` registra el instante del snapshot; no constituye firma digital ni prueba permanente de identidad.
 
 ---
 
@@ -356,6 +419,8 @@ El directorio `client/` contiene:
 - Checkout, Review y comunicación con las APIs de Order y Payment;
 - estados visuales Approved, Declined y Error;
 - Purchase Confirmation y coordinación de Safe Cart Cleanup;
+- presentación de Policies, FAQ y TermsDialog;
+- validación local y captura de Terms Acceptance, serialización del request y validación de respuestas de Order y Payment;
 - responsive design y Focus Management.
 
 ## Responsabilidades del Server
@@ -374,6 +439,8 @@ El directorio `server/` contiene:
 - creación, consulta e Idempotency de Orders;
 - Payment Sandbox, estados y guards de concurrencia;
 - InMemoryOrderStore y manejo de errores;
+- validación autoritativa de consentimiento y Terms Version Management;
+- metadata de aceptación preservada en InMemoryOrderStore, fingerprint de consentimiento y Replay histórico compatible;
 - herramientas administrativas como el seed de Algolia.
 
 ---
@@ -573,12 +640,23 @@ E_Commerce/
 │   │   │   ├── cart/
 │   │   │   ├── catalog/
 │   │   │   ├── checkout/
-│   │   │   └── layout/
+│   │   │   │   └── TermsDialog.tsx
+│   │   │   ├── faq/
+│   │   │   ├── layout/
+│   │   │   └── policies/
+│   │   ├── content/
 │   │   ├── context/
 │   │   ├── hooks/
 │   │   ├── pages/
+│   │   │   ├── TermsPage.tsx
+│   │   │   ├── ReturnsPolicyPage.tsx
+│   │   │   ├── ShippingPolicyPage.tsx
+│   │   │   ├── PrivacyPolicyPage.tsx
+│   │   │   └── FaqPage.tsx
 │   │   ├── services/
 │   │   ├── styles/
+│   │   │   ├── policies/
+│   │   │   └── faq/
 │   │   ├── types/
 │   │   ├── utils/
 │   │   ├── App.tsx
@@ -596,10 +674,14 @@ E_Commerce/
 │   │   ├── config/
 │   │   ├── controllers/
 │   │   ├── domain/
+│   │   │   ├── orderValidation.ts
+│   │   │   └── termsPolicy.ts
 │   │   ├── mappers/
 │   │   ├── routes/
 │   │   ├── scripts/
 │   │   ├── services/
+│   │   │   └── orderService.ts
+│   │   ├── stores/
 │   │   ├── types/
 │   │   ├── app.ts
 │   │   └── index.ts
@@ -615,7 +697,7 @@ E_Commerce/
 └── README.md
 ```
 
-`client/` y `server/` son aplicaciones independientes y administran sus dependencias mediante sus respectivos archivos `package.json`. Los contratos de Order y Payment se mantienen en ambos proyectos con compatibilidad Client/Server, sin imports directos entre sus fuentes.
+`client/` y `server/` son aplicaciones independientes y administran sus dependencias mediante sus respectivos archivos `package.json`. Los contratos de Order y Payment se mantienen en ambos proyectos con compatibilidad Client/Server, sin imports directos entre sus fuentes.s.
 
 ---
 
@@ -863,7 +945,13 @@ Para verificar las reglas de Order y stock con pruebas aisladas desde `server/`:
 node --test tests/orderCorrections.test.mjs
 ```
 
-En la última auditoría integral de CN-33 se reportaron **96 pruebas Client y 40 pruebas Server aprobadas**, además de `lint` y ambos builds satisfactorios. Las pruebas mencionadas usan aislamiento y mocks; no sustituyen la revisión manual en navegador ni las pruebas contra servicios externos.
+Para ejecutar todas las suites, incluidas políticas y Terms Acceptance, utilizar este comando desde `client/` y desde `server/`, respectivamente. En Server se requiere primero `npm run build`, porque las suites HTTP utilizan `dist`:
+
+```bash
+node --test tests/*.test.mjs
+```
+
+Las pruebas HTTP de Server deben ejecutarse con configuración de testing aislada, datos ficticios y catálogo simulado, evitando cargar credenciales privadas o conectar accidentalmente con producción. La integración local de contratos también utiliza TypeScript instalado en Client para cargar sus servicios reales.
 
 Todos los comandos deben finalizar correctamente antes de integrar cambios hacia las ramas principales.
 
@@ -1009,20 +1097,21 @@ El proyecto sigue las siguientes prácticas:
 - datos de Buyer/Delivery y estado transaccional temporal sin persistencia añadida en el navegador;
 - Safe Cart Cleanup condicionado a la confirmación autoritativa de compra.
 
+Para Terms Acceptance, Server separa la declaración enviada por Client de la metadata autoritativa: valida aceptación y versión y genera `acceptedAt`. El fingerprint incluye el consentimiento para impedir que una key válida se reutilice con una identidad diferente. El registro se conserva solo en memoria del proceso y no constituye una firma digital ni evidencia persistente entre reinicios.
+
 ---
 
 # 📊 Estado actual
 
 <div align="center">
 
-![Proyecto II](https://img.shields.io/badge/Proyecto_II-Completado-20D9D2?style=for-the-badge)
 ![Client](https://img.shields.io/badge/Client-Operativo-2563EB?style=for-the-badge)
 ![Server](https://img.shields.io/badge/Server-Operativo-5B5BF7?style=for-the-badge)
 ![Deploy](https://img.shields.io/badge/Deployment-Activo-0EA5E9?style=for-the-badge)
 
 </div>
 
-El desarrollo del **Laboratorio 3** y la ampliación funcional del **Proyecto II** se encuentran completados y validados en el entorno de desarrollo e integración. La aplicación incorpora:
+La aplicación incorpora:
 
 - catálogo dinámico, Algolia, búsqueda predictiva, filtros y paginación;
 - Product Quick View y carrito global persistente;
@@ -1035,12 +1124,12 @@ El desarrollo del **Laboratorio 3** y la ampliación funcional del **Proyecto II
 - tarjetas de demostración locales, sin transmisión de datos bancarios;
 - Purchase Confirmation con información definitiva de la Order;
 - Safe Cart Cleanup que preserva productos y cantidades incorporados posteriormente;
+- políticas comerciales, FAQ y consulta de términos dentro de Checkout;
+- Terms Acceptance obligatorio, validación Client/Server y metadata autoritativa de consentimiento;
 - pruebas de regresión, diseño responsive y Focus Management;
 - integración Client–Server y configuración de deployment automatizado.
 
 La arquitectura se desarrolló de forma incremental y conserva la separación entre presentación, estado, lógica de negocio, servicios y acceso a datos.
-
-**Estado de publicación:** el desarrollo del Proyecto II se ha validado e integrado en `dev`; los cambios de la rama de corrección actual se encuentran pendientes de su integración. Los enlaces de producción corresponden a los deployments de `main`, por lo que la disponibilidad pública de todas las funciones del Proyecto II depende de su posterior promoción y despliegue.
 
 ---
 
