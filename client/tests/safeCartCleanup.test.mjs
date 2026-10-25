@@ -39,7 +39,7 @@ const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
 ])
-for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel']) {
+for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 }
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
@@ -53,6 +53,8 @@ function compile(file) {
     return 'from ' + JSON.stringify(target)
   }))
 }
+const termsUrl = compile('content/terms.ts')
+modules.set('../content/terms', termsUrl)
 const calculationsUrl = compile('utils/cartCalculations.ts')
 modules.set('./cartCalculations', calculationsUrl)
 modules.set('../utils/cartCalculations', calculationsUrl)
@@ -71,7 +73,7 @@ const delivery = { province: 'San José', canton: 'Central', address: 'Direcció
 const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quantity: 1, lineage: {id:'original', removed:0} }]
 /** Devuelve un snapshot pendiente de prueba con comprador, entrega e importes conocidos. */
 function order() {
-  return { id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
+  return { termsAcceptance:{accepted:true,version:'2026-10-lab4-v1',acceptedAt:'2026-10-12T00:00:00.000Z'}, id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
     items:[{productId:'p', name:'Producto', image:'', unitPrice:10000, quantity:1, lineSubtotal:10000}],
     totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING' }
 }
@@ -82,7 +84,7 @@ function nodes(tree) {
   return [tree, ...nodes(tree.props?.children)]
 }
 /** Inicializa el Cart y recorre Buyer y Delivery; devuelve controles del harness para probar Review y Payment. */
-function checkout() {
+function checkout({ acceptTerms = true } = {}) {
   runtime.reset(structuredClone(cart))
   const events = []
   const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => {}, onCartClick: () => {},
@@ -97,6 +99,7 @@ function checkout() {
   render()
   find('DeliveryStep').onContinue(delivery)
   render()
+  if (acceptTerms) { find('ReviewStep').onTermsAcceptedChange(true); render() }
   return { render, find, review: () => find('ReviewStep'), step: () => find('CheckoutStepper').currentStep, events }
 }
 

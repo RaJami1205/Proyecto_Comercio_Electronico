@@ -1,0 +1,25 @@
+/* Acciones de FAQ dentro de PolicyLayout; los enlaces a políticas se presentan como botones de navegación. */
+.backToCatalog {
+  margin-top: 1.5rem;
+}
+
+.policyLink {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent, #1f5eff);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.policyLink:hover {
+  text-decoration: none;
+}
+
+.policyLink:focus-visible {
+  outline: 2px solid var(--color-accent, #1f5eff);
+  outline-offset: 2px;
+  border-radius: 0.2rem;
+}

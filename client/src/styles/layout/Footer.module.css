@@ -113,6 +113,15 @@
   gap: 1.2rem;
 }
 
+.policies { padding-bottom: 2rem; }
+.policies h3 { margin: 0 0 1rem; color: #fff; font-size: 0.95rem; }
+.policies p { color: #aeb9d4; font-size: 0.9rem; line-height: 1.6; }
+.policies ul { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin: 0; padding: 0; list-style: none; }
+.policies li { min-width: 0; }
+.policies a, .legal a { display: inline-flex; align-items: center; min-height: 44px; color: #aeb9d4; overflow-wrap: anywhere; border-radius: 4px; }
+.policies a:hover, .legal a:hover { color: #74eef3; text-decoration: underline; }
+.policies a:focus-visible, .legal a:focus-visible { outline: 3px solid #73eff4; outline-offset: 3px; }
+
 @media (max-width: 900px) {
   .grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

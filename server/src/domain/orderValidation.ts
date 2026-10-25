@@ -1,6 +1,7 @@
 /** Valida y normaliza el cuerpo desconocido de creación de Order antes de consultar productos. */
 import type { CreateOrderRequest } from '../types/order.js'
 import { OrderError } from './orderError.js'
+import { isRecognizedTermsVersion } from './termsPolicy.js'
 
 /** Devuelve el objeto recibido o un objeto vacío cuando la entrada no tiene forma de registro. */
 function record(value: unknown): Record<string, unknown> {
@@ -8,12 +9,20 @@ function record(value: unknown): Record<string, unknown> {
     ? value as Record<string, unknown> : {}
 }
 
-/** Valida en runtime y copia únicamente campos del contrato; ignora importes del navegador. */
+/**
+ * Normaliza una entrada desconocida y copia solo campos autorizados, sin importes ni acceptedAt del navegador.
+ * Exige aceptación y versión reconocida; OrderService decide vigencia después del lookup de replay.
+ * Los datos inválidos producen OrderError 400 con errores por campo.
+ */
 export function validateCreateOrderRequest(value: unknown): CreateOrderRequest {
   const body = record(value)
   const buyer = record(body.buyer)
   const delivery = record(body.delivery)
   const errors: Record<string, string> = {}
+  const terms = record(body.termsAcceptance)
+  if (terms.accepted !== true) errors['termsAcceptance.accepted'] = 'Debes aceptar los Términos y Condiciones.'
+  const version = typeof terms.version === 'string' ? terms.version : ''
+  if (!isRecognizedTermsVersion(version)) errors['termsAcceptance.version'] = 'La versión de términos no es reconocida.'
   /** Lee y recorta un campo de texto; registra su error y devuelve vacío si falta o no es válido. */
   const text = (object: Record<string, unknown>, key: string, field: string): string => {
     const value = object[key]
@@ -55,5 +64,5 @@ export function validateCreateOrderRequest(value: unknown): CreateOrderRequest {
     const empty = Array.isArray(body.items) && body.items.length === 0
     throw new OrderError(400, empty ? 'EMPTY_CART' : 'CHECKOUT_VALIDATION_ERROR', 'La información de la orden no es válida.', errors)
   }
-  return { buyer: { fullName, email, phone }, delivery: { province, canton, address, ...(additionalInfo !== undefined ? { additionalInfo } : {}) }, items, idempotencyKey }
+  return { buyer: { fullName, email, phone }, delivery: { province, canton, address, ...(additionalInfo !== undefined ? { additionalInfo } : {}) }, items, idempotencyKey, termsAcceptance: { accepted: true, version } }
 }

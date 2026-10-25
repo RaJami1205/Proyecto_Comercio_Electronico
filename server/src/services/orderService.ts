@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { calculateLineSubtotal, calculateOrderTotals } from '../domain/orderCalculations.js'
 import { OrderError } from '../domain/orderError.js'
 import { validateCreateOrderRequest } from '../domain/orderValidation.js'
+import { isCurrentTermsVersion } from '../domain/termsPolicy.js'
 import { orderStore, type OrderStore } from '../stores/orderStore.js'
 import type { CreateOrderRequest, Order, OrderItem } from '../types/order.js'
 import type { ProductRecord } from '../types/product.js'
@@ -21,9 +22,10 @@ function quantities(items: CreateOrderRequest['items']): Map<string, number> {
   return result
 }
 
-/** La identidad excluye precios/estados y normaliza orden de líneas y notas vacías. */
-function identity({ buyer, delivery, items }: Pick<CreateOrderRequest, 'buyer' | 'delivery' | 'items'>): string {
+/** Incluye aceptación y versión junto a Buyer/Delivery/items normalizados; excluye precios, estados y acceptedAt generado por Server. */
+function identity({ buyer, delivery, items, termsAcceptance }: Pick<CreateOrderRequest, 'buyer' | 'delivery' | 'items' | 'termsAcceptance'>): string {
   return JSON.stringify([
+    termsAcceptance.accepted, termsAcceptance.version,
     buyer.fullName, buyer.email, buyer.phone,
     delivery.province, delivery.canton, delivery.address, delivery.additionalInfo ?? '',
     [...quantities(items)].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),
@@ -54,6 +56,13 @@ export class OrderService {
     if (pending) {
       requireCompatible(pending.identity, fingerprint)
       return structuredClone(await pending.task)
+    }
+    // Comprobar vigencia después de ambos lookups permite replay de versiones históricas
+    // reconocidas. Solo una creación realmente nueva exige la versión actual.
+    if (!isCurrentTermsVersion(request.termsAcceptance.version)) {
+      throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'Debes aceptar la versión vigente de los términos.', {
+        'termsAcceptance.version': 'Esta versión ya no está vigente para una nueva orden.',
+      })
     }
     // Registra la identidad antes de iniciar incluso la primera consulta asíncrona.
     const task = Promise.resolve().then(() => this.buildOrder(request))
@@ -89,11 +98,13 @@ export class OrderService {
       return { productId, name: product.title, image: product.image_url ?? '', unitPrice, quantity, lineSubtotal: calculateLineSubtotal(unitPrice, quantity) }
     })
     const id = randomUUID()
+    // Un único instante por snapshot: GET, replay y Payment conservan este acceptedAt.
     const createdAt = new Date().toISOString()
     const order: Order = {
       id, orderNumber: 'CN-' + createdAt.slice(0, 4) + '-' + id.toUpperCase(), createdAt,
       buyer: request.buyer, delivery: request.delivery, items, totals: calculateOrderTotals(items),
       currency: 'CRC', orderStatus: 'PENDING', paymentStatus: 'PENDING',
+      termsAcceptance: { accepted: true, version: request.termsAcceptance.version, acceptedAt: createdAt },
     }
     return this.store.create(order, request.idempotencyKey)
   }

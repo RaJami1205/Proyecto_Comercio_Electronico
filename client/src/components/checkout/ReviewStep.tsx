@@ -1,4 +1,5 @@
-/** Presenta datos de compra e importes preliminares o autoritativos antes de continuar al pago. */
+/** Presenta datos e importes de Review; CheckoutPage controla consentimiento, bloqueos y confirmación. */
+import type { Ref } from 'react'
 import type { BuyerInfo, DeliveryInfo } from '../../types/checkout'
 import type { Order, OrderItem, OrderTotals } from '../../types/order'
 import styles from '../../styles/checkout/ReviewStep.module.css'
@@ -15,13 +16,19 @@ interface ReviewStepProps {
   invalid?: boolean
   error?: string
   differences?: readonly string[]
+  termsAccepted: boolean
+  termsError?: string
+  termsVersionRejected?: boolean
+  termsInputRef?: Ref<HTMLInputElement>
+  onTermsAcceptedChange: (accepted: boolean) => void
+  onOpenTerms: () => void
   onAbandon?: () => void
   onEdit?: (step: 'buyer' | 'delivery') => void
   onConfirm?: () => void
 }
 
 /** Presenta comprador, entrega, productos y totales recibidos; expone las acciones permitidas por los callbacks y bloqueos. */
-function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retryPending = false, invalid = false, error, differences = [], onAbandon, onEdit, onConfirm }: ReviewStepProps) {
+function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retryPending = false, invalid = false, error, differences = [], termsAccepted, termsError, termsVersionRejected, termsInputRef, onTermsAcceptedChange, onOpenTerms, onAbandon, onEdit, onConfirm }: ReviewStepProps) {
   const confirmed = order?.orderStatus === 'CONFIRMED' && order.paymentStatus === 'APPROVED'
   /** Formatea el importe recibido para presentación sin modificar el valor financiero original. */
   const money = (value: number) => new Intl.NumberFormat('es-CR', { style: 'currency', currency: order?.currency ?? 'CRC' }).format(value)
@@ -68,6 +75,18 @@ function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retry
         {invalid ? <p role="alert" className={styles.error}>Completa los datos del comprador y la entrega y verifica que tu carrito tenga productos con cantidades válidas.</p> : null}
         {error ? <p role="alert" className={styles.error}>{error}</p> : null}
         {retryPending && !busy ? <p role="status">No se ha podido confirmar el resultado. La orden podría haberse creado. Reintentar envía la misma solicitud con la misma identidad para evitar duplicarla, conservando tus datos y productos.</p> : null}
+        {!order ? <div className={styles.terms}>
+          <label className={styles.termsLabel} htmlFor="checkout-terms">
+            <input id="checkout-terms" ref={termsInputRef} type="checkbox" checked={termsAccepted}
+              disabled={busy || retryPending} onChange={event => onTermsAcceptedChange(event.target.checked)}
+              aria-invalid={termsError ? true : undefined}
+              aria-describedby={termsError ? 'checkout-terms-error checkout-terms-version' : 'checkout-terms-version'} />
+            <span>He leído y acepto los Términos y Condiciones de CiberNova.</span>
+          </label>
+          <button type="button" className={styles.termsLink} onClick={onOpenTerms} disabled={busy}>Consultar Términos y Condiciones</button>
+          <p id="checkout-terms-version">{termsVersionRejected ? 'Versión local rechazada por el servidor' : ''}</p>
+          {termsError ? <p id="checkout-terms-error" role="alert" className={styles.error}>{termsError}</p> : null}
+        </div> : null}
         {onConfirm ? <div className={pageStyles.actions}><button type="button" className={pageStyles.continue} disabled={busy || invalid} onClick={onConfirm}>{busy ? 'Creando orden…' : differences.length > 0 ? 'Aceptar cambios y continuar al pago' : order ? 'Continuar al pago' : retryPending ? 'Reintentar la misma solicitud' : 'Confirmar y continuar al pago'}</button></div> : null}
         {onAbandon && !busy ? <div className={styles.orderInfo}>
           <p id="checkout-exit-warning">{confirmed

@@ -26,13 +26,19 @@ const SCENARIOS: readonly PaymentScenario[] = ['PAYMENT_APPROVED', 'PAYMENT_DECL
 
 // Misma validación de forma que orderApi.ts (duplicada a propósito: cada
 // servicio Client valida su propia respuesta, sin depender de internals del otro).
-/** Comprueba estructura, moneda y estados de la Order recibida antes de aceptar el resultado de pago. */
+/** Exige una Order coherente con metadata de consentimiento; admite versiones históricas sin consultar la política local. */
 function isOrder(value: unknown): value is Order {
-  if (!isRecord(value) || !isRecord(value.buyer) || !isRecord(value.delivery) || !isRecord(value.totals)) return false
+  if (!isRecord(value) || !isRecord(value.buyer) || !isRecord(value.delivery) || !isRecord(value.totals)
+    || !isRecord(value.termsAcceptance)) return false
   /** Comprueba que el valor recibido sea texto no vacío después de recortar espacios. */
   const text = (v: unknown) => typeof v === 'string' && v.trim().length > 0
   /** Comprueba que el valor recibido sea un importe numérico finito y no negativo. */
   const money = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0
+  const terms = value.termsAcceptance
+  // El Server emite ISO canónico; no aceptar fechas locales, parciales o normalizadas.
+  const acceptedAt = terms.acceptedAt
+  if (terms.accepted !== true || !text(terms.version) || typeof acceptedAt !== 'string'
+    || !Number.isFinite(Date.parse(acceptedAt)) || new Date(acceptedAt).toISOString() !== acceptedAt) return false
   return text(value.id) && text(value.orderNumber) && typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt))
     && ['fullName', 'email', 'phone'].every(key => text((value.buyer as Record<string, unknown>)[key]))
     && ['province', 'canton', 'address'].every(key => text((value.delivery as Record<string, unknown>)[key]))
@@ -72,7 +78,7 @@ async function processPayment(orderId: string, request: ProcessPaymentRequest): 
     const code = isRecord(body) && isRecord(body.error) ? body.error.code : undefined
     // Códigos que el Server puede devolver de forma conocida para este endpoint.
     const known = ['ORDER_NOT_FOUND', 'ORDER_ALREADY_CONFIRMED', 'PAYMENT_IN_PROGRESS', 'INVALID_PAYMENT_SCENARIO', 'CHECKOUT_VALIDATION_ERROR']
-    // "conclusive" = sabemos con certeza qué pasó (no hace falta reintentar con la misma key a ciegas).
+    // Clasifica estos errores HTTP como concluyentes; Checkout conserva el intento hasta recibir un PaymentResult válido.
     throw new PaymentApiError(known.includes(String(code)) ? code as ApiErrorResponse['error']['code'] : 'UNEXPECTED_ERROR', [400, 404, 409, 422].includes(response.status))
   }
   if (!isPaymentResult(body, orderId, payload.scenario)) throw new PaymentApiError('UNEXPECTED_ERROR', false)

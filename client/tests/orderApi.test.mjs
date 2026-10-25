@@ -12,9 +12,11 @@ const request = {
   buyer: { fullName: 'Prueba', email: 'prueba@example.com', phone: '88888888' },
   delivery: { province: 'San José', canton: 'San José', address: 'Dirección ficticia' },
   items: [{ productId: 'product-1', quantity: 2, unitPrice: 1, lineSubtotal: 2 }],
+  termsAcceptance: { accepted: true, version: '2026-10-lab4-v1', acceptedAt: 'forged' },
   idempotencyKey: 'same-attempt', totals: { total: 1 },
 }
 const order = {
+  termsAcceptance: {accepted:true, version:'2026-10-lab4-v1', acceptedAt:'2026-10-12T12:00:00.000Z'},
   id: 'server-id', orderNumber: 'CN-2026-001', createdAt: '2026-10-12T12:00:00Z',
   buyer: request.buyer, delivery: request.delivery,
   items: [{ productId: 'product-1', name: 'Producto', image: '', unitPrice: 5000, quantity: 2, lineSubtotal: 10000 }],
@@ -34,7 +36,7 @@ test('serializa referencias sin importes y conserva el snapshot del servidor', a
   try {
     assert.deepEqual(await orderApi.createOrder(request), order)
     await orderApi.createOrder(request)
-    assert.deepEqual(sent[0], { buyer: request.buyer, delivery: request.delivery, items: [{ productId: 'product-1', quantity: 2 }], idempotencyKey: 'same-attempt' })
+    assert.deepEqual(sent[0], { buyer: request.buyer, delivery: request.delivery, items: [{ productId: 'product-1', quantity: 2 }], idempotencyKey: 'same-attempt', termsAcceptance: { accepted: true, version: request.termsAcceptance.version } })
     assert.equal(sent[1].idempotencyKey, sent[0].idempotencyKey)
   } finally { globalThis.fetch = original }
 })
@@ -58,12 +60,12 @@ test('errores controlados permiten corregir sin mostrar mensajes internos', asyn
 test('fallo técnico o respuesta 201 inválida mantienen el intento pendiente', async () => {
   const original = globalThis.fetch
   try {
-    for (const response of [Response.json({error:{code:'UNEXPECTED_ERROR'}}, {status:500}), Response.json({}, {status:201}), Response.json({...order, paymentStatus:'APPROVED'}, {status:201}), new Response('invalid-json', {status:201})]) {
+    for (const response of [Response.json({error:{code:'UNEXPECTED_ERROR'}}, {status:500}), Response.json({}, {status:201}), Response.json({...order, orderStatus:'PENDING', paymentStatus:'APPROVED'}, {status:201}), new Response('invalid-json', {status:201})]) {
       globalThis.fetch = async () => response
       await assert.rejects(orderApi.createOrder(request), error => error instanceof OrderApiError && !error.conclusive)
     }
     globalThis.fetch = async () => { throw new TypeError('Network failure') }
-    await assert.rejects(orderApi.createOrder(request), error => orderErrorMessage(error).includes('evitar duplicados'))
+    await assert.rejects(orderApi.createOrder(request), error => orderErrorMessage(error).includes('Intentalo nuevamente'))
   } finally { globalThis.fetch = original }
 })
 
@@ -96,4 +98,30 @@ test('un replay aprobado conserva toda la validación estructural', async () => 
       await assert.rejects(orderApi.createOrder(request), error => error instanceof OrderApiError && !error.conclusive)
     }
   } finally { globalThis.fetch = original }
+})
+
+test('CN-46 serialización conserva accepted false y no inventa consentimiento', async t => {
+  t.mock.method(globalThis, 'fetch', async (_, options) => {
+    const payload = JSON.parse(options.body)
+    assert.deepEqual(payload.termsAcceptance, {accepted:false, version:request.termsAcceptance.version})
+    assert.equal('acceptedAt' in payload.termsAcceptance,false)
+    return Response.json(order,{status:201})
+  })
+  assert.deepEqual(await orderApi.createOrder({...request,termsAcceptance:{...request.termsAcceptance,accepted:false}}),order)
+})
+
+const invalidTerms = [
+  undefined, null, [], {},
+  ...[false, 'true', 1].map(accepted=>({...order.termsAcceptance, accepted})),
+  ...[undefined, '', ' ', 1, null].map(version=>({...order.termsAcceptance, version})),
+  ...[undefined, null, 1, '', 'invalid', '2026-10-12', '10/12/2026', '2026-02-30T00:00:00.000Z', '2026-10-12T12:00:00Z'].map(acceptedAt=>({...order.termsAcceptance, acceptedAt})),
+]
+for(const [index,termsAcceptance] of invalidTerms.entries()) test('CN-47 OrderApi rechaza metadata inválida '+index,async t=>{
+  t.mock.method(globalThis,'fetch',async()=>Response.json({...order,termsAcceptance},{status:201}))
+  await assert.rejects(orderApi.createOrder(request),error=>error instanceof OrderApiError && !error.conclusive)
+})
+test('CN-47 OrderApi permite versión histórica válida sin compararla con TermsPage',async t=>{
+  const historical={...order,termsAcceptance:{...order.termsAcceptance,version:'historical-test-version'}}
+  t.mock.method(globalThis,'fetch',async()=>Response.json(historical,{status:201}))
+  assert.deepEqual(await orderApi.createOrder(request),historical)
 })

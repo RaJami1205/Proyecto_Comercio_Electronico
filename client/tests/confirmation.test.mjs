@@ -34,7 +34,8 @@ const runtimeUrl = dataUrl(`
 const runtime = await import(runtimeUrl)
 const modules = new Map([['react',runtimeUrl],['react/jsx-runtime',runtimeUrl],['./hooks/useCart',runtimeUrl]])
 for (const name of ['Header','Footer']) modules.set('../components/layout/'+name,dataUrl(`export default '${name}'`))
-for (const name of ['ProductListingPage','CartPage','CheckoutPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
+for (const name of ['ProductListingPage','CartPage','CheckoutPage','PolicyPlaceholderPage','TermsPage','ReturnsPolicyPage','FaqPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
+for (const name of ['ShippingPolicyPage','PrivacyPolicyPage']) modules.set('./pages/'+name,dataUrl(`export const ${name} = '${name}'`))
 modules.set('./components/cart/CartPreviewDrawer',dataUrl("export default 'CartPreviewDrawer'"))
 /** Transpila el archivo indicado y resuelve únicamente las dependencias aisladas del harness. */
 function compile(file) {
@@ -46,6 +47,7 @@ function compile(file) {
     return 'from '+JSON.stringify(target)
   }))
 }
+modules.set('./utils/appNavigation', compile('utils/appNavigation.ts'))
 const {default:Confirmation}=await import(compile('pages/OrderConfirmationPage.tsx'))
 const {default:App}=await import(compile('App.tsx'))
 /** Recorre el árbol JSX simulado y devuelve sus nodos para inspeccionar propiedades. */
@@ -59,7 +61,7 @@ function text(tree) {
   if (tree && typeof tree==='object') return text(tree.props?.children)
   return typeof tree==='string'||typeof tree==='number'?String(tree):''
 }
-const order={id:'order-1',orderNumber:'CN-authoritative',createdAt:'2026-10-12T12:00:00Z',
+const order={termsAcceptance:{accepted:true,version:'2026-10-lab4-v1',acceptedAt:'2026-10-12T12:00:00.000Z'},id:'order-1',orderNumber:'CN-authoritative',createdAt:'2026-10-12T12:00:00Z',
   orderStatus:'CONFIRMED',paymentStatus:'APPROVED',currency:'CRC',
   buyer:{fullName:'Comprador',email:'test@example.com',phone:'88888888'},
   delivery:{province:'San José',canton:'Central',address:'Dirección'},

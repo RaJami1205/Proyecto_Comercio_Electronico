@@ -23,13 +23,19 @@ export class OrderApiError extends Error {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
-/** Comprueba la estructura pública, moneda y coherencia de estados de una Order recibida por HTTP. */
+/** Valida estructura, moneda, estados y metadata obligatoria; una versión histórica no se compara con TermsPage. */
 function isOrder(value: unknown): value is Order {
-  if (!isRecord(value) || !isRecord(value.buyer) || !isRecord(value.delivery) || !isRecord(value.totals)) return false
+  if (!isRecord(value) || !isRecord(value.buyer) || !isRecord(value.delivery) || !isRecord(value.totals)
+    || !isRecord(value.termsAcceptance)) return false
   /** Comprueba que el valor recibido sea texto no vacío después de recortar espacios. */
   const text = (value: unknown) => typeof value === 'string' && value.trim().length > 0
   /** Comprueba que el valor recibido sea un importe numérico finito y no negativo. */
   const money = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0
+  const terms = value.termsAcceptance
+  // El Server emite ISO canónico; no aceptar fechas locales, parciales o normalizadas.
+  const acceptedAt = terms.acceptedAt
+  if (terms.accepted !== true || !text(terms.version) || typeof acceptedAt !== 'string'
+    || !Number.isFinite(Date.parse(acceptedAt)) || new Date(acceptedAt).toISOString() !== acceptedAt) return false
   return text(value.id) && text(value.orderNumber) && typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt))
     && ['fullName', 'email', 'phone'].every(key => text((value.buyer as Record<string, unknown>)[key]))
     && ['province', 'canton', 'address'].every(key => text((value.delivery as Record<string, unknown>)[key]))
@@ -43,12 +49,13 @@ function isOrder(value: unknown): value is Order {
       && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && money(item.lineSubtotal))
 }
 
-/** Envía solo datos de comprador, entrega, referencias y clave; devuelve una Order validada o un error público. */
+/** Envía datos, referencias, clave y consentimiento sin timestamp; una respuesta inválida mantiene incierto el resultado de creación. */
 async function createOrder(request: CreateOrderRequest): Promise<Order> {
   const payload: CreateOrderRequest = {
     buyer: request.buyer, delivery: request.delivery,
     items: request.items.map(({ productId, quantity }) => ({ productId, quantity })),
     idempotencyKey: request.idempotencyKey,
+    termsAcceptance: { accepted: request.termsAcceptance.accepted, version: request.termsAcceptance.version },
   }
   const response = await fetch(API_BASE_URL + '/api/orders', {
     method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },

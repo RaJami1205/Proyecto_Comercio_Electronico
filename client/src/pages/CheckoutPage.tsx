@@ -4,6 +4,8 @@ import CheckoutStepper, { type CheckoutStep } from '../components/checkout/Check
 import BuyerStep from '../components/checkout/BuyerStep'
 import DeliveryStep from '../components/checkout/DeliveryStep'
 import ReviewStep from '../components/checkout/ReviewStep'
+import TermsDialog from '../components/checkout/TermsDialog'
+import { termsPolicy } from '../content/terms'
 import PaymentStep from '../components/checkout/PaymentStep'
 import PaymentResultPanel from '../components/checkout/PaymentResultPanel'
 import OrderConfirmationPage from './OrderConfirmationPage'
@@ -28,6 +30,7 @@ interface CheckoutPageProps {
   onNavigationLockChange: (busy: boolean) => void
   onOrderCreated: () => void
 }
+/** Conserva payload, clave y productos revisados para repetir la misma intención tras una respuesta ambigua. */
 interface CreationAttempt { request: CreateOrderRequest; items: CartItem[] }
 type PaymentAttempt = Readonly<ProcessPaymentRequest & { orderId: string }>
 const stages: Record<CheckoutStep, { title: string; description: string }> = {
@@ -37,7 +40,7 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
   payment: { title: 'Pago', description: 'Elige un escenario del Payment Sandbox para simular el resultado de tu pago. No se procesará ningún pago real.' },
 }
 
-/** Buyer, Delivery, intento y Order viven exclusivamente dentro de este Checkout. */
+/** Mantiene Buyer, Delivery, consentimiento e intentos en memoria local; al desmontarse se pierde este contexto. */
 function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated }: CheckoutPageProps) {
   const { items, cleanupPurchase } = useCart()
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
@@ -45,6 +48,11 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [order, setOrder] = useState<Order>()
   const [error, setError] = useState<string>()
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [termsError, setTermsError] = useState<string>()
+  const [termsVersionRejected, setTermsVersionRejected] = useState(false)
+  const [isTermsOpen, setIsTermsOpen] = useState(false)
+  const termsInputRef = useRef<HTMLInputElement>(null)
   const [attempt, setAttempt] = useState<CreationAttempt>()
   const [differences, setDifferences] = useState<string[]>([])
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
@@ -52,7 +60,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [hasPendingPayment, setHasPendingPayment] = useState(false)
   const [paymentError, setPaymentError] = useState<string>()
-  // Último PaymentResult crudo del Server; es la fuente para decidir qué pantalla de
+  // Último PaymentResult validado por paymentApi; es la fuente para decidir qué pantalla de
   // resultado mostrar (CN-32). Se limpia al pedir un Retry, lo que vuelve a mostrar el form.
   const [paymentResult, setPaymentResult] = useState<PaymentResult>()
   const attemptRef = useRef<CreationAttempt | undefined>(undefined)
@@ -92,6 +100,19 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     return () => cancelAnimationFrame(frame)
   }, [confirmed, currentStep, order, paymentResult])
 
+  useEffect(() => {
+    if (!termsError || currentStep !== 'review') return
+    const frame = requestAnimationFrame(() => termsInputRef.current?.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [termsError, currentStep])
+
+  /** No permite cambiar el consentimiento de un intento ya capturado. */
+  function changeTermsAccepted(accepted: boolean) {
+    if (submittingRef.current || attemptRef.current || order || termsVersionRejected) return
+    setTermsAccepted(accepted)
+    if (accepted) setTermsError(undefined)
+  }
+
   /** Cambia a la etapa solicitada si las guardas del intento y del pago permiten navegar. */
   function changeStep(next: CheckoutStep) {
     if (submittingRef.current || paymentSubmittingRef.current || confirmed) return
@@ -102,13 +123,24 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     setCurrentStep(next)
   }
 
-  /** Crea o recupera la Order con el mismo intento ante incertidumbre; exige aceptar diferencias antes del pago. */
+  /**
+   * Desde Review captura una clave y consentimiento solo si no existe CreationAttempt.
+   * Un fallo no concluyente conserva ambos para Retry; una Order ya recibida se reutiliza
+   * al aceptar diferencias financieras, sin crear otra ni modificar su consentimiento.
+   */
   async function confirmOrder() {
     if (submittingRef.current || paymentSubmittingRef.current || confirmed || (!order && invalid)) return
     if (order) {
       setDifferences([])
       onNavigationLockChange(false)
       changeStep('payment')
+      return
+    }
+    if (!attemptRef.current && (!termsAccepted || termsVersionRejected)) {
+      setTermsError(termsVersionRejected
+        ? 'El servidor rechazó la versión de términos disponible. Debes revisar una versión actualizada antes de iniciar otra solicitud; esta pantalla no puede actualizarla automáticamente.'
+        : 'Debes aceptar los Términos y Condiciones para continuar con tu compra.')
+      termsInputRef.current?.focus()
       return
     }
     // El ref protege incluso clicks ocurridos antes del siguiente render de React.
@@ -123,6 +155,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
           buyer: normalizeBuyer(data.buyer), delivery: normalizeDelivery(data.delivery),
           items: items.map(({ productId, quantity }) => ({ productId, quantity })),
           idempotencyKey: crypto.randomUUID(),
+          termsAcceptance: Object.freeze({ accepted: true, version: termsPolicy.version }),
         },
         items: items.map(item => ({ ...item })),
       }
@@ -146,6 +179,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       onNavigationLockChange(true)
       setError(undefined)
       setFieldErrors({}) // Descarta errores de campo tras recibir la Order.
+      setTermsError(undefined)
     } catch (failure) {
       if (failure instanceof OrderApiError) {
         if (failure.conclusive) {
@@ -154,6 +188,20 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
         }
         // Si el servidor nos devuelve errores de validación precisos
         if (failure.code === 'CHECKOUT_VALIDATION_ERROR' && failure.fieldErrors) {
+           const versionError = Object.hasOwn(failure.fieldErrors, 'termsAcceptance.version')
+           if (versionError || Object.hasOwn(failure.fieldErrors, 'termsAcceptance.accepted')) {
+             if (failure.conclusive) {
+               setTermsAccepted(false)
+               if (versionError) setTermsVersionRejected(true)
+             }
+             setCurrentStep('review')
+             setTermsError(failure.conclusive
+               ? versionError
+                 ? 'El servidor rechazó la versión de términos disponible. Debes revisar una versión actualizada antes de iniciar otra solicitud; esta pantalla no puede actualizarla automáticamente.'
+                 : 'Debes aceptar los Términos y Condiciones para continuar con tu compra.'
+               : 'No se pudo confirmar la aceptación de términos. Reintentar conserva la misma solicitud y su versión original.')
+             return
+           }
            setFieldErrors(failure.fieldErrors) // Conserva los errores por campo para mostrarlos en el formulario.
            setCurrentStep('buyer') 
         }
@@ -300,6 +348,9 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                   items={displayItems} totals={order?.totals ?? calculateCartTotals(reviewItems)} order={order}
                   busy={isCreatingOrder} retryPending={Boolean(attempt)} invalid={!order && invalid} error={error}
                   differences={differences}
+                  termsAccepted={attempt?.request.termsAcceptance.accepted ?? termsAccepted}
+                  termsError={termsError} termsVersionRejected={termsVersionRejected} termsInputRef={termsInputRef}
+                  onTermsAcceptedChange={changeTermsAccepted} onOpenTerms={() => setIsTermsOpen(true)}
                   onAbandon={confirmed || attempt || differences.length > 0 ? abandonCheckout : undefined}
                   onEdit={!order ? changeStep : undefined} onConfirm={!confirmed && currentStep === 'review' ? confirmOrder : undefined} />
                 <div className={styles.actions}>
@@ -311,6 +362,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
         </div>
       </main>
       <div inert={lockNavigation}><Footer onCatalogClick={onCatalogClick} /></div>
+      {isTermsOpen ? <TermsDialog onClose={() => setIsTermsOpen(false)} versionRejected={termsVersionRejected} /> : null}
     </div>
   )
 }
