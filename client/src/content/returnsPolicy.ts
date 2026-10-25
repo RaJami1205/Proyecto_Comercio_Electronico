@@ -1,4 +1,4 @@
-/** Fuente comercial compartida por la página y las futuras respuestas breves de FAQ. */
+/** Contenido de la página de devoluciones; FAQ remite a esta política sin sustituir sus condiciones. */
 interface ReturnsPolicySection {
   readonly id: string
   readonly title: string

@@ -1,3 +1,4 @@
+/** Presenta la política informativa de privacidad; no ejecuta operaciones de almacenamiento o eliminación. */
 import React from 'react';
 import PolicyLayout from '../components/policies/PolicyLayout';
 import PolicySection from '../components/policies/PolicySection';
@@ -10,6 +11,7 @@ interface PrivacyPolicyPageProps {
   onPolicyNavigate: (view: AppView) => void;
 }
 
+/** Compone secciones de lectura y transmite los callbacks de navegación a PolicyLayout. */
 export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
   onCatalogClick,
   onCartClick,

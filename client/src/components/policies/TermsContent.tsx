@@ -1,8 +1,9 @@
+/** Comparte versión, fecha y secciones de términos entre la página pública y la consulta modal. */
 import { termsPolicy } from '../../content/terms'
 import PolicySection from './PolicySection'
 import styles from '../../styles/policies/PolicyLayout.module.css'
 
-/** Contenido reutilizable sin Header, Footer, navegación ni controles de consentimiento. */
+/** versionRejected identifica la copia local rechazada; no descarga ni sustituye la versión del Server. */
 function TermsContent({ versionRejected = false }: { versionRejected?: boolean } = {}) {
   const publishedDate = new Intl.DateTimeFormat('es-CR', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(termsPolicy.publishedAt + 'T00:00:00Z'))
   return (

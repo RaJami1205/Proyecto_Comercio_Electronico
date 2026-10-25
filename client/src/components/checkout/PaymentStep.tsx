@@ -69,11 +69,10 @@ function isCardComplete(cardNumber: string, cardName: string, cardExpiry: string
 }
 
 /**
- * Campos de tarjeta puramente decorativos: su estado vive solo aquí, dentro
- * de este componente. Nunca se leen desde fuera, nunca viajan en el payload
- * de processPayment (que solo manda { scenario, idempotencyKey }) y no se
- * guardan en ningún lado. Existen para que la pantalla se vea completa en
- * un flujo de Payment Sandbox que no tiene pasarela de pagos real detrás.
+ * Campos demostrativos con validación local de completitud para habilitar el envío.
+ * Su estado vive solo en este componente: processPayment recibe únicamente
+ * scenario e idempotencyKey. No se persisten ni se envían datos de tarjeta;
+ * el resultado depende del escenario del Sandbox, no de una pasarela real.
  */
 function PaymentStep({
   order,

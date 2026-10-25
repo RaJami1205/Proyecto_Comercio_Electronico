@@ -1,3 +1,4 @@
+/** Publica el mismo contenido versionado que TermsDialog y delega la navegación en App. */
 import PolicyLayout from '../components/policies/PolicyLayout'
 import PolicySection from '../components/policies/PolicySection'
 import TermsContent from '../components/policies/TermsContent'

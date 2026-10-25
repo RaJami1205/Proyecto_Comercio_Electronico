@@ -1,4 +1,4 @@
-/** Prepara los cinco destinos informativos sin anticipar su contenido comercial definitivo. */
+/** Fallback informativo de App para un destino que todavía no tenga una página específica. */
 import PolicyLayout from '../components/policies/PolicyLayout'
 import PolicySection from '../components/policies/PolicySection'
 import { isSameTabNavigation, type CatalogHash, type PolicyDestination, type PolicyView } from '../utils/appNavigation'

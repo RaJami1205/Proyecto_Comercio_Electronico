@@ -1,3 +1,4 @@
+/** Renderiza el contenido de devoluciones dentro del layout compartido de políticas. */
 import PolicyLayout from '../components/policies/PolicyLayout'
 import PolicySection from '../components/policies/PolicySection'
 import { returnsPolicy } from '../content/returnsPolicy'

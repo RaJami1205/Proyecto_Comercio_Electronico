@@ -8,6 +8,7 @@ import {orderService} from '../dist/services/orderService.js'
 import {CURRENT_TERMS_VERSION} from '../dist/domain/termsPolicy.js'
 const requireClient=createRequire(new URL('../../client/package.json',import.meta.url))
 const ts=requireClient('typescript')
+/** Transpila el servicio Client real con la URL local del test, sin modificar fuentes ni configuración de Vite. */
 function clientService(name,base){
   const source=readFileSync(new URL('../../client/src/services/'+name+'.ts',import.meta.url),'utf8').replace('import.meta.env.VITE_API_BASE_URL',JSON.stringify(base))
   const compiled=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText

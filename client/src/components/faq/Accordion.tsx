@@ -17,6 +17,7 @@ interface AccordionProps {
   items: readonly AccordionItem[]
 }
 
+/** Renderiza respuestas recibidas sin estado React; cada details puede abrirse de forma independiente. */
 function Accordion({ items }: AccordionProps) {
   return (
     <div className={styles.accordion}>

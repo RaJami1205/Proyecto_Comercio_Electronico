@@ -9,7 +9,11 @@ function record(value: unknown): Record<string, unknown> {
     ? value as Record<string, unknown> : {}
 }
 
-/** Valida en runtime y copia únicamente campos del contrato; ignora importes del navegador. */
+/**
+ * Normaliza una entrada desconocida y copia solo campos autorizados, sin importes ni acceptedAt del navegador.
+ * Exige aceptación y versión reconocida; OrderService decide vigencia después del lookup de replay.
+ * Los datos inválidos producen OrderError 400 con errores por campo.
+ */
 export function validateCreateOrderRequest(value: unknown): CreateOrderRequest {
   const body = record(value)
   const buyer = record(body.buyer)

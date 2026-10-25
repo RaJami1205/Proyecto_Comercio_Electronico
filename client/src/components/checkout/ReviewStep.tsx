@@ -1,4 +1,4 @@
-/** Presenta datos de compra e importes preliminares o autoritativos antes de continuar al pago. */
+/** Presenta datos e importes de Review; CheckoutPage controla consentimiento, bloqueos y confirmación. */
 import type { Ref } from 'react'
 import { termsPolicy } from '../../content/terms'
 import type { BuyerInfo, DeliveryInfo } from '../../types/checkout'

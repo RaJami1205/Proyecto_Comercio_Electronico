@@ -1,4 +1,4 @@
-/** Coordina las vistas de catálogo, carrito y Checkout, sus callbacks y la navegación mediante History API. */
+/** Coordina Catalog, Cart, Checkout y políticas/FAQ mediante History API, conservando el catálogo montado. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ProductListingPage, { type CartFeedback } from './pages/ProductListingPage'
 import CartPage from './pages/CartPage'
@@ -19,7 +19,7 @@ interface NavigationState {
   emptyCartNotice: boolean
 }
 
-/** Interpreta el hash actual y devuelve la vista de catálogo, carrito o Checkout. */
+/** Resuelve el hash mediante el mapa de destinos comerciales e informativos de appNavigation. */
 function viewFromLocation(): AppView {
   return viewFromHash(window.location.hash)
 }

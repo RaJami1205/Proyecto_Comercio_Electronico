@@ -44,6 +44,7 @@ export class PaymentService {
       const statuses: Record<typeof result.result, PaymentStatus> = {
         PAYMENT_APPROVED: 'APPROVED', PAYMENT_DECLINED: 'DECLINED', PAYMENT_ERROR: 'ERROR',
       }
+      // Solo cambian estados: el snapshot conserva datos, importes y Terms Acceptance originales.
       const updated = this.store.update({
         ...order,
         paymentStatus: statuses[result.result],

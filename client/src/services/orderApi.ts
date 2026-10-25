@@ -23,7 +23,7 @@ export class OrderApiError extends Error {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
-/** Comprueba la estructura pública, moneda y coherencia de estados de una Order recibida por HTTP. */
+/** Valida estructura, moneda, estados y metadata obligatoria; una versión histórica no se compara con TermsPage. */
 function isOrder(value: unknown): value is Order {
   if (!isRecord(value) || !isRecord(value.buyer) || !isRecord(value.delivery) || !isRecord(value.totals)
     || !isRecord(value.termsAcceptance)) return false
@@ -49,7 +49,7 @@ function isOrder(value: unknown): value is Order {
       && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && money(item.lineSubtotal))
 }
 
-/** Envía solo datos de comprador, entrega, referencias y clave; devuelve una Order validada o un error público. */
+/** Envía datos, referencias, clave y consentimiento sin timestamp; una respuesta inválida mantiene incierto el resultado de creación. */
 async function createOrder(request: CreateOrderRequest): Promise<Order> {
   const payload: CreateOrderRequest = {
     buyer: request.buyer, delivery: request.delivery,

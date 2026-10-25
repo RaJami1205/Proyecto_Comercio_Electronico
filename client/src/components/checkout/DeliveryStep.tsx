@@ -7,7 +7,7 @@ import pageStyles from '../../styles/pages/CheckoutPage.module.css'
 
 interface DeliveryStepProps {
   value: DeliveryInfo
-  errors?: Record<string, string> // <-- NUEVO: Recibe los fieldErrors del servidor
+  errors?: Record<string, string> // Errores por campo entregados por CheckoutPage.
   onChange: (value: DeliveryInfo) => void
   onContinue: (value: DeliveryInfo) => void
   onBack: () => void
