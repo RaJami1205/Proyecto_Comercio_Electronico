@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {stripTypeScriptTypes} from 'node:module'
 const dataUrl=source=>'data:text/javascript;base64,'+Buffer.from(source).toString('base64')
+/** Carga fuentes en memoria y bloquea el catálogo real; rotation altera solo el módulo de política de esta prueba. */
 async function domain(rotation=false){
   const sources=new Map([['services/productService',dataUrl('export async function getProductById(){throw new Error("Catálogo real prohibido")}')]])
   for(const name of ['domain/termsPolicy','domain/orderError','domain/orderValidation','domain/orderCalculations','stores/orderStore','domain/paymentValidation','services/paymentSandboxService','services/paymentService','services/orderService']){

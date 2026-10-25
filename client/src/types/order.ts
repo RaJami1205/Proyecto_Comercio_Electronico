@@ -6,12 +6,13 @@ export interface CreateOrderItemRequest {
   quantity: number
 }
 
-/** Solicitud del navegador con datos y referencias; no contiene precios ni estados confiables. */
+/** Declaración capturada por Checkout; acceptedAt solo existe en el snapshot emitido por Server. */
 export interface TermsAcceptanceRequest {
   readonly accepted: boolean
   readonly version: string
 }
 
+/** Solicitud del navegador con datos, referencias y consentimiento; no aporta precios ni estados confiables. */
 export interface CreateOrderRequest {
   buyer: BuyerInfo
   delivery: DeliveryInfo
@@ -47,13 +48,14 @@ export type PaymentStatus =
   | 'DECLINED'
   | 'ERROR'
 
-/** Snapshot autoritativo de la compra, independiente del Cart editable. */
+/** Consentimiento validado por Server, con versión original y timestamp ISO conservados durante replay. */
 export interface OrderTermsAcceptance {
   accepted: true
   version: string
   acceptedAt: string
 }
 
+/** Snapshot autoritativo de la compra, independiente del Cart editable. */
 export interface Order {
   id: string
   orderNumber: string

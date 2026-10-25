@@ -1,4 +1,4 @@
-/** Fuente única para la página pública y el futuro Dialog de Checkout.
+/** Fuente única para la página pública y TermsDialog de Checkout.
  * Cada cambio comercial debe publicar una nueva versión junto con su contenido.
  */
 export interface TermsSection {

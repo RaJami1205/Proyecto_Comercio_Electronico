@@ -30,6 +30,7 @@ interface CheckoutPageProps {
   onNavigationLockChange: (busy: boolean) => void
   onOrderCreated: () => void
 }
+/** Conserva payload, clave y productos revisados para repetir la misma intención tras una respuesta ambigua. */
 interface CreationAttempt { request: CreateOrderRequest; items: CartItem[] }
 type PaymentAttempt = Readonly<ProcessPaymentRequest & { orderId: string }>
 const stages: Record<CheckoutStep, { title: string; description: string }> = {
@@ -39,7 +40,7 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
   payment: { title: 'Pago', description: 'Elige un escenario del Payment Sandbox para simular el resultado de tu pago. No se procesará ningún pago real.' },
 }
 
-/** Buyer, Delivery, intento y Order viven exclusivamente dentro de este Checkout. */
+/** Mantiene Buyer, Delivery, consentimiento e intentos en memoria local; al desmontarse se pierde este contexto. */
 function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated }: CheckoutPageProps) {
   const { items, cleanupPurchase } = useCart()
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
@@ -59,7 +60,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [hasPendingPayment, setHasPendingPayment] = useState(false)
   const [paymentError, setPaymentError] = useState<string>()
-  // Último PaymentResult crudo del Server; es la fuente para decidir qué pantalla de
+  // Último PaymentResult validado por paymentApi; es la fuente para decidir qué pantalla de
   // resultado mostrar (CN-32). Se limpia al pedir un Retry, lo que vuelve a mostrar el form.
   const [paymentResult, setPaymentResult] = useState<PaymentResult>()
   const attemptRef = useRef<CreationAttempt | undefined>(undefined)
@@ -122,7 +123,11 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     setCurrentStep(next)
   }
 
-  /** Crea o recupera la Order con el mismo intento ante incertidumbre; exige aceptar diferencias antes del pago. */
+  /**
+   * Desde Review captura una clave y consentimiento solo si no existe CreationAttempt.
+   * Un fallo no concluyente conserva ambos para Retry; una Order ya recibida se reutiliza
+   * al aceptar diferencias financieras, sin crear otra ni modificar su consentimiento.
+   */
   async function confirmOrder() {
     if (submittingRef.current || paymentSubmittingRef.current || confirmed || (!order && invalid)) return
     if (order) {

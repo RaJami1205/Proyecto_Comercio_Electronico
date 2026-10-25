@@ -14,6 +14,7 @@ interface FaqPageProps {
   onCartClick: () => void
 }
 
+/** Convierte las entradas estáticas en respuestas del Accordion y delega sus destinos en App. */
 function FaqPage({ onCatalogClick, onPolicyNavigate, onCartClick }: FaqPageProps) {
   const items = faqEntries.map(entry => ({
     id: entry.id,

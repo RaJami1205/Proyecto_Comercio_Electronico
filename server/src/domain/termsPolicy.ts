@@ -1,4 +1,4 @@
-/** Política de versiones del Server. Conservar versiones retiradas para replay compatible. */
+/** Política estática del Server: al rotar la versión vigente, conservar las retiradas reconocidas para replay compatible. */
 export const CURRENT_TERMS_VERSION = '2026-10-lab4-v1'
 export const RECOGNIZED_TERMS_VERSIONS: readonly string[] = Object.freeze([CURRENT_TERMS_VERSION])
 

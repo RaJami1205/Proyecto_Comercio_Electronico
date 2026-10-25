@@ -1,3 +1,4 @@
+/** Presenta condiciones informativas de envío; los cálculos transaccionales viven en las utilidades financieras. */
 import React from 'react';
 import PolicyLayout from '../components/policies/PolicyLayout';
 import PolicySection from '../components/policies/PolicySection';
@@ -10,6 +11,7 @@ interface ShippingPolicyPageProps {
   onPolicyNavigate: (view: AppView) => void;
 }
 
+/** Delega los destinos al propietario de navegación sin gestionar entregas ni modificar Orders. */
 export const ShippingPolicyPage: React.FC<ShippingPolicyPageProps> = ({
   onCatalogClick,
   onCartClick,

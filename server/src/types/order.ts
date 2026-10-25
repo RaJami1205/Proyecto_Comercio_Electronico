@@ -6,12 +6,13 @@ export interface CreateOrderItemRequest {
   quantity: number
 }
 
-/** Solicitud del navegador con datos y referencias; no contiene precios ni estados confiables. */
+/** Declaración recibida del navegador; el validador exige accepted exactamente true. */
 export interface TermsAcceptanceRequest {
   accepted: boolean
   version: string
 }
 
+/** Solicitud con datos, referencias y consentimiento; no contiene precios ni estados confiables. */
 export interface CreateOrderRequest {
   buyer: BuyerInfo
   delivery: DeliveryInfo
@@ -47,13 +48,14 @@ export type PaymentStatus =
   | 'DECLINED'
   | 'ERROR'
 
-/** Snapshot autoritativo de la compra, independiente del Cart editable. */
+/** Consentimiento validado cuya fecha genera buildOrder, nunca el navegador. */
 export interface OrderTermsAcceptance {
   accepted: true
   version: string
   acceptedAt: string
 }
 
+/** Snapshot autoritativo de la compra, independiente del Cart editable. */
 export interface Order {
   id: string
   orderNumber: string

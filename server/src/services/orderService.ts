@@ -22,7 +22,7 @@ function quantities(items: CreateOrderRequest['items']): Map<string, number> {
   return result
 }
 
-/** La identidad excluye precios/estados y normaliza orden de líneas y notas vacías. */
+/** Incluye aceptación y versión junto a Buyer/Delivery/items normalizados; excluye precios, estados y acceptedAt generado por Server. */
 function identity({ buyer, delivery, items, termsAcceptance }: Pick<CreateOrderRequest, 'buyer' | 'delivery' | 'items' | 'termsAcceptance'>): string {
   return JSON.stringify([
     termsAcceptance.accepted, termsAcceptance.version,
@@ -57,7 +57,8 @@ export class OrderService {
       requireCompatible(pending.identity, fingerprint)
       return structuredClone(await pending.task)
     }
-    // La vigencia solo limita creaciones nuevas; replay y pending conservan su versión.
+    // Comprobar vigencia después de ambos lookups permite replay de versiones históricas
+    // reconocidas. Solo una creación realmente nueva exige la versión actual.
     if (!isCurrentTermsVersion(request.termsAcceptance.version)) {
       throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'Debes aceptar la versión vigente de los términos.', {
         'termsAcceptance.version': 'Esta versión ya no está vigente para una nueva orden.',
@@ -97,6 +98,7 @@ export class OrderService {
       return { productId, name: product.title, image: product.image_url ?? '', unitPrice, quantity, lineSubtotal: calculateLineSubtotal(unitPrice, quantity) }
     })
     const id = randomUUID()
+    // Un único instante por snapshot: GET, replay y Payment conservan este acceptedAt.
     const createdAt = new Date().toISOString()
     const order: Order = {
       id, orderNumber: 'CN-' + createdAt.slice(0, 4) + '-' + id.toUpperCase(), createdAt,

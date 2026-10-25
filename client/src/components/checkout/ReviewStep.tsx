@@ -1,6 +1,5 @@
-/** Presenta datos de compra e importes preliminares o autoritativos antes de continuar al pago. */
+/** Presenta datos e importes de Review; CheckoutPage controla consentimiento, bloqueos y confirmación. */
 import type { Ref } from 'react'
-import { termsPolicy } from '../../content/terms'
 import type { BuyerInfo, DeliveryInfo } from '../../types/checkout'
 import type { Order, OrderItem, OrderTotals } from '../../types/order'
 import styles from '../../styles/checkout/ReviewStep.module.css'
@@ -85,7 +84,7 @@ function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retry
             <span>He leído y acepto los Términos y Condiciones de CiberNova.</span>
           </label>
           <button type="button" className={styles.termsLink} onClick={onOpenTerms} disabled={busy}>Consultar Términos y Condiciones</button>
-          <p id="checkout-terms-version">{termsVersionRejected ? 'Versión local rechazada por el servidor' : 'Versión'}: {termsPolicy.version}</p>
+          <p id="checkout-terms-version">{termsVersionRejected ? 'Versión local rechazada por el servidor' : ''}</p>
           {termsError ? <p id="checkout-terms-error" role="alert" className={styles.error}>{termsError}</p> : null}
         </div> : null}
         {onConfirm ? <div className={pageStyles.actions}><button type="button" className={pageStyles.continue} disabled={busy || invalid} onClick={onConfirm}>{busy ? 'Creando orden…' : differences.length > 0 ? 'Aceptar cambios y continuar al pago' : order ? 'Continuar al pago' : retryPending ? 'Reintentar la misma solicitud' : 'Confirmar y continuar al pago'}</button></div> : null}

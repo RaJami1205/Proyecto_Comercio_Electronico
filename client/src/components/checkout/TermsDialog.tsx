@@ -1,3 +1,4 @@
+/** Consulta modal de términos con foco y scroll aislados; la aceptación pertenece a Checkout Review. */
 import { useEffect, useRef } from 'react'
 import { termsPolicy } from '../../content/terms'
 import TermsContent from '../policies/TermsContent'
@@ -8,13 +9,15 @@ interface TermsDialogProps {
   versionRejected?: boolean
 }
 
-/** Consulta local: no navega ni registra consentimiento. */
+/** onClose solicita el desmontaje al propietario; versionRejected solo cambia la identificación de la copia local. */
 function TermsDialog({ onClose, versionRejected = false }: TermsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const triggerRef = useRef<HTMLElement | null>(null)
   const restoreFrameRef = useRef<number | null>(null)
 
+  // Restaura los estilos previos al desmontar y devuelve el foco solo a un trigger visible.
+  // Cancelar la restauración pendiente evita competir con el montaje repetido de StrictMode.
   useEffect(() => {
     const dialog = dialogRef.current
     if (!dialog) return
