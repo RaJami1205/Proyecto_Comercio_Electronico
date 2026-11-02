@@ -878,6 +878,7 @@ Express API
 | `npm run build` | Compila TypeScript |
 | `npm start` | Inicia el backend compilado |
 | `npm run seed:algolia` | Ejecuta la herramienta controlada de seed de Algolia |
+| `npm run seed:users` | Valida en `dry-run` los usuarios simulados; la carga al índice `users` está documentada en `server/README.md` |
 
 ---
 
