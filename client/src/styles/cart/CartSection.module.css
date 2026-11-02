@@ -346,7 +346,60 @@ main:has(> .section) {
 
 .summary a {
   width: 100%;
+  color: #244a9a;
+  border-color: #c8d5ee;
+  background: #f7f9ff;
+  box-shadow: none;
 }
+
+.identityPrompt {
+  display: grid;
+  gap: .8rem;
+  margin: .35rem 0 1.25rem;
+  padding: 1rem;
+  border: 1px solid #d0ddf4;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #edf5ff, #f3f0ff);
+}
+
+.identityPromptTitle {
+  display: flex;
+  gap: .45rem;
+  align-items: center;
+  margin: 0;
+  color: #244a9a;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.identityPromptMessage { margin: 0; color: #405374; font-size: .88rem; line-height: 1.65; overflow-wrap: anywhere; }
+.identityPrompt svg { width: 19px; height: 19px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+.identityButton {
+  display: flex;
+  gap: .65rem;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 46px;
+  padding: .7rem .85rem;
+  color: #fff;
+  border: 1px solid #4c6fe6;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #2454d9, #5543c7);
+  box-shadow: 0 5px 14px rgba(49, 72, 173, .14);
+  font: inherit;
+  font-size: .85rem;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 160ms ease, filter 160ms ease;
+}
+
+.identityButton:hover { filter: brightness(1.08); box-shadow: 0 7px 18px rgba(49, 72, 173, .22); }
+.identityButton:focus-visible, .checkoutButton:focus-visible, .summary a:focus-visible { outline: 3px solid #1f5eff; outline-offset: 3px; }
 
 .checkoutButton {
   width: 100%;
@@ -354,12 +407,16 @@ main:has(> .section) {
   cursor: pointer;
 }
 
+.checkoutButton:disabled { color: #596b89; border-color: #d4ddec; background: #edf1f8; box-shadow: none; cursor: not-allowed; }
+
 .summary a:hover,
 .emptyState a:hover {
   box-shadow: 0 12px 25px rgba(31, 94, 255, 0.3);
   filter: brightness(1.05);
   transform: translateY(-1px);
 }
+
+.summary a:hover { border-color: #8ea9dc; background: #edf3ff; box-shadow: 0 4px 12px rgba(31, 94, 255, .08); filter: none; transform: none; }
 
 .emptyState {
   display: grid;
@@ -497,6 +554,8 @@ main:has(> .section) {
 }
 
 @media (max-width: 380px) {
+  .identityButton svg { display: none; }
+
   .item {
     grid-template-columns: 1fr;
   }
@@ -511,6 +570,7 @@ main:has(> .section) {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .identityButton,
   .removeButton,
   .productImageButton img,
   .quantityControl button,

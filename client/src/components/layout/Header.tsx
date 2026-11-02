@@ -83,19 +83,22 @@ function Header({ cartView = false, checkoutView = false, policyView = false, on
 
         <div className={styles.actions}>
         <div className={styles.session}>
-          {session.user ? <span className={styles.identity} title={session.user.displayName}>
-            {session.user.displayName} · {session.user.role}
-            {session.user.role === 'B2B' ? <small>{session.user.company.name}</small> : null}
-          </span> : <span className={styles.identity}>Sin sesión</span>}
+          {session.user ? <span className={styles.identity}>
+            <span className={styles.identityName} title={session.user.displayName}>{session.user.displayName}</span>
+            <span className={styles.role}>{session.user.role}</span>
+            {session.user.role === 'B2B' ? <small className={styles.company} title={session.user.company.name}>{session.user.company.name}</small> : null}
+          </span> : <span className={styles.identity}><span className={styles.identityName}>Sin sesión</span></span>}
           <div className={styles.sessionButtons}>
             <button type="button" disabled={Boolean(session.transitionBlockReason) || session.resolving}
+              aria-label={session.user ? 'Cambiar usuario' : 'Iniciar sesión'}
               aria-haspopup="dialog" onClick={event => { event.currentTarget.focus(); session.openLogin() }}>
-              {session.user ? 'Cambiar usuario' : 'Iniciar sesión'}
+              {session.user ? <>Cambiar<span className={styles.fullActionLabel}>&nbsp;usuario</span></> : 'Iniciar sesión'}
             </button>
             {session.user ? <button type="button" disabled={Boolean(session.transitionBlockReason) || session.resolving}
+              className={styles.sessionExit}
               onClick={event => { event.currentTarget.focus(); session.requestLogout() }}>Salir</button> : null}
           </div>
-          {session.transitionBlockReason ? <small>{session.transitionBlockReason}</small> : null}
+          {session.transitionBlockReason ? <small className={styles.sessionHint}>{session.transitionBlockReason}</small> : null}
         </div>
         <button
           className={styles.action}

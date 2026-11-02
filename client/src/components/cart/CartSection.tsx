@@ -147,8 +147,17 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
                 <span>Total</span>
                 <strong>{priceFormatter.format(total)}</strong>
               </div>
-              {purchaseBlockReason ? <p role="status" id="cart-checkout-restriction">{purchaseBlockReason}</p> : null}
-              {!user ? <button type="button" onClick={openLogin}>Seleccionar identidad</button> : null}
+              {purchaseBlockReason || !user ? <div className={styles.identityPrompt}>
+                <p className={styles.identityPromptTitle}>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="6" r="3" /><path d="M4 17v-2a6 6 0 0 1 12 0v2" /></svg>
+                  Antes de finalizar
+                </p>
+                {purchaseBlockReason ? <p className={styles.identityPromptMessage} role="status" id="cart-checkout-restriction">{purchaseBlockReason}</p> : null}
+                {!user ? <button className={styles.identityButton} type="button" onClick={openLogin}>
+                  Seleccionar identidad
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
+                </button> : null}
+              </div> : null}
               <button className={styles.checkoutButton} type="button" disabled={Boolean(purchaseBlockReason)}
                 aria-describedby={purchaseBlockReason ? 'cart-checkout-restriction' : undefined} onClick={onCheckoutRequested}>
                 Finalizar compra
