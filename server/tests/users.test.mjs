@@ -16,6 +16,17 @@ const disabled = { ...consumer, objectID: 'user-off', enabled: false }
 const unknownRole = { ...consumer, objectID: 'user-guest', role: 'GUEST' }
 const invalidB2B = { ...business, objectID: 'user-b2b-bad', company: { id: 'company-1' } }
 const records = [consumer, business, admin, disabled, unknownRole, invalidB2B]
+const publicUsers = [
+  { id: 'user-admin-01', displayName: 'Administración', role: 'ADMIN' },
+  { id: 'user-b2b-01', displayName: 'Compras', role: 'B2B', company: { id: 'company-1', name: 'Empresa' } },
+  { id: 'user-b2c-01', displayName: 'Cliente', role: 'B2C' },
+]
+
+/** Simula la metadata real que permite verificar si se recuperaron todos los resultados. */
+const searchPage = (hits, overrides = {}) => ({
+  hits, page: 0, nbHits: hits.length, nbPages: Math.ceil(hits.length / 100),
+  hitsPerPage: 100, exhaustiveNbHits: true, ...overrides,
+})
 
 /** Crea un directorio en memoria que conserva la distinción entre listado y consulta por ID. */
 const directoryOf = (items) => ({
@@ -64,14 +75,16 @@ test('parseUserRecord rechaza roles, Company y campos inválidos con códigos ti
 
 test('listSelectable devuelve solo identidades habilitadas y válidas con campos permitidos', async () => {
   const users = await serviceOf().listSelectable()
-  assert.deepEqual(users.map(user => user.id), ['user-b2c-01', 'user-b2b-01', 'user-admin-01'])
+  assert.deepEqual(users, publicUsers)
+  assert.deepEqual(await serviceOf([...records].reverse()).listSelectable(), publicUsers)
   for (const user of users) {
     assert.deepEqual(Object.keys(user).sort(), user.role === 'B2B' ? ['company', 'displayName', 'id', 'role'] : ['displayName', 'id', 'role'])
   }
 })
 
 test('resolve devuelve el perfil validado y rechaza cada caso inválido', async () => {
-  assert.deepEqual(await serviceOf().resolve('user-b2b-01'), parseUserRecord(business).user)
+  const service = serviceOf(records.map(record => ({ ...record, _highlightResult: {}, internalOnly: 'omitido' })))
+  for (const user of publicUsers) assert.deepEqual(await service.resolve(user.id), user)
   for (const [userId, status, code] of [
     ['missing', 404, 'USER_NOT_FOUND'],
     ['', 400, 'INVALID_USER_ID'],
@@ -107,7 +120,7 @@ test('el directorio de Algolia consulta solo el índice users y distingue 404 de
   const calls = []
   let failure = null
   const directory = createAlgoliaUserDirectory(() => ({
-    searchSingleIndex: async request => { calls.push(request); return { hits: [consumer] } },
+    searchSingleIndex: async request => { calls.push(request); return searchPage([consumer]) },
     getObject: async request => { calls.push(request); if (failure) throw failure; return consumer },
   }))
   assert.deepEqual(await directory.list(), [consumer])
@@ -117,8 +130,109 @@ test('el directorio de Algolia consulta solo el índice users y distingue 404 de
   assert.equal(calls[1].objectID, 'user-b2c-01')
   failure = Object.assign(new Error('missing'), { status: 404 })
   assert.equal(await directory.find('missing'), undefined)
+  assert.deepEqual(calls.at(-1), {
+    indexName: 'users',
+    searchParams: { query: '', hitsPerPage: 0, attributesToRetrieve: [], attributesToHighlight: [] },
+  })
   failure = Object.assign(new Error('forbidden'), { status: 403 })
+  const callsBeforeFailure = calls.length
   await assert.rejects(directory.find('user-b2c-01'), { status: 403 })
+  assert.equal(calls.length, callsBeforeFailure + 1, 'Un error distinto de 404 no consulta otra vez el índice')
+}))
+
+test('el listado recorre dos páginas y conserva usuarios habilitados después de 100 records no seleccionables', () => withEnv(algoliaEnv, async () => {
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({ ...disabled, objectID: 'disabled-' + index }))
+  firstPage[99] = unknownRole
+  const pages = [firstPage, [consumer, admin, business]]
+  const calls = []
+  const directory = createAlgoliaUserDirectory(() => ({
+    searchSingleIndex: async request => {
+      calls.push(request)
+      const page = request.searchParams.page
+      assert.ok(page < pages.length, 'No debe solicitar páginas redundantes')
+      return searchPage(pages[page], { page, nbHits: 103, nbPages: 2, exhaustive: { nbHits: true } })
+    },
+  }))
+  assert.deepEqual(await new UserService(directory).listSelectable(), publicUsers)
+  assert.deepEqual(calls.map(call => call.searchParams.page), [0, 1])
+  assert.ok(calls.every(call => call.indexName === 'users' && call.searchParams.hitsPerPage === 100))
+}))
+
+test('un índice vacío requiere una sola consulta y devuelve un listado vacío', () => withEnv(algoliaEnv, async () => {
+  let calls = 0
+  const directory = createAlgoliaUserDirectory(() => ({
+    searchSingleIndex: async () => { calls += 1; return searchPage([]) },
+  }))
+  assert.deepEqual(await new UserService(directory).listSelectable(), [])
+  assert.equal(calls, 1)
+}))
+
+test('los límites del proveedor y conteos no verificables producen 503 en lugar de listas parciales', t => withEnv(algoliaEnv, async () => {
+  t.mock.method(console, 'error', () => {})
+  const hits = Array.from({ length: 100 }, (_, index) => ({ ...consumer, objectID: 'user-' + index }))
+  for (const response of [
+    searchPage(hits, { nbHits: 101, nbPages: 1 }),
+    searchPage(hits, { exhaustiveNbHits: false }),
+    searchPage(hits, { exhaustive: { nbHits: false } }),
+    searchPage(hits, { nbHits: undefined }),
+    searchPage(hits, { nbPages: Infinity }),
+    searchPage(hits, { nbHits: 1, nbPages: 1000 }),
+  ]) {
+    let calls = 0
+    const directory = createAlgoliaUserDirectory(() => ({
+      searchSingleIndex: async () => { calls += 1; return response },
+    }))
+    await assert.rejects(new UserService(directory).listSelectable(), { status: 503, code: 'USER_SERVICE_UNAVAILABLE' })
+    assert.equal(calls, 1)
+  }
+}))
+
+test('páginas repetidas, incompletas o cambiantes fallan sin devolver resultados parciales ni seguir consultando', t => withEnv(algoliaEnv, async () => {
+  t.mock.method(console, 'error', () => {})
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({ ...disabled, objectID: 'disabled-' + index }))
+  for (const secondPage of [
+    searchPage([consumer, business, admin], { page: 0, nbHits: 103, nbPages: 2 }),
+    searchPage([consumer, business], { page: 1, nbHits: 103, nbPages: 2 }),
+    searchPage([consumer, business, admin], { page: 1, nbHits: 104, nbPages: 2 }),
+    searchPage([consumer, business, firstPage[0]], { page: 1, nbHits: 103, nbPages: 2 }),
+    Object.assign(new Error('opaque'), { status: 503 }),
+  ]) {
+    const calls = []
+    const directory = createAlgoliaUserDirectory(() => ({
+      searchSingleIndex: async request => {
+        const page = request.searchParams.page
+        calls.push(page)
+        assert.ok(page <= 1, 'No debe seguir consultando después de una página inválida')
+        if (page === 1 && secondPage instanceof Error) throw secondPage
+        return page === 0 ? searchPage(firstPage, { nbHits: 103, nbPages: 2 }) : secondPage
+      },
+    }))
+    await assert.rejects(new UserService(directory).listSelectable(), { status: 503, code: 'USER_SERVICE_UNAVAILABLE' })
+    assert.deepEqual(calls, [0, 1])
+  }
+}))
+
+test('un 404 de objeto solo significa usuario inexistente si el índice responde; índice ausente o inaccesible produce 503', t => withEnv(algoliaEnv, async () => {
+  t.mock.method(console, 'error', () => {})
+  for (const [probeStatus, expectedStatus, expectedCode] of [
+    [null, 404, 'USER_NOT_FOUND'],
+    [404, 503, 'USER_SERVICE_UNAVAILABLE'],
+    [403, 503, 'USER_SERVICE_UNAVAILABLE'],
+    [503, 503, 'USER_SERVICE_UNAVAILABLE'],
+  ]) {
+    const calls = []
+    const directory = createAlgoliaUserDirectory(() => ({
+      getObject: async request => { calls.push(['get', request.indexName]); throw Object.assign(new Error('opaque'), { status: 404 }) },
+      searchSingleIndex: async request => {
+        calls.push(['search', request.indexName])
+        assert.equal(request.searchParams.hitsPerPage, 0)
+        if (probeStatus !== null) throw Object.assign(new Error('opaque'), { status: probeStatus })
+        return searchPage([])
+      },
+    }))
+    await assert.rejects(new UserService(directory).resolve('missing'), { status: expectedStatus, code: expectedCode })
+    assert.deepEqual(calls, [['get', 'users'], ['search', 'users']])
+  }
 }))
 
 test('la configuración de users es independiente del catálogo y no admite colisiones', () => {
@@ -189,7 +303,7 @@ test('el seed usa dry-run por defecto y sus guardas abortan sin escribir', () =>
 
 test('endpoints: contratos públicos, errores tipados y ausencia de sesiones', async () => {
   const original = userService.directory
-  userService.directory = directoryOf(records)
+  userService.directory = directoryOf(records.map(record => ({ ...record, _highlightResult: {}, internalOnly: 'omitido' })))
   const server = app.listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
   const base = 'http://127.0.0.1:' + server.address().port + '/api'
@@ -197,12 +311,14 @@ test('endpoints: contratos públicos, errores tipados y ausencia de sesiones', a
   try {
     const list = await fetch(base + '/users')
     assert.equal(list.status, 200)
-    assert.deepEqual(await list.json(), { users: [consumer, business, admin].map(record => parseUserRecord(record).user) })
+    assert.deepEqual(await list.json(), { users: publicUsers })
 
-    const resolved = await resolveUser(JSON.stringify({ userId: 'user-b2b-01', role: 'ADMIN' }))
-    assert.equal(resolved.status, 200)
-    assert.equal(resolved.headers.get('set-cookie'), null)
-    assert.deepEqual(await resolved.json(), { user: parseUserRecord(business).user })
+    for (const user of publicUsers) {
+      const resolved = await resolveUser(JSON.stringify({ userId: user.id, role: 'ADMIN', company: { id: 'spoof', name: 'Ignorar' } }))
+      assert.equal(resolved.status, 200)
+      assert.equal(resolved.headers.get('set-cookie'), null)
+      assert.deepEqual(await resolved.json(), { user })
+    }
 
     for (const [response, status, code] of [
       [await resolveUser(JSON.stringify({ userId: 'missing' })), 404, 'USER_NOT_FOUND'],
@@ -232,6 +348,20 @@ test('endpoints: contratos públicos, errores tipados y ausencia de sesiones', a
         assert.equal(JSON.parse(text).error.code, 'USER_SERVICE_UNAVAILABLE')
         assert.ok(!text.includes('SECRET'))
       }
+      await withEnv(algoliaEnv, async () => {
+        for (const [missingIndex, status, code] of [[false, 404, 'USER_NOT_FOUND'], [true, 503, 'USER_SERVICE_UNAVAILABLE']]) {
+          userService.directory = createAlgoliaUserDirectory(() => ({
+            getObject: async () => { throw Object.assign(new Error('opaque'), { status: 404 }) },
+            searchSingleIndex: async () => {
+              if (missingIndex) throw Object.assign(new Error('opaque'), { status: 404 })
+              return searchPage([])
+            },
+          }))
+          const response = await resolveUser(JSON.stringify({ userId: 'missing' }))
+          assert.equal(response.status, status)
+          assert.equal((await response.json()).error.code, code)
+        }
+      })
     } finally { console.error = log }
   } finally {
     userService.directory = original

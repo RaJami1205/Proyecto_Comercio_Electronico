@@ -169,7 +169,7 @@ La única escritura es `saveObjects`: agrega o reemplaza por `objectID`, por lo 
 
 ### Endpoints
 
-`GET /api/users` responde 200 con `{ "users": ResolvedUser[] }`, solo con usuarios habilitados y válidos. Los records inválidos se omiten y se registra únicamente su cantidad.
+`GET /api/users` responde 200 con `{ "users": ResolvedUser[] }`, solo con usuarios habilitados y válidos, ordenados por `id`. Recupera todas las páginas antes de filtrar. Si los límites de Algolia, un conteo no exhaustivo o páginas inconsistentes impiden verificar el listado completo, responde 503 en lugar de devolver información parcial. Los records inválidos se omiten y se registra únicamente su cantidad.
 
 `POST /api/session/resolve` recibe `{ "userId": "user-b2b-01" }` y responde 200 con el perfil:
 
@@ -196,7 +196,7 @@ Ignora cualquier otro campo del cuerpo, no devuelve `enabled` y no crea tokens, 
 | Otro dato inválido en el record | 422 | `INVALID_USER_DATA` |
 | Fallo de Algolia o configuración incompleta | 503 | `USER_SERVICE_UNAVAILABLE` |
 
-Los errores usan `ApiErrorResponse` sin detalles internos. Con un índice aún no creado, `GET /api/users` responde 503 y `POST /api/session/resolve` responde 404.
+Los errores usan `ApiErrorResponse` sin detalles internos. Ante un 404 al consultar un objeto, una búsqueda sin recuperar hits comprueba que el índice esté disponible: solo entonces se responde `404 USER_NOT_FOUND`. Si el índice está ausente o no está disponible, ambos endpoints responden `503 USER_SERVICE_UNAVAILABLE`. No se consulta la disponibilidad adicionalmente cuando el objeto existe o el error original es distinto de 404.
 
 Verificación sin requests a Algolia:
 

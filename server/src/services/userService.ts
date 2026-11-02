@@ -6,7 +6,7 @@ import { parseUserRecord, validateUserId } from '../domain/userValidation.js'
 import type { ResolvedUser, UserId } from '../types/user.js'
 
 const USER_ATTRIBUTES = ['displayName', 'role', 'enabled', 'company']
-const MAX_LISTED_USERS = 100
+const USERS_PAGE_SIZE = 100
 
 type UsersIndexClient = Pick<ReturnType<typeof getAlgoliaClient>, 'getObject' | 'searchSingleIndex'>
 
@@ -21,23 +21,65 @@ export function createAlgoliaUserDirectory(getClient: () => UsersIndexClient = g
   return {
     async list() {
       const { indexName } = getAlgoliaUsersConfig()
-      const response = await getClient().searchSingleIndex<Record<string, unknown>>({
-        indexName,
-        searchParams: {
-          query: '',
-          hitsPerPage: MAX_LISTED_USERS,
-          attributesToRetrieve: USER_ATTRIBUTES,
-          attributesToHighlight: [],
-        },
-      })
-      return response.hits
+      const client = getClient()
+      const records: unknown[] = []
+      const objectIds = new Set<string>()
+      let pageCount = 1
+      let hitCount = 0
+
+      for (let page = 0; page < pageCount; page += 1) {
+        const response = await client.searchSingleIndex<Record<string, unknown>>({
+          indexName,
+          searchParams: {
+            query: '', page, hitsPerPage: USERS_PAGE_SIZE,
+            attributesToRetrieve: USER_ATTRIBUTES,
+            attributesToHighlight: [],
+          },
+        })
+        const { nbHits, nbPages } = response
+        if (typeof nbHits !== 'number' || !Number.isSafeInteger(nbHits) || nbHits < 0 ||
+            typeof nbPages !== 'number' || !Number.isSafeInteger(nbPages) || nbPages < 0 ||
+            response.page !== page || response.hitsPerPage !== USERS_PAGE_SIZE || !Array.isArray(response.hits) ||
+            (response.exhaustive?.nbHits ?? response.exhaustiveNbHits) !== true) {
+          throw new Error('No se pudo verificar un listado completo de usuarios.')
+        }
+        // paginationLimitedTo puede impedir recuperar todos los hits aun cuando nbHits sea exacto.
+        if (nbPages !== Math.ceil(nbHits / USERS_PAGE_SIZE)) {
+          throw new Error('El listado de usuarios está limitado por la paginación de Algolia.')
+        }
+        if (page === 0) {
+          pageCount = nbPages
+          hitCount = nbHits
+        } else if (nbPages !== pageCount || nbHits !== hitCount) {
+          throw new Error('El listado de usuarios cambió durante la paginación.')
+        }
+        if (response.hits.length !== Math.min(USERS_PAGE_SIZE, Math.max(0, hitCount - page * USERS_PAGE_SIZE))) {
+          throw new Error('Algolia devolvió una página incompleta de usuarios.')
+        }
+        for (const record of response.hits) {
+          if (record !== null && typeof record === 'object' && typeof record.objectID === 'string') {
+            if (objectIds.has(record.objectID)) throw new Error('Algolia devolvió usuarios repetidos durante la paginación.')
+            objectIds.add(record.objectID)
+          }
+          records.push(record)
+        }
+      }
+      return records
     },
     async find(userId) {
       const { indexName } = getAlgoliaUsersConfig()
+      const client = getClient()
       try {
-        return await getClient().getObject({ indexName, objectID: userId, attributesToRetrieve: USER_ATTRIBUTES })
+        return await client.getObject({ indexName, objectID: userId, attributesToRetrieve: USER_ATTRIBUTES })
       } catch (error) {
-        if (error !== null && typeof error === 'object' && 'status' in error && error.status === 404) return undefined
+        if (error !== null && typeof error === 'object' && 'status' in error && error.status === 404) {
+          // indexExists usa getSettings en este SDK. La búsqueda vacía conserva los permisos de lectura actuales.
+          await client.searchSingleIndex({
+            indexName,
+            searchParams: { query: '', hitsPerPage: 0, attributesToRetrieve: [], attributesToHighlight: [] },
+          })
+          return undefined
+        }
         throw error
       }
     },
@@ -65,7 +107,7 @@ export class UserService {
     }
     if (invalidRecords > 0) console.warn(`Se omitieron ${invalidRecords} records inválidos del índice users.`)
 
-    return users
+    return users.sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)
   }
 
   /** Valida el userId y devuelve el perfil público solo si el usuario existe y está habilitado. */
