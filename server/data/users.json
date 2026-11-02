@@ -1,0 +1,30 @@
+[
+  {
+    "objectID": "user-b2c-01",
+    "displayName": "Cliente Demo",
+    "role": "B2C",
+    "enabled": true
+  },
+  {
+    "objectID": "user-b2b-01",
+    "displayName": "Compras Empresa Demo",
+    "role": "B2B",
+    "enabled": true,
+    "company": {
+      "id": "company-demo-01",
+      "name": "Distribuidora Demo"
+    }
+  },
+  {
+    "objectID": "user-admin-01",
+    "displayName": "Administración Demo",
+    "role": "ADMIN",
+    "enabled": true
+  },
+  {
+    "objectID": "user-b2c-disabled-01",
+    "displayName": "Cliente Demo Deshabilitado",
+    "role": "B2C",
+    "enabled": false
+  }
+]
