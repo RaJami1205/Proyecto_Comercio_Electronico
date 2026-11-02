@@ -80,8 +80,9 @@ function nodes(tree) {
 function checkout({ acceptTerms = true } = {}) {
   runtime.reset(structuredClone(cart))
   const events = []
+  const transactions = []
   const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => {}, onCartClick: () => {},
-    onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created') }
+    onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created'), onTransactionStateChange: state => transactions.push(state) }
   let tree
   /** Actualiza el árbol simulado de Checkout conservando sus slots de estado. */
   const render = () => { runtime.renderStart(); tree = CheckoutPage(props) }
@@ -93,7 +94,7 @@ function checkout({ acceptTerms = true } = {}) {
   find('DeliveryStep').onContinue(delivery)
   render()
   if (acceptTerms) { find('ReviewStep').onTermsAcceptedChange(true); render() }
-  return { render, find, review: () => find('ReviewStep'), step: () => find('CheckoutStepper').currentStep, events }
+  return { render, find, review: () => find('ReviewStep'), step: () => find('CheckoutStepper').currentStep, events, transactions }
 }
 
 /** Construye un resultado de pago coherente con el escenario; permite sustituir campos para probar respuestas inválidas. */
@@ -135,6 +136,7 @@ test('F1 dos llamadas inmediatas emiten un POST y mantienen navegación bloquead
   await handler()
   assert.equal(flow.requests.length, 2) // una creación, un pago
   assert.equal(flow.events.at(-1), true)
+  assert.equal(flow.transactions.at(-1), 'active')
   flow.render()
   assert.equal(flow.payment().isProcessingPayment, true)
   flow.payment().onScenarioChange('PAYMENT_APPROVED')
@@ -143,6 +145,7 @@ test('F1 dos llamadas inmediatas emiten un POST y mantienen navegación bloquead
   resolve(Response.json(result('PAYMENT_DECLINED')))
   await first
   assert.equal(flow.events.at(-1), false)
+  assert.equal(flow.transactions.at(-1), 'known')
   await handler() // callback anterior tampoco inicia otro intento completado
   assert.equal(flow.requests.length, 2)
 })
@@ -152,6 +155,7 @@ test('F2 fallo de red conserva Order, escenario y key incluso ante callback de s
   const snapshot = flow.payment().order
   flow.respond(() => { throw new TypeError('Fallo simulado') })
   await flow.payment().onProcessPayment(); flow.render()
+  assert.equal(flow.transactions.at(-1), 'uncertain')
   assert.equal(flow.payment().order, snapshot)
   assert.equal(flow.find('OrderConfirmationPage'), undefined)
   assert.equal(runtime.cleanupCount, 0)
@@ -160,6 +164,7 @@ test('F2 fallo de red conserva Order, escenario y key incluso ante callback de s
   assert.equal(flow.payment().selectedScenario, 'PAYMENT_DECLINED')
   flow.respond(request => Response.json(result(request.scenario)))
   await flow.payment().onProcessPayment(); flow.render()
+  assert.equal(flow.transactions.at(-1), 'known')
   assert.deepEqual(flow.requests[1], flow.requests[2])
   assert.equal(flow.requests.filter(r => r.url === '/api/orders').length, 1)
 })

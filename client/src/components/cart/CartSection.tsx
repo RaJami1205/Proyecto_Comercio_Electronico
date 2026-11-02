@@ -2,6 +2,7 @@
 import type { MouseEvent } from 'react'
 
 import { useCart } from '../../hooks/useCart'
+import { useSession } from '../../hooks/useSession'
 import { calculateCartTotals, calculateLineSubtotal } from '../../utils/cartCalculations'
 import styles from '../../styles/cart/CartSection.module.css'
 
@@ -18,6 +19,7 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
 
 /** Presenta líneas, controles y resumen, o el Empty State cuando no hay items. */
 function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionProps) {
+  const { purchaseBlockReason, openLogin, user } = useSession()
   const { items, incrementItem, decrementItem, removeItem, totalUnits } = useCart()
   const { subtotal, tax, shipping, total } = calculateCartTotals(items)
 
@@ -145,7 +147,10 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
                 <span>Total</span>
                 <strong>{priceFormatter.format(total)}</strong>
               </div>
-              <button className={styles.checkoutButton} type="button" onClick={onCheckoutRequested}>
+              {purchaseBlockReason ? <p role="status" id="cart-checkout-restriction">{purchaseBlockReason}</p> : null}
+              {!user ? <button type="button" onClick={openLogin}>Seleccionar identidad</button> : null}
+              <button className={styles.checkoutButton} type="button" disabled={Boolean(purchaseBlockReason)}
+                aria-describedby={purchaseBlockReason ? 'cart-checkout-restriction' : undefined} onClick={onCheckoutRequested}>
                 Finalizar compra
               </button>
               <a href="#catalog" onClick={handleContinueShopping}>

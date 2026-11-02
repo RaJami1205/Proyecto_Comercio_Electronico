@@ -13,6 +13,7 @@ import type { CheckoutData } from '../types/checkout'
 import type { CreateOrderRequest, Order } from '../types/order'
 import type { PaymentResult, PaymentScenario, ProcessPaymentRequest } from '../types/payment'
 import type { CartItem } from '../types/cart'
+import type { TransactionState } from '../context/SessionContext'
 import { useCart } from '../hooks/useCart'
 import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalculations'
 import { normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
@@ -29,6 +30,9 @@ interface CheckoutPageProps {
   onCartClick: () => void
   onNavigationLockChange: (busy: boolean) => void
   onOrderCreated: () => void
+  onTransactionStateChange: (state: TransactionState) => void
+  purchaseBlockedReason?: string | null
+  getPurchaseBlockReason?: () => string | null
 }
 /** Conserva payload, clave y productos revisados para repetir la misma intención tras una respuesta ambigua. */
 interface CreationAttempt { request: CreateOrderRequest; items: CartItem[] }
@@ -41,7 +45,7 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
 }
 
 /** Mantiene Buyer, Delivery, consentimiento e intentos en memoria local; al desmontarse se pierde este contexto. */
-function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated }: CheckoutPageProps) {
+function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated, onTransactionStateChange, purchaseBlockedReason, getPurchaseBlockReason }: CheckoutPageProps) {
   const { items, cleanupPurchase } = useCart()
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
@@ -130,6 +134,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
    */
   async function confirmOrder() {
     if (submittingRef.current || paymentSubmittingRef.current || confirmed || (!order && invalid)) return
+    const blockedReason = getPurchaseBlockReason?.() ?? purchaseBlockedReason
+    if (!order && !attemptRef.current && blockedReason) { setError(blockedReason); return }
     if (order) {
       setDifferences([])
       onNavigationLockChange(false)
@@ -147,8 +153,10 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     submittingRef.current = true
     setIsCreatingOrder(true)
     onNavigationLockChange(true)
+    onTransactionStateChange('active')
     setError(undefined)
     let requiresAcceptance = false
+    let receivedOrder = false
     try {
       const activeAttempt = attemptRef.current ?? {
         request: {
@@ -162,6 +170,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       attemptRef.current = activeAttempt
       setAttempt(activeAttempt)
       const created = await orderApi.createOrder(activeAttempt.request)
+      receivedOrder = true
       const alreadyConfirmed = created.orderStatus === 'CONFIRMED' && created.paymentStatus === 'APPROVED'
       purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, items: activeAttempt.items }
       const changes = alreadyConfirmed ? [] : orderReviewDifferences(activeAttempt.items, created)
@@ -211,6 +220,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       submittingRef.current = false
       setIsCreatingOrder(false)
       onNavigationLockChange(Boolean(attemptRef.current) || requiresAcceptance)
+      onTransactionStateChange(attemptRef.current ? 'uncertain' : receivedOrder || order ? 'known' : 'idle')
     }
   }
 
@@ -230,6 +240,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     setIsProcessingPayment(true)
     setPaymentError(undefined)
     onNavigationLockChange(true)
+    onTransactionStateChange('active')
 
     try {
       const activeAttempt = paymentAttemptRef.current ?? Object.freeze({
@@ -262,6 +273,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       paymentSubmittingRef.current = false
       setIsProcessingPayment(false)
       onNavigationLockChange(false)
+      onTransactionStateChange(paymentAttemptRef.current ? 'uncertain' : 'known')
     }
   }
 
@@ -280,9 +292,13 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
   /** Vuelve al carrito si no hay una operación en curso; no cancela la Order ni modifica sus productos. */
   function abandonCheckout() {
-    if (submittingRef.current || paymentSubmittingRef.current) return
+    if (submittingRef.current || paymentSubmittingRef.current || attemptRef.current || paymentAttemptRef.current) {
+      setError('Resuelve el intento pendiente antes de salir de Checkout. Reintentar conserva la misma solicitud.')
+      return
+    }
     // La salida es explícita: no cancela ni recrea la Order y no modifica Cart.
     onNavigationLockChange(false)
+    onTransactionStateChange('idle')
     onBackToCart()
   }
 
@@ -305,6 +321,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
           <p className={styles.eyebrow}>Tu compra, paso a paso</p>
           <h1 ref={pageHeadingRef} tabIndex={-1} data-app-heading>Finalizar compra</h1>
           <CheckoutStepper currentStep={currentStep} />
+          {purchaseBlockedReason ? <p role="status">{purchaseBlockedReason} Los intentos ya capturados conservan su Retry.</p> : null}
           <section className={styles.stage} aria-labelledby="checkout-stage-title" aria-busy={isCreatingOrder || isProcessingPayment}>
             <h2 id="checkout-stage-title" ref={stageHeadingRef} tabIndex={-1}>{stage.title}</h2>
             <p>{stage.description}</p>
@@ -351,7 +368,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                   termsAccepted={attempt?.request.termsAcceptance.accepted ?? termsAccepted}
                   termsError={termsError} termsVersionRejected={termsVersionRejected} termsInputRef={termsInputRef}
                   onTermsAcceptedChange={changeTermsAccepted} onOpenTerms={() => setIsTermsOpen(true)}
-                  onAbandon={confirmed || attempt || differences.length > 0 ? abandonCheckout : undefined}
+                  onAbandon={order && !hasPendingPayment ? abandonCheckout : undefined}
                   onEdit={!order ? changeStep : undefined} onConfirm={!confirmed && currentStep === 'review' ? confirmOrder : undefined} />
                 <div className={styles.actions}>
                   {currentStep === 'review' && !order ? <button type="button" className={styles.back} disabled={lockNavigation} onClick={() => changeStep('delivery')}>Volver a entrega</button> : null}

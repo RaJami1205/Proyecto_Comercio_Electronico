@@ -87,7 +87,7 @@ function checkout({ acceptTerms = true } = {}) {
   runtime.reset(structuredClone(cart))
   const events = []
   const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => events.push('catalog'), onCartClick: () => {},
-    onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created') }
+    onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created'), onTransactionStateChange: () => {} }
   let tree
   /** Actualiza el árbol simulado de Checkout conservando sus slots de estado. */
   const render = () => { runtime.renderStart(); tree = CheckoutPage(props) }
@@ -212,7 +212,7 @@ test('F4 salida advierte que la orden existe y conserva Cart', async () => {
     assert.deepEqual(runtime.cart, cart)
   })
 })
-test('F5 errores persistentes preservan key/payload/datos y ofrecen salida explícita', async () => {
+test('CN-53 errores inciertos preservan key/payload/datos y bloquean abandono', async () => {
   await withFetch(() => { throw new TypeError('simulated network failure') }, async requests => {
     const flow = checkout()
     await flow.review().onConfirm()
@@ -230,10 +230,9 @@ test('F5 errores persistentes preservan key/payload/datos y ofrecen salida expl�
     assert.deepEqual(requests[1], first)
     const message = text(ReviewStep(flow.review()))
     assert.match(message, /La orden podría haberse creado/)
-    assert.match(message, /podría crear una orden duplicada/)
-    assert.match(message, /conservas los productos del carrito/)
-    flow.review().onAbandon()
-    assert.deepEqual(flow.events.slice(-2), [false, 'exit'])
+    assert.match(message, /No puedes salir ni cambiar de identidad/)
+    assert.equal(flow.review().onAbandon, undefined)
+    assert.equal(flow.events.includes('exit'), false)
     assert.equal(requests.length, 2)
     assert.deepEqual(runtime.cart, cart)
   })

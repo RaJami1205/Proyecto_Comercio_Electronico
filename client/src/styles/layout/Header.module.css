@@ -12,11 +12,26 @@
 .inner {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: clamp(1.5rem, 4vw, 4rem);
+  gap: clamp(0.65rem, 2vw, 2rem);
   align-items: center;
   width: min(calc(100% - 2.5rem), var(--content-max-width));
   min-height: 76px;
   margin: 0 auto;
+}
+
+.actions { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.session { display: grid; gap: .25rem; max-width: 18rem; min-width: 0; padding: .5rem 0; font-size: .8rem; }
+.identity { overflow-wrap: anywhere; }
+.identity small, .session > small { display: block; color: #c8d2e9; font-size: .72rem; }
+.sessionButtons { display: flex; flex-wrap: wrap; gap: .35rem; }
+.sessionButtons button { min-height: 44px; padding: .4rem .6rem; color: #e5edff; background: #172b50; border: 1px solid #5876b0; border-radius: 8px; font: inherit; cursor: pointer; }
+.sessionButtons button:disabled { opacity: .65; cursor: default; }
+.sessionButtons button:focus-visible { outline: 3px solid #73eff4; outline-offset: 3px; }
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .navigation { grid-column: 1 / -1; grid-row: 2; }
+  .inner { grid-template-columns: auto 1fr; padding-block: .5rem; }
+  .actions { justify-content: flex-end; }
 }
 
 .brand {
@@ -174,6 +189,9 @@
 }
 
 @media (max-width: 420px) {
+  .brand { font-size: 1.2rem; }
+  .actions { gap: .4rem; }
+  .session { max-width: 10rem; font-size: .72rem; }
   .inner {
     width: min(calc(100% - 1.25rem), var(--content-max-width));
   }

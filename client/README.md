@@ -113,3 +113,27 @@ La fuente src/content/returnsPolicy.ts centraliza el plazo voluntaryReturnWindow
 El procedimiento es informativo: no hay canal operativo, formularios, reembolsos ni seguimiento logístico. La Order y el Sandbox siguen siendo demostrativos; esta página no modifica contratos ni estados transaccionales. Envíos, Privacidad y FAQ siguen como destinos en preparación; los términos publicados mantienen el mismo alcance académico.
 
 Verificación: npm run lint, npm run build y node --test tests/*.test.mjs. Las pruebas verifican contenido, secciones, plazo, PolicyLayout, Footer, navegación, asociaciones accesibles y ausencia de formularios.
+## Sesión simulada (CN-53)
+
+`CartProvider → SessionProvider → App` mantiene la identidad validada únicamente en memoria.
+`sessionApi` consume `GET /api/users` y `POST /api/session/resolve`; valida respuestas y no envía roles,
+Company ni headers de autorización como autoridad. No hay passwords, tokens, cookies o restauración automática.
+
+El catálogo sigue público y a precios Retail. Checkout se habilita temporalmente solo para B2C resuelto;
+B2B y ADMIN pueden seleccionarse, pero no comprar. Estas guardas Client no sustituyen RBAC Server.
+
+Login, cambio y Logout exigen descarte explícito si el Cart contiene productos. Un cambio durante
+la resolución o el consentimiento exige revisar nuevamente; cancelar o recibir un error conserva la sesión y el Cart.
+La sesión cambia en un único punto de commit, reservado para `SESSION_STARTED` de CN-72, sin tracking provisional.
+Recent Searches y Search se reinician en memoria sin desmontar el catálogo completo.
+
+La clave `cibernova:cart:v1` sigue compartida: los eventos externos se marcan como conflicto y no hidratan
+productos automáticamente. Checkout queda bloqueado hasta un descarte confirmado. Esto no ofrece ownership,
+aislamiento del almacenamiento entre pestañas ni migración por usuario; corresponden a CN-60.
+
+Las operaciones activas o inciertas impiden navegación y cambios de identidad. Retry conserva Order,
+payload y claves. Los resultados controlados DECLINED/ERROR permiten Retry y salida segura.
+El aviso del navegador ante reload es preventivo: una recarga forzada pierde Session y referencias
+transaccionales en memoria, sin recuperación durable. Cart restaurado vuelve a tener propietario no verificado.
+
+Validación: `npm run lint`, `npm run build`, `node --test tests/*.test.mjs` desde `client/`.

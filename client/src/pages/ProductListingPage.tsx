@@ -12,6 +12,7 @@ import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
 import type { Product } from '../types/product'
 import { useCatalogPagination } from '../hooks/useCatalogPagination'
+import { useSession } from '../hooks/useSession'
 import { useProductCatalog } from '../hooks/useProductCatalog'
 import type { CatalogFilters as CatalogFiltersState } from '../services/productApi'
 import styles from '../styles/pages/ProductListingPage.module.css'
@@ -43,6 +44,7 @@ const EMPTY_FILTERS: CatalogFiltersState = {
 
 /** Posee filtros, query, selección de Quick View y feedback temporal de presentación. */
 function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, onProductAdded, onPolicyNavigate }: ProductListingPageProps) {
+  const { epoch } = useSession()
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
   const [catalogQuery, setCatalogQuery] = useState('')
@@ -51,6 +53,13 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
   
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [searchEpoch, setSearchEpoch] = useState(epoch)
+  if (searchEpoch !== epoch) {
+    setSearchEpoch(epoch)
+    setCatalogQuery('')
+    setSelectedProduct(null)
+    setCurrentPage(1)
+  }
 
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
@@ -93,6 +102,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
       <Header onCartClick={openCartPreview} />
 
       <main>
+        <p className="retail-notice">Catálogo público a precios Retail. Checkout disponible temporalmente solo para identidades B2C.</p>
         <CatalogHero />
 
         <section className={styles.catalog} id="catalog" aria-labelledby="catalog-title">
@@ -110,6 +120,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
 
             {/* Pasamos el estado del panel activo y la función para cambiarlo */}
             <CatalogToolbar
+              key={epoch}
               productCount={nbHits}
               activePanel={activePanel}
               onTogglePanel={setActivePanel}
