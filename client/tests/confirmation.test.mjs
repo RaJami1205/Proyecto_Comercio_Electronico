@@ -27,12 +27,15 @@ const runtimeUrl = dataUrl(`
   }
   export function flushEffects() { const pending=effects; effects=[]; pending.forEach(effect=>effect()); return pending; }
   export function useCart() { return {items:cart}; }
+  export function useSession() { return {user:{id:'c',displayName:'Cliente',role:'B2C'},epoch:0,dialog:null,purchaseBlockReason:null, getPurchaseBlockReason:()=>null,isTransactionBlocked:()=>false,setCheckoutMounted:()=>{},setTransactionState:()=>{}}; }
   export const Fragment='Fragment';
   export function jsx(type,props) { return {type,props}; }
   export const jsxs=jsx;
 `)
 const runtime = await import(runtimeUrl)
 const modules = new Map([['react',runtimeUrl],['react/jsx-runtime',runtimeUrl],['./hooks/useCart',runtimeUrl]])
+modules.set('./hooks/useSession', runtimeUrl)
+modules.set('./components/session/LoginDialog', dataUrl("export default 'LoginDialog'"))
 for (const name of ['Header','Footer']) modules.set('../components/layout/'+name,dataUrl(`export default '${name}'`))
 for (const name of ['ProductListingPage','CartPage','CheckoutPage','PolicyPlaceholderPage','TermsPage','ReturnsPolicyPage','FaqPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
 for (const name of ['ShippingPolicyPage','PrivacyPolicyPage']) modules.set('./pages/'+name,dataUrl(`export const ${name} = '${name}'`))

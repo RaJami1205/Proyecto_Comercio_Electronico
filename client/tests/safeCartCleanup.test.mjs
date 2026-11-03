@@ -88,7 +88,7 @@ function checkout({ acceptTerms = true } = {}) {
   runtime.reset(structuredClone(cart))
   const events = []
   const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => {}, onCartClick: () => {},
-    onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created') }
+    onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created'), onTransactionStateChange: () => {} }
   let tree
   /** Actualiza el árbol simulado de Checkout conservando sus slots de estado. */
   const render = () => { runtime.renderStart(); tree = CheckoutPage(props) }
@@ -287,7 +287,7 @@ modules.set('./cartReducer', reducerUrl)
 modules.set('../utils/cartStorage', storageUrl)
 const { default: CartProvider } = await import(compile('context/CartProvider.tsx'))
 
-test('Provider migrates legacy Cart, publishes quantities, persists and accepts storage changes', t => {
+test('CN-53 Provider preserves lineage, quarantines storage changes and clears conflicts only explicitly', t => {
   const previous = globalThis.window
   let raw = JSON.stringify({items:[{...cart[0], lineage:undefined}]})
   let storageListener
@@ -309,10 +309,12 @@ test('Provider migrates legacy Cart, publishes quantities, persists and accepts 
   const remote = JSON.parse(raw)
   remote.items.push({...item(1, 'remote'), productId:'b'})
   storageListener({key:'cibernova:cart:v1', newValue:JSON.stringify(remote)})
+  assert.equal(value.getSnapshot().hasExternalConflict, true)
   value.cleanupPurchase({baseline, purchased:[{productId:'p', quantity:1}]})
   value = render(); runtime.runEffects()
-  assert.equal(value.totalUnits, 2)
-  assert.deepEqual(value.items.map(i => [i.productId,i.quantity]), [['p',1],['b',1]])
+  assert.equal(value.totalUnits, 1)
+  assert.equal(value.hasExternalConflict, true)
+  assert.deepEqual(value.items.map(i => [i.productId,i.quantity]), [['p',1]])
   assert.deepEqual(JSON.parse(raw).items, value.items)
   value.removeItem('p')
   value.addItem(cart[0]) // Caller cannot reuse the original identity.
@@ -320,5 +322,16 @@ test('Provider migrates legacy Cart, publishes quantities, persists and accepts 
   assert.notEqual(value.items.find(i => i.productId === 'p').lineage.id, baseline[0].lineage.id)
   value.cleanupPurchase({baseline, purchased:[{productId:'p', quantity:1}]})
   value = render(); runtime.runEffects()
-  assert.equal(value.totalUnits, 2)
+  assert.equal(value.totalUnits, 1)
+  const beforeClear = value.getSnapshot().revision
+  storageListener({key:'unrelated', newValue:null})
+  assert.equal(value.getSnapshot().revision, beforeClear)
+  storageListener({key:null, newValue:null})
+  assert.ok(value.getSnapshot().revision > beforeClear)
+  assert.equal(value.items[0].quantity, 1)
+  value.clearCart()
+  value = render(); runtime.runEffects()
+  assert.equal(value.totalUnits, 0)
+  assert.equal(value.hasExternalConflict, false)
+  assert.deepEqual(JSON.parse(raw), {items:[]})
 })

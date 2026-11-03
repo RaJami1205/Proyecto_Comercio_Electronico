@@ -9,6 +9,7 @@ interface CartPreviewDrawerProps {
   onViewCart: () => void
   onContinueShopping: () => void
   onCheckoutRequested?: () => void
+  checkoutNotice?: string
   shouldRestoreFocus?: () => boolean
 }
 
@@ -20,7 +21,7 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
 
 /** Presenta el resumen del Cart en un diálogo modal y delega cierre y navegación a los callbacks recibidos. */
 function CartPreviewDrawer({
-  onClose, onViewCart, onContinueShopping, onCheckoutRequested, shouldRestoreFocus,
+  onClose, onViewCart, onContinueShopping, onCheckoutRequested, shouldRestoreFocus, checkoutNotice,
 }: CartPreviewDrawerProps) {
   const { items } = useCart()
   const { subtotal } = calculateCartTotals(items)
@@ -131,7 +132,7 @@ function CartPreviewDrawer({
             onClick={onCheckoutRequested}
           >Finalizar compra</button>
           {!onCheckoutRequested ? (
-            <p id="cart-preview-checkout-note" className={styles.note}>Disponible próximamente con el flujo de Checkout.</p>
+            <p id="cart-preview-checkout-note" className={styles.note}>{checkoutNotice ?? 'Disponible próximamente con el flujo de Checkout.'}</p>
           ) : null}
         </footer>
       </section>

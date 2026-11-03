@@ -74,7 +74,7 @@ function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retry
         {order ? <div className={styles.orderInfo}><p>Orden: <strong>{order.orderNumber}</strong></p><p>Estado de la orden: {order.orderStatus === 'PENDING' ? 'Pendiente' : order.orderStatus}</p><p>Estado del pago: {order.paymentStatus === 'PENDING' ? 'Pendiente' : order.paymentStatus}</p></div> : null}
         {invalid ? <p role="alert" className={styles.error}>Completa los datos del comprador y la entrega y verifica que tu carrito tenga productos con cantidades válidas.</p> : null}
         {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-        {retryPending && !busy ? <p role="status">No se ha podido confirmar el resultado. La orden podría haberse creado. Reintentar envía la misma solicitud con la misma identidad para evitar duplicarla, conservando tus datos y productos.</p> : null}
+        {retryPending && !busy ? <p role="status">No se ha podido confirmar el resultado. La orden podría haberse creado. Reintentar envía la misma solicitud con la misma identidad para evitar duplicarla, conservando tus datos y productos. No puedes salir ni cambiar de identidad hasta resolver el intento.</p> : null}
         {!order ? <div className={styles.terms}>
           <label className={styles.termsLabel} htmlFor="checkout-terms">
             <input id="checkout-terms" ref={termsInputRef} type="checkbox" checked={termsAccepted}
