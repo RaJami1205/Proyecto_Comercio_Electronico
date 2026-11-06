@@ -100,7 +100,6 @@ function Footer({ onCatalogClick, onPolicyNavigate }: FooterProps) {
           <div className={styles.legal} aria-label="Información legal">
             {policyLink(policyDestinations[3], 'Privacidad')}
             {policyLink(policyDestinations[0], 'Términos')}
-            <span>Accesibilidad</span>
           </div>
         </div>
       </div>
