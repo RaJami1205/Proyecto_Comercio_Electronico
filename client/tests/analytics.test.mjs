@@ -16,7 +16,7 @@ globalThis.window = {
   dispatchEvent: () => true,
 }
 
-test('separa eventos anónimos y de cada identidad, y restaura snapshots desde localStorage', () => {
+test('separa scopes por usuario y persiste el snapshot en localStorage', () => {
   analytics.trackEvent({ type: 'SESSION_STARTED', occurredAt: '2026-11-06T12:00:00.000Z', metadata: { role: 'B2C' } }, 'user-a')
   analytics.trackEvent({ type: 'SEARCH_PERFORMED', occurredAt: '2026-11-06T12:01:00.000Z', metadata: { source: 'catalog' } })
   assert.equal(analytics.getAnalyticsCounters('user-a').sessions, 1)
@@ -24,6 +24,8 @@ test('separa eventos anónimos y de cada identidad, y restaura snapshots desde l
   assert.equal(analytics.getAnalyticsCounters('user-b').sessions, 0)
   assert.equal(analytics.getAnalyticsCounters().searches, 1)
   assert.ok([...stored.keys()].some(key => key.endsWith('user:user-a')))
+  analytics.refreshAnalyticsState('user-a')
+  assert.equal(analytics.getAnalyticsCounters('user-a').sessions, 1)
 })
 
 test('registra productos vistos una vez y ordenados por la visita más reciente', () => {
@@ -32,6 +34,10 @@ test('registra productos vistos una vez y ordenados por la visita más reciente'
   }
   assert.deepEqual(analytics.getRecentlyViewedProductIds('history-user'), ['p3', 'p1', 'p2'])
   assert.equal(analytics.getAnalyticsCounters('history-user').productViews, 4)
+  for (let index = 0; index < 12; index++) {
+    analytics.trackEvent({ type: 'PRODUCT_VIEWED', occurredAt: new Date().toISOString(), metadata: { productId: `p${index}` } }, 'limited-user')
+  }
+  assert.equal(analytics.getRecentlyViewedProductIds('limited-user').length, analytics.RECENTLY_VIEWED_LIMIT)
 })
 
 test('la compra requiere Order ID y solo incrementa una vez por ID', () => {

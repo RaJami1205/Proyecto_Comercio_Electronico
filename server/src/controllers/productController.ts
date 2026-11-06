@@ -6,10 +6,11 @@ import {
   mapProductRecord,
   mapSearchProductRecord,
 } from '../mappers/productMapper.js'
-import { getCatalogPage, searchProducts } from '../services/productService.js'
+import { getCatalogPage, getProductById, searchProducts } from '../services/productService.js'
 
 const DEFAULT_PRODUCTS_PER_PAGE = 20
 const MAX_PRODUCTS_PER_PAGE = 100
+const MAX_HISTORY_PRODUCT_IDS = 10
 
 /** Normaliza paginación con fallback y límite superior para entradas inválidas. */
 function parsePositiveInteger(
@@ -57,6 +58,19 @@ export async function getProducts(
   next: NextFunction,
 ): Promise<void> {
   try {
+    const requestedIds = parseArrayParam(request.query.ids)?.map((id) => id.trim()).filter(Boolean)
+    if (requestedIds) {
+      if (requestedIds.length > MAX_HISTORY_PRODUCT_IDS) {
+        response.status(400).json({ error: `Se permiten como máximo ${MAX_HISTORY_PRODUCT_IDS} productos por consulta.` })
+        return
+      }
+      const ids = [...new Set(requestedIds)]
+      const records = await Promise.all(ids.map((id) => getProductById(id)))
+      const products = records.filter((record): record is NonNullable<typeof record> => record !== undefined)
+      response.json({ products: products.map(mapProductRecord), page: 1, totalPages: 1, totalProducts: products.length, facets: {} })
+      return
+    }
+
     const requestedPage = parsePositiveInteger(request.query.page, 1)
     const productsPerPage = parsePositiveInteger(
       request.query.perPage,

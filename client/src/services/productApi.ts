@@ -104,3 +104,12 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
   const response = await request<{ tree: CategoryTreeNode[] }>('/api/products/categories/tree')
   return response.tree
 }
+
+/** Resuelve IDs de historial mediante el GET existente del catálogo y devuelve DTOs actuales. */
+export async function getProductsByIds(productIds: string[]): Promise<Product[]> {
+  const params = new URLSearchParams()
+  productIds.slice(0, 10).forEach((id) => params.append('ids', id))
+  if (productIds.length === 0) return []
+  const response = await request<{ products: Product[] }>(`/api/products?${params.toString()}`)
+  return response.products
+}
