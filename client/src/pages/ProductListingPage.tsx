@@ -8,6 +8,7 @@ import CatalogToolbar, { type ActivePanel } from '../components/catalog/CatalogT
 import Pagination from '../components/catalog/Pagination'
 import ProductGrid from '../components/catalog/ProductGrid'
 import ProductQuickView from '../components/catalog/ProductQuickView'
+import RecentlyViewedProducts from '../components/catalog/RecentlyViewedProducts'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
 import type { Product } from '../types/product'
@@ -143,6 +144,8 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
               onChange={handleFiltersChange}
               activePanel={activePanel}
             />
+
+            <RecentlyViewedProducts userId={user?.id} onProductSelect={openProduct} />
 
             <div className={styles.results} ref={resultsStartRef}>
               {error ? (

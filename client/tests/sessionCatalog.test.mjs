@@ -25,7 +25,7 @@ const modules = new Map([['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl
   ['../hooks/useCatalogPagination', runtimeUrl], ['../hooks/useProductCatalog', runtimeUrl],
   ['../services/analytics', analyticsUrl],
   ['../utils/scrollToAnchor', dataUrl('export function scrollToElement() {}')]])
-for (const name of ['CartFeedbackToast', 'CatalogFilters', 'CatalogHero', 'CatalogToolbar', 'Pagination', 'ProductGrid', 'ProductQuickView']) {
+for (const name of ['CartFeedbackToast', 'CatalogFilters', 'CatalogHero', 'CatalogToolbar', 'Pagination', 'ProductGrid', 'ProductQuickView', 'RecentlyViewedProducts']) {
   modules.set('../components/catalog/' + name, dataUrl(`export default '${name}'`))
 }
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default '${name}'`))

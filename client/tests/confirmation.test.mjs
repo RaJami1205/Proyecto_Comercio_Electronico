@@ -34,6 +34,7 @@ const runtimeUrl = dataUrl(`
 `)
 const runtime = await import(runtimeUrl)
 const modules = new Map([['react',runtimeUrl],['react/jsx-runtime',runtimeUrl],['./hooks/useCart',runtimeUrl]])
+modules.set('./services/analytics', dataUrl('export function trackEvent() {}'))
 modules.set('./hooks/useSession', runtimeUrl)
 modules.set('./components/session/LoginDialog', dataUrl("export default 'LoginDialog'"))
 for (const name of ['Header','Footer']) modules.set('../components/layout/'+name,dataUrl(`export default '${name}'`))
