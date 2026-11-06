@@ -1,5 +1,5 @@
 /** Presenta productos vistos desde IDs por identidad y datos actuales del ProductService. */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Product } from '../../types/product'
 import { getProductsByIds } from '../../services/productApi'
 import { analyticsStorage, getRecentlyViewedProductIds, refreshAnalyticsState } from '../../services/analytics'
@@ -12,49 +12,90 @@ interface RecentlyViewedProductsProps {
 
 const priceFormatter = new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC', maximumFractionDigits: 0 })
 
+interface HistorySnapshot {
+  owner?: string
+  ids: string[]
+  products: Product[]
+  status: 'loading' | 'empty' | 'error' | 'success'
+}
+
 /** Carga solo las tarjetas actuales de los IDs guardados y descarta respuestas obsoletas. */
 function RecentlyViewedProducts({ userId, onProductSelect }: RecentlyViewedProductsProps) {
-  const [snapshot, setSnapshot] = useState<{ owner?: string; products: Product[] }>({ owner: userId, products: [] })
+  const [snapshot, setSnapshot] = useState<HistorySnapshot>({ owner: userId, ids: [], products: [], status: 'empty' })
+  const requestRefresh = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     let cancelled = false
     let requestVersion = 0
-    const refresh = () => {
-      const version = ++requestVersion
+    let requestedIds: string[] | undefined
+    let inFlight = false
+    const refresh = (force = false) => {
+      if (cancelled) return
       const ids = getRecentlyViewedProductIds(userId)
-      if (ids.length === 0) { setSnapshot({ owner: userId, products: [] }); return }
+      const unchanged = requestedIds !== undefined && ids.length === requestedIds.length && ids.every((id, index) => id === requestedIds?.[index])
+      if ((!force && unchanged) || (force && unchanged && inFlight)) return
+      requestedIds = ids
+      const version = ++requestVersion
+      if (ids.length === 0) {
+        inFlight = false
+        setSnapshot({ owner: userId, ids, products: [], status: 'empty' })
+        return
+      }
+      inFlight = true
+      // Solo se conservan productos válidos del mismo owner que aún pertenecen al historial.
+      setSnapshot(current => ({ owner: userId, ids, status: 'loading', products: current.owner === userId
+        ? ids.flatMap(id => current.products.filter(product => product.id === id)) : [] }))
       void getProductsByIds(ids).then((currentProducts) => {
-        if (!cancelled && version === requestVersion) setSnapshot({ owner: userId, products: currentProducts })
+        if (!cancelled && version === requestVersion) {
+          inFlight = false
+          setSnapshot({ owner: userId, ids, products: currentProducts, status: currentProducts.length ? 'success' : 'empty' })
+        }
       }).catch(() => {
-        if (!cancelled && version === requestVersion) setSnapshot({ owner: userId, products: [] })
+        if (!cancelled && version === requestVersion) {
+          inFlight = false
+          setSnapshot(current => ({ ...current, status: 'error' }))
+        }
       })
     }
+    requestRefresh.current = () => refresh(true)
     refresh()
+    const scopeKey = analyticsStorage.keyPrefix + (userId === undefined ? 'anonymous' : `user:${encodeURIComponent(userId)}`)
     const handleStorage = (event: StorageEvent) => {
-      if (event.key === null || event.key?.startsWith(analyticsStorage.keyPrefix)) {
+      if (event.key === null || event.key === scopeKey) {
         refreshAnalyticsState(userId)
         refresh()
       }
     }
-    window.addEventListener(analyticsStorage.changedEvent, refresh)
+    const handleAnalytics = () => refresh()
+    window.addEventListener(analyticsStorage.changedEvent, handleAnalytics)
     window.addEventListener('storage', handleStorage)
     return () => {
       cancelled = true
-      window.removeEventListener(analyticsStorage.changedEvent, refresh)
+      requestRefresh.current = null
+      window.removeEventListener(analyticsStorage.changedEvent, handleAnalytics)
       window.removeEventListener('storage', handleStorage)
     }
   }, [userId])
 
-  const products = snapshot.owner === userId ? snapshot.products : []
-  if (products.length === 0) return null
+  if (snapshot.owner !== userId || snapshot.ids.length === 0) return null
+  const { products, status } = snapshot
   return (
-    <section className={styles.section} aria-labelledby="recently-viewed-title">
+    <section className={styles.section} aria-labelledby="recently-viewed-title" aria-busy={status === 'loading'}>
       <div className={styles.heading}>
         <div>
           <p className={styles.eyebrow}>Tu historial</p>
           <h2 id="recently-viewed-title">Vistos recientemente</h2>
         </div>
+        <button type="button" className={styles.refresh} disabled={status === 'loading'} onClick={() => requestRefresh.current?.()}>
+          {status === 'error' ? 'Reintentar' : 'Actualizar'}
+        </button>
       </div>
+      {status === 'loading' ? <p className={styles.status} role="status">Actualizando tu historial…</p> : null}
+      {status === 'error' ? <p className={styles.error} role="alert">
+        No pudimos actualizar tus productos vistos. Intenta de nuevo.
+        {products.length ? ' Mostramos los datos de la última consulta.' : ''}
+      </p> : null}
+      {status === 'empty' ? <p className={styles.status} role="status">Los productos de tu historial ya no están disponibles.</p> : null}
       <div className={styles.grid}>
         {products.map((product) => (
           <button key={product.id} className={styles.card} type="button" onClick={() => onProductSelect(product)}>

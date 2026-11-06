@@ -58,13 +58,19 @@ export async function getProducts(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const requestedIds = parseArrayParam(request.query.ids)?.map((id) => id.trim()).filter(Boolean)
-    if (requestedIds) {
+    if (Object.hasOwn(request.query, 'ids')) {
+      const rawIds: unknown = request.query.ids
+      const requestedIds: unknown[] = typeof rawIds === 'string' ? [rawIds] : Array.isArray(rawIds) ? rawIds : []
       if (requestedIds.length > MAX_HISTORY_PRODUCT_IDS) {
         response.status(400).json({ error: `Se permiten como máximo ${MAX_HISTORY_PRODUCT_IDS} productos por consulta.` })
         return
       }
-      const ids = [...new Set(requestedIds)]
+      if (requestedIds.length === 0 || !requestedIds.every((id: unknown): id is string =>
+        typeof id === 'string' && id.trim().length > 0 && !/^[\s,;|]+$/.test(id))) {
+        response.status(400).json({ error: 'El parámetro ids debe contener identificadores de producto válidos y no vacíos.' })
+        return
+      }
+      const ids = [...new Set(requestedIds.map(id => id.trim()))]
       const records = await Promise.all(ids.map((id) => getProductById(id)))
       const products = records.filter((record): record is NonNullable<typeof record> => record !== undefined)
       response.json({ products: products.map(mapProductRecord), page: 1, totalPages: 1, totalProducts: products.length, facets: {} })

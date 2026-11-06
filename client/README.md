@@ -171,3 +171,28 @@ en memoria y evita escrituras sin coordinación. El buffer se reintenta ante act
 la capacidad vuelve a estar disponible. La actividad aún no persistida puede perderse al cerrar/recargar;
 las referencias de compras y el buffer pueden crecer con el uso. Es historia local del navegador, no
 reportería global ni fuente de verdad de Orders. Borrar browser storage pierde las métricas locales.
+
+## User History & Personalization (CN-73)
+
+El catálogo ofrece dos experiencias basadas en actividad real: Vistos recientemente, alimentado por
+`PRODUCT_VIEWED`, y Recent Searches, alimentado por búsquedas confirmadas y conservado solo en memoria.
+Una transición cancelada conserva Recent Searches; un cambio efectivo de identidad, Logout o reload lo reinicia.
+
+Vistos recientemente usa los diez IDs ordenados del scope Analytics actual y resuelve sus datos vigentes
+mediante `GET /api/products?ids=...` (parámetros repetidos, máximo diez). IDs ausentes conservan Listing;
+IDs presentes pero vacíos/inválidos responden 400. El Server conserva orden y dedup y omite productos inexistentes.
+El Client valida la respuesta desde `unknown`, proyecta `Product`/`ProductSpecification`, rechaza IDs ajenos
+y conserva el orden solicitado. `Product.category` refleja la etiqueta string del mapper Server, incluyendo
+categorías como Almacenamiento y Componentes, sin traducir ni modificar sus valores comerciales.
+
+Sin historial, la sección no ocupa espacio. Con IDs, distingue Loading, Empty por productos eliminados,
+Error y Success. Reintentar/Actualizar permiten recuperar datos vigentes; durante carga o error solo se
+conservan productos ya válidos del mismo owner y todavía incluidos en el historial, con un aviso explícito.
+Los precios/stock resueltos viven únicamente en React y nunca sustituyen la autoridad de Checkout/Server.
+
+Cada montaje/cambio de owner resuelve el historial; las notificaciones comparan los IDs ordenados y
+solo vuelven a consultar si cambian. Storage de otros scopes se ignora. Actualizar fuerza una consulta
+comercial nueva, sin caché persistente. Las respuestas antiguas se descartan al cambiar owner o solicitud.
+
+Las pruebas usan componentes/servicios reales con storage, fetch y catálogo aislados; los tests HTTP del
+controller usan Express y el mapper real en loopback. No prueban Algolia ni despliegues remotos.
