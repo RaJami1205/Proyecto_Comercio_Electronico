@@ -1,5 +1,5 @@
 /** Centraliza el acceso HTTP del cliente al catálogo; Algolia y sus credentials permanecen en el server. */
-import type { Product } from '../types/product'
+import type { Product, ProductSpecification } from '../types/product'
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || ''
 const API_BASE_URL = configuredApiBaseUrl.replace(/\/+$/, '')
@@ -103,4 +103,47 @@ export interface CategoryTreeNode {
 export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
   const response = await request<{ tree: CategoryTreeNode[] }>('/api/products/categories/tree')
   return response.tree
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseHistorySpecification(value: unknown): ProductSpecification {
+  if (!isRecord(value) || typeof value.label !== 'string' || typeof value.value !== 'string') {
+    throw new Error('La API devolvió especificaciones de producto inválidas.')
+  }
+  return { label: value.label, value: value.value }
+}
+
+/** Valida/proyecta el DTO actual sin alterar precios, categorías ni especificaciones. */
+function parseHistoryProduct(value: unknown): Product {
+  if (!isRecord(value) || typeof value.id !== 'string' || !value.id.trim()
+    || typeof value.name !== 'string' || !value.name.trim() || typeof value.image !== 'string'
+    || typeof value.price !== 'number' || !Number.isFinite(value.price) || value.price < 0
+    || typeof value.inStock !== 'boolean' || typeof value.category !== 'string' || !value.category.trim()
+    || typeof value.description !== 'string' || !Array.isArray(value.specifications)) {
+    throw new Error('La API devolvió un producto inválido.')
+  }
+  return { id: value.id, name: value.name, image: value.image, price: value.price, inStock: value.inStock,
+    category: value.category, description: value.description,
+    specifications: value.specifications.map((specification: unknown) => parseHistorySpecification(specification)) }
+}
+
+/** Resuelve hasta diez IDs únicos y conserva recencia, omitiendo únicamente productos inexistentes. */
+export async function getProductsByIds(productIds: string[]): Promise<Product[]> {
+  const ids = [...new Set(productIds.slice(0, 10))]
+  if (ids.length === 0) return []
+  if (ids.some(id => typeof id !== 'string' || !id.trim() || id.trim() !== id)) throw new Error('Los IDs de historial no son válidos.')
+  const params = new URLSearchParams()
+  ids.forEach(id => params.append('ids', id))
+  const response = await request<unknown>(`/api/products?${params.toString()}`)
+  if (!isRecord(response) || !Array.isArray(response.products)) throw new Error('La API devolvió un historial de productos inválido.')
+  const products = new Map<string, Product>()
+  for (const value of response.products) {
+    const product = parseHistoryProduct(value)
+    if (!ids.includes(product.id) || products.has(product.id)) throw new Error('La API devolvió IDs de producto inesperados.')
+    products.set(product.id, product)
+  }
+  return ids.flatMap(id => { const product = products.get(id); return product ? [product] : [] })
 }

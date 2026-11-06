@@ -15,6 +15,7 @@ import { hashForView, policyDestinations, viewFromHash, type AppView, type Catal
 import { ShippingPolicyPage } from './pages/ShippingPolicyPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import FaqPage from './pages/FaqPage'
+import { trackEvent } from './services/analytics'
 
 interface NavigationState {
   view: AppView
@@ -61,6 +62,14 @@ function App() {
     if (navigation.checkoutNotice) setNavigation({ ...navigation, checkoutNotice: undefined })
   }
   const policyDestination = policyDestinations.find(destination => destination.view === view)
+  const previousView = useRef<AppView | null>(null)
+
+  useEffect(() => {
+    if (view === 'checkout' && previousView.current !== 'checkout') {
+      trackEvent({ type: 'CHECKOUT_STARTED', occurredAt: new Date().toISOString(), metadata: {} }, session.user?.id)
+    }
+    previousView.current = view
+  }, [view, session.user?.id])
 
   useEffect(() => {
     /** Sincroniza la vista con el historial o conserva Checkout cuando la navegación está bloqueada. */
@@ -118,6 +127,7 @@ function App() {
 
   /** Publica un aviso temporal para el producto y origen indicados, sustituyendo el aviso anterior. */
   function showCartFeedback(product: Pick<Product, 'id' | 'name'>, source: CartFeedback['source']) {
+    trackEvent({ type: 'CART_ITEM_ADDED', occurredAt: new Date().toISOString(), metadata: { productId: product.id, quantity: 1 } }, session.user?.id)
     if (feedbackTimeoutRef.current !== null) clearTimeout(feedbackTimeoutRef.current)
     setFeedback({ productId: product.id, productName: product.name, source })
     feedbackTimeoutRef.current = window.setTimeout(() => {

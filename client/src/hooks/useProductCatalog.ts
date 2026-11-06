@@ -1,8 +1,9 @@
 /** Coordina datos, facets y estado de carga del catálogo a través de productApi. */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { Product } from '../types/product'
 import { getCatalogPage, type CatalogFilters } from '../services/productApi'
+import { trackEvent } from '../services/analytics'
 
 interface UseProductCatalogResult {
   products: Product[]
@@ -31,7 +32,10 @@ export function useProductCatalog(
   pageSize: number,
   filters?: CatalogFilters,
   query = '',
+  userId?: string | null,
+  searchSource: 'catalog' | 'recent' = 'catalog',
 ): UseProductCatalogResult {
+  const executedQuery = useRef(query)
   const [state, setState] = useState<ProductCatalogState>({
     products: [],
     totalPages: 1,
@@ -48,7 +52,13 @@ export function useProductCatalog(
   useEffect(() => {
     let cancelled = false
 
-    getCatalogPage(page, pageSize, filters, query)
+    const request = getCatalogPage(page, pageSize, filters, query)
+    // La consulta ya se ejecutó. El ref separa cambios de query de filtros, páginas y replay de Effects.
+    if (query.trim() && executedQuery.current !== query) {
+      trackEvent({ type: 'SEARCH_PERFORMED', occurredAt: new Date().toISOString(), metadata: { source: searchSource } }, userId)
+    }
+    executedQuery.current = query
+    request
       .then((result) => {
         if (cancelled) return
         setState({

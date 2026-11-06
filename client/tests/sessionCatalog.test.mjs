@@ -14,16 +14,18 @@ const runtimeUrl = dataUrl(`
   export function useRef(initial) {const [ref]=useState(()=>({current:initial}));return ref;}
   export function useCallback(callback) {return callback;}
   export function useEffect() {}
-  export function useSession() {return {epoch};}
+  export function useSession() {return {epoch,user:null};}
   export function useCatalogPagination() {const [currentPage,setCurrentPage]=useState(1);return {currentPage,pageSize:20,setCurrentPage};}
   export function useProductCatalog(_page,_size,_filters,query) {queries.push(query);return {products:[],totalPages:1,nbHits:0,facets:{},isLoading:false,error:null};}
   export function jsx(type,props,key) {return {type,props,key};}export const jsxs=jsx; export const Fragment='Fragment';
 `)
 const runtime = await import(runtimeUrl)
+const analyticsUrl = dataUrl('export function trackEvent() {}')
 const modules = new Map([['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl], ['../hooks/useSession', runtimeUrl],
   ['../hooks/useCatalogPagination', runtimeUrl], ['../hooks/useProductCatalog', runtimeUrl],
+  ['../services/analytics', analyticsUrl],
   ['../utils/scrollToAnchor', dataUrl('export function scrollToElement() {}')]])
-for (const name of ['CartFeedbackToast', 'CatalogFilters', 'CatalogHero', 'CatalogToolbar', 'Pagination', 'ProductGrid', 'ProductQuickView']) {
+for (const name of ['CartFeedbackToast', 'CatalogFilters', 'CatalogHero', 'CatalogToolbar', 'Pagination', 'ProductGrid', 'ProductQuickView', 'RecentlyViewedProducts']) {
   modules.set('../components/catalog/' + name, dataUrl(`export default '${name}'`))
 }
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default '${name}'`))
@@ -73,7 +75,7 @@ test('cambiar Session limpia query/Quick View y cambia solo la key del Toolbar, 
 
 test('Recent Searches vive en el componente y no se hereda al nuevo scope de sesión', () => {
   runtime.reset()
-  const props = {query:'laptop',results:[],isLoading:false,error:null,onQueryChange(){},onSelectResult(){}}
+  const props = {query:'laptop',results:[],isLoading:false,error:null,onQueryChange(){},onSelectResult(){},onSearchSubmit(){}}
   const render = scope => {runtime.begin(scope);return SearchBox(props)}
   let tree = render('toolbar:0/search')
   nodes(tree).find(node => node.type === 'input').props.onKeyDown({key:'Enter',currentTarget:{value:'laptop'},preventDefault(){}})

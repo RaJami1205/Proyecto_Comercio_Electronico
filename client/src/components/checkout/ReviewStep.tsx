@@ -83,7 +83,9 @@ function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retry
               aria-describedby={termsError ? 'checkout-terms-error checkout-terms-version' : 'checkout-terms-version'} />
             <span>He leído y acepto los Términos y Condiciones de CiberNova.</span>
           </label>
-          <button type="button" className={styles.termsLink} onClick={onOpenTerms} disabled={busy}>Consultar Términos y Condiciones</button>
+          <button type="button" className={styles.termsLink} onClick={onOpenTerms} disabled={busy}>
+            <span className={styles.termsLinkText}>Consultar Términos y Condiciones</span>
+          </button>
           <p id="checkout-terms-version">{termsVersionRejected ? 'Versión local rechazada por el servidor' : ''}</p>
           {termsError ? <p id="checkout-terms-error" role="alert" className={styles.error}>{termsError}</p> : null}
         </div> : null}

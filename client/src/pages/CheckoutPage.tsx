@@ -23,6 +23,8 @@ import { orderReviewDifferences } from '../utils/orderReviewDifferences'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import styles from '../styles/pages/CheckoutPage.module.css'
+import { trackEvent } from '../services/analytics'
+import { useSession } from '../hooks/useSession'
 
 interface CheckoutPageProps {
   onBackToCart: () => void
@@ -47,6 +49,7 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
 /** Mantiene Buyer, Delivery, consentimiento e intentos en memoria local; al desmontarse se pierde este contexto. */
 function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated, onTransactionStateChange, purchaseBlockedReason, getPurchaseBlockReason }: CheckoutPageProps) {
   const { items, cleanupPurchase } = useCart()
+  const { user } = useSession()
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
@@ -258,6 +261,11 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       // nunca inferimos o simulamos orderStatus/paymentStatus en el Client.
       setOrder(result.order)
       setPaymentResult(result)
+
+      if (result.result === 'PAYMENT_APPROVED' && result.order.orderStatus === 'CONFIRMED'
+        && result.order.paymentStatus === 'APPROVED' && result.order.id.trim()) {
+        trackEvent({ type: 'PURCHASE_COMPLETED', occurredAt: result.processedAt, metadata: { orderId: result.order.id } }, user?.id)
+      }
 
       // Solo el cierre iniciado aquí puede retirar las unidades originales todavía presentes.
       const baseline = purchaseBaselineRef.current

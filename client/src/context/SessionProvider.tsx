@@ -4,6 +4,7 @@ import { SessionContext, type SessionState, type TransactionState } from './Sess
 import { useCart } from '../hooks/useCart'
 import { sessionApi, sessionErrorMessage } from '../services/sessionApi'
 import type { ResolvedUser } from '../types/user'
+import { trackEvent } from '../services/analytics'
 
 function transitionReason(state: SessionState): string | null {
   if (state.transaction === 'active' || state.transaction === 'uncertain') return 'Resuelve el intento de compra pendiente antes de cambiar de identidad.'
@@ -25,6 +26,16 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
   const current = useRef(state)
   const operation = useRef(0)
   const controller = useRef<AbortController | null>(null)
+  const transitionSequence = useRef(0)
+  const publishedTransition = useRef<number | null>(null)
+  const [identityTransition, setIdentityTransition] = useState<{ id: number; user: ResolvedUser } | null>(null)
+
+  // Observa una transición explícita después del commit de React; no registra renders ordinarios.
+  useEffect(() => {
+    if (!identityTransition || state.user !== identityTransition.user || publishedTransition.current === identityTransition.id) return
+    publishedTransition.current = identityTransition.id
+    trackEvent({ type: 'SESSION_STARTED', occurredAt: new Date().toISOString(), metadata: { role: identityTransition.user.role } }, identityTransition.user.id)
+  }, [identityTransition, state.user])
 
   const update = useCallback((change: Partial<SessionState>) => {
     current.current = { ...current.current, ...change }
@@ -44,9 +55,9 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
   }
   function commit(user: ResolvedUser | null, kind: 'identity' | 'conflict') {
     invalidate()
-    // CN-72: SESSION_STARTED se conectará aquí, solo al commit efectivo de una identidad resuelta.
     update({ user, dialog: null, pending: null, resolving: false, error: null,
       epoch: current.current.epoch + (kind === 'identity' ? 1 : 0) })
+    setIdentityTransition(kind === 'identity' && user ? { id: ++transitionSequence.current, user } : null)
   }
   function prepare(user: ResolvedUser | null, kind: 'identity' | 'conflict' = 'identity') {
     const cart = getSnapshot()
