@@ -4,6 +4,7 @@ import { SessionContext, type SessionState, type TransactionState } from './Sess
 import { useCart } from '../hooks/useCart'
 import { sessionApi, sessionErrorMessage } from '../services/sessionApi'
 import type { ResolvedUser } from '../types/user'
+import { trackEvent } from '../services/analytics'
 
 function transitionReason(state: SessionState): string | null {
   if (state.transaction === 'active' || state.transaction === 'uncertain') return 'Resuelve el intento de compra pendiente antes de cambiar de identidad.'
@@ -44,7 +45,9 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
   }
   function commit(user: ResolvedUser | null, kind: 'identity' | 'conflict') {
     invalidate()
-    // CN-72: SESSION_STARTED se conectará aquí, solo al commit efectivo de una identidad resuelta.
+    if (kind === 'identity' && user) {
+      trackEvent({ type: 'SESSION_STARTED', occurredAt: new Date().toISOString(), metadata: { role: user.role } }, user.id)
+    }
     update({ user, dialog: null, pending: null, resolving: false, error: null,
       epoch: current.current.epoch + (kind === 'identity' ? 1 : 0) })
   }

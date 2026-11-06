@@ -1,6 +1,6 @@
 /** Contratos de eventos de producto sin consultas, datos personales ni información de pago. */
 export type AnalyticsEvent =
-  | { type: 'SESSION_STARTED'; occurredAt: string; metadata: { role: 'B2C' | 'B2B' } }
+  | { type: 'SESSION_STARTED'; occurredAt: string; metadata: { role: 'B2C' | 'B2B' | 'ADMIN' } }
   | { type: 'SEARCH_PERFORMED'; occurredAt: string; metadata: { source: 'catalog' | 'recent' } }
   | { type: 'PRODUCT_VIEWED'; occurredAt: string; metadata: { productId: string } }
   | { type: 'CART_ITEM_ADDED'; occurredAt: string; metadata: { productId: string; quantity: number } }

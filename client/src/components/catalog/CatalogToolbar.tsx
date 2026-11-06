@@ -50,6 +50,7 @@ interface CatalogToolbarProps {
   onTogglePanel: (panel: ActivePanel) => void
   onSearchChange: (query: string) => void
   onProductSelect: (product: Product) => void
+  onSearchExecuted: (source: 'catalog' | 'recent') => void
 }
 
 /** Coordina useProductSearch y propaga el query al catálogo con debounce. */
@@ -59,6 +60,7 @@ function CatalogToolbar({
   onTogglePanel,
   onSearchChange,
   onProductSelect,
+  onSearchExecuted,
 }: CatalogToolbarProps) {
   const { query, setQuery, results, isLoading, error } = useProductSearch()
 
@@ -82,6 +84,7 @@ function CatalogToolbar({
           isLoading={isLoading}
           error={error}
           onSelectResult={onProductSelect}
+          onSearchExecuted={onSearchExecuted}
         />
       </div>
 

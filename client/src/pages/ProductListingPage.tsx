@@ -18,6 +18,7 @@ import type { CatalogFilters as CatalogFiltersState } from '../services/productA
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 import type { PolicyView } from '../utils/appNavigation'
+import { trackEvent } from '../services/analytics'
 
 export interface CartFeedback {
   productId: string
@@ -44,7 +45,7 @@ const EMPTY_FILTERS: CatalogFiltersState = {
 
 /** Posee filtros, query, selección de Quick View y feedback temporal de presentación. */
 function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, onProductAdded, onPolicyNavigate }: ProductListingPageProps) {
-  const { epoch } = useSession()
+  const { epoch, user } = useSession()
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
   const [catalogQuery, setCatalogQuery] = useState('')
@@ -70,6 +71,12 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
   function openCartPreview() {
     if (selectedProduct) return
     onCartClick()
+  }
+
+  /** Registra una visita solo cuando una interacción abre el detalle del producto. */
+  function openProduct(product: Product) {
+    trackEvent({ type: 'PRODUCT_VIEWED', occurredAt: new Date().toISOString(), metadata: { productId: product.id } }, user?.id)
+    setSelectedProduct(product)
   }
 
   /** Reinicia la paginación únicamente cuando cambia el query del catálogo. */
@@ -125,7 +132,8 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
               activePanel={activePanel}
               onTogglePanel={setActivePanel}
               onSearchChange={handleSearchChange}
-              onProductSelect={setSelectedProduct}
+              onProductSelect={openProduct}
+              onSearchExecuted={(source) => trackEvent({ type: 'SEARCH_PERFORMED', occurredAt: new Date().toISOString(), metadata: { source } }, user?.id)}
             />
 
             {/* CatalogFilters ahora renderiza internamente solo la sección según 'activePanel' */}
@@ -155,7 +163,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
                   addedProductId={feedback?.productId}
                   currentPage={currentPage}
                   totalPages={totalPages}
-                  onProductSelect={setSelectedProduct}
+                  onProductSelect={openProduct}
                 />
               )}
 

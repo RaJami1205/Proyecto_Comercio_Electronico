@@ -29,6 +29,7 @@ interface SearchBoxProps {
   isLoading: boolean
   error: string | null
   onSelectResult: (product: ProductSearchResult) => void
+  onSearchExecuted: (source: 'catalog' | 'recent') => void
 }
 
 /** Convierte segmentos mark en nodos React sin insertar HTML arbitrario. */
@@ -50,6 +51,7 @@ function SearchBox({
   isLoading,
   error,
   onSelectResult,
+  onSearchExecuted,
 }: SearchBoxProps) {
   const [activeIndex, setActiveIndex] = useState(-1)
   const [isOpen, setIsOpen] = useState(false)
@@ -126,6 +128,7 @@ function SearchBox({
         selectResult(results[activeIndex])
       } else {
         addRecentSearch(query)
+        onSearchExecuted('catalog')
         closeSuggestions()
       }
       return
@@ -277,6 +280,7 @@ function SearchBox({
                       onClick={() => {
                         onQueryChange(recent)
                         addRecentSearch(recent)
+                        onSearchExecuted('recent')
                         inputRef.current?.focus({ preventScroll: true })
                         closeSuggestions()
                       }}

@@ -33,8 +33,9 @@ function compile(file, modules) {
   }))
 }
 const apiUrl = compile('services/sessionApi.ts', new Map())
+const analyticsUrl = dataUrl('export function trackEvent() {}')
 const modules = new Map([['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl], ['../hooks/useCart', runtimeUrl],
-  ['./SessionContext', dataUrl("export const SessionContext={Provider:'SessionProvider'}")], ['../services/sessionApi', apiUrl]])
+  ['./SessionContext', dataUrl("export const SessionContext={Provider:'SessionProvider'}")], ['../services/sessionApi', apiUrl], ['../services/analytics', analyticsUrl]])
 const { default: SessionProvider } = await import(compile('context/SessionProvider.tsx', modules))
 const profiles = [
   { id: 'c', displayName: 'Cliente', role: 'B2C' },
