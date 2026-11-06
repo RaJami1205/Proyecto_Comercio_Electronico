@@ -75,7 +75,7 @@ test('cambiar Session limpia query/Quick View y cambia solo la key del Toolbar, 
 
 test('Recent Searches vive en el componente y no se hereda al nuevo scope de sesión', () => {
   runtime.reset()
-  const props = {query:'laptop',results:[],isLoading:false,error:null,onQueryChange(){},onSelectResult(){},onSearchExecuted(){}}
+  const props = {query:'laptop',results:[],isLoading:false,error:null,onQueryChange(){},onSelectResult(){},onSearchSubmit(){}}
   const render = scope => {runtime.begin(scope);return SearchBox(props)}
   let tree = render('toolbar:0/search')
   nodes(tree).find(node => node.type === 'input').props.onKeyDown({key:'Enter',currentTarget:{value:'laptop'},preventDefault(){}})

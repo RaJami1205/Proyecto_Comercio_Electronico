@@ -1,5 +1,5 @@
 /** Conecta el Search con la consulta del catálogo y la selección de paneles de filtros. */
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import styles from '../../styles/catalog/CatalogToolbar.module.css'
 import type { Product } from '../../types/product'
@@ -48,9 +48,8 @@ interface CatalogToolbarProps {
   productCount: number
   activePanel: ActivePanel
   onTogglePanel: (panel: ActivePanel) => void
-  onSearchChange: (query: string) => void
+  onSearchChange: (query: string, source?: 'catalog' | 'recent') => void
   onProductSelect: (product: Product) => void
-  onSearchExecuted: (source: 'catalog' | 'recent') => void
 }
 
 /** Coordina useProductSearch y propaga el query al catálogo con debounce. */
@@ -60,12 +59,12 @@ function CatalogToolbar({
   onTogglePanel,
   onSearchChange,
   onProductSelect,
-  onSearchExecuted,
 }: CatalogToolbarProps) {
   const { query, setQuery, results, isLoading, error } = useProductSearch()
+  const source = useRef<'catalog' | 'recent'>('catalog')
 
   useEffect(() => {
-    const timeout = setTimeout(() => onSearchChange(query.trim()), 250)
+    const timeout = setTimeout(() => onSearchChange(query.trim(), source.current), 250)
     return () => clearTimeout(timeout)
   }, [query, onSearchChange])
 
@@ -79,12 +78,12 @@ function CatalogToolbar({
       <div className={styles.searchGroup}>
         <SearchBox
           query={query}
-          onQueryChange={setQuery}
+          onQueryChange={value => { source.current = 'catalog'; setQuery(value) }}
           results={results}
           isLoading={isLoading}
           error={error}
           onSelectResult={onProductSelect}
-          onSearchExecuted={onSearchExecuted}
+          onSearchSubmit={value => { source.current = value }}
         />
       </div>
 

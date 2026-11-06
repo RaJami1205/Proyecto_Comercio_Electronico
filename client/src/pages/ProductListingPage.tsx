@@ -49,7 +49,8 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
   const { epoch, user } = useSession()
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
-  const [catalogQuery, setCatalogQuery] = useState('')
+  const [catalogSearch, setCatalogSearch] = useState<{ query: string; source: 'catalog' | 'recent' }>({ query: '', source: 'catalog' })
+  const catalogQuery = catalogSearch.query
   
   // Un único panel activo evita desplegar grupos de filtros simultáneamente.
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
@@ -58,7 +59,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
   const [searchEpoch, setSearchEpoch] = useState(epoch)
   if (searchEpoch !== epoch) {
     setSearchEpoch(epoch)
-    setCatalogQuery('')
+    setCatalogSearch({ query: '', source: 'catalog' })
     setSelectedProduct(null)
     setCurrentPage(1)
   }
@@ -66,7 +67,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
   const { products, totalPages, nbHits, facets, isLoading, error } =
-    useProductCatalog(currentPage, pageSize, filters, catalogQuery)
+    useProductCatalog(currentPage, pageSize, filters, catalogQuery, user?.id, catalogSearch.source)
 
   /** El preview comparte owner con las vistas y nunca se superpone al Quick View. */
   function openCartPreview() {
@@ -81,9 +82,9 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
   }
 
   /** Reinicia la paginación únicamente cuando cambia el query del catálogo. */
-  const handleSearchChange = useCallback((query: string) => {
+  const handleSearchChange = useCallback((query: string, source: 'catalog' | 'recent' = 'catalog') => {
     if (query === catalogQuery) return
-    setCatalogQuery(query)
+    setCatalogSearch({ query, source })
     setCurrentPage(1)
   }, [catalogQuery, setCurrentPage])
 
@@ -134,7 +135,6 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
               onTogglePanel={setActivePanel}
               onSearchChange={handleSearchChange}
               onProductSelect={openProduct}
-              onSearchExecuted={(source) => trackEvent({ type: 'SEARCH_PERFORMED', occurredAt: new Date().toISOString(), metadata: { source } }, user?.id)}
             />
 
             {/* CatalogFilters ahora renderiza internamente solo la sección según 'activePanel' */}

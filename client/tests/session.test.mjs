@@ -3,6 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import { analyticsEnvironment, loadAnalytics } from './helpers/analyticsHarness.mjs'
 
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 const runtimeUrl = dataUrl(`
@@ -15,7 +16,7 @@ const runtimeUrl = dataUrl(`
   export function useRef(initial) { const [ref]=useState(()=>({current:initial})); return ref; }
   export function useCallback(callback,deps) { const index=cursor++, previous=slots[index]; if(!previous||deps.some((dep,i)=>!Object.is(dep,previous.deps[i])))slots[index]={callback,deps}; return slots[index].callback; }
   export function useEffect(effect,deps) { const index=cursor++,previous=slots[index]; if(!previous||deps.some((dep,i)=>!Object.is(dep,previous.deps[i]))) { slots[index]={deps,cleanup:previous?.cleanup}; effects.push(()=>{slots[index].cleanup?.();slots[index].cleanup=effect()}); } }
-  export function flush() { const pending=effects;effects=[];pending.forEach(effect=>effect()); }
+  export function flush() { const pending=effects;effects=[];pending.forEach(effect=>effect()); return pending; }
   export function changeCart(items) { cart=items;revision++; }
   export function externalChange() { conflict=true;revision++; }
   const getSnapshot=()=>({items:cart,revision,hasExternalConflict:conflict});
@@ -44,7 +45,7 @@ const profiles = [
 ]
 const item = { productId: 'p', name: 'Producto', image: '', price: 10000, quantity: 1 }
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
-function flow(t, items = []) {
+function flow(t, items = [], Provider = SessionProvider) {
   runtime.reset(items)
   t.after(() => runtime.dispose())
   const calls = []
@@ -54,9 +55,70 @@ function flow(t, items = []) {
     calls.push(id)
     return responder(id)
   })
-  const render = () => { runtime.begin(); const value = SessionProvider({ children: null }).props.value; runtime.flush(); return value }
+  const render = (flush = true) => { runtime.begin(); const value = Provider({ children: null }).props.value; if (flush) runtime.flush(); return value }
   return { render, calls, respond: handler => { responder = handler } }
 }
+
+for (const profile of profiles) test('Analytics SESSION_STARTED post-commit, idempotente: ' + profile.role, async t => {
+  const { listeners } = analyticsEnvironment(t)
+  const { api, url } = await loadAnalytics()
+  const trackedModules = new Map(modules).set('../services/analytics', url)
+  const { default: Provider } = await import(compile('context/SessionProvider.tsx', trackedModules))
+  const session = flow(t, [], Provider)
+  let committedUser = null
+  listeners.add(() => { assert.equal(committedUser?.id, profile.id, 'la notificación observa el Provider ya comprometido') })
+  session.render().openLogin()
+  await session.render().resolveUser(profile.id)
+  assert.equal(api.getAnalyticsCounters(profile.id).sessions, 0, 'resolver/setState no es todavía commit de React')
+  const committed = session.render(false)
+  committedUser = committed.user
+  assert.equal(api.getAnalyticsCounters(profile.id).sessions, 0)
+  const effects = runtime.flush()
+  effects.forEach(effect => effect()) // replay de Effects con los refs conservados, como StrictMode.
+  session.render()
+  assert.equal(api.getAnalyticsCounters(profile.id).sessions, 1)
+  assert.equal(api.getAnalyticsEvents(profile.id)[0].metadata.role, profile.role)
+  await api.flushAnalytics()
+  runtime.reset()
+  session.render()
+  assert.equal(api.getAnalyticsCounters(profile.id).sessions, 1, 'remount sin identidad no registra otro Login')
+})
+
+test('Analytics Session omite cancelación/error/respuesta obsoleta/Logout y aísla cambio de usuario', async t => {
+  analyticsEnvironment(t)
+  const { api, url } = await loadAnalytics()
+  const { default: Provider } = await import(compile('context/SessionProvider.tsx', new Map(modules).set('../services/analytics', url)))
+  const session = flow(t, [item], Provider)
+  session.render().openLogin()
+  await session.render().resolveUser('c')
+  session.render().cancelTransition()
+  assert.equal(api.getAnalyticsCounters('c').sessions, 0)
+  runtime.changeCart([])
+  session.render().openLogin()
+  session.respond(() => Response.json({ error: {} }, { status: 503 }))
+  await session.render().resolveUser('c')
+  assert.equal(api.getAnalyticsCounters('c').sessions, 0)
+  const pending = deferred()
+  session.respond(() => pending.promise)
+  const request = session.render().resolveUser('c')
+  session.render().cancelTransition()
+  pending.resolve(Response.json({ user: profiles[0] }))
+  await request
+  session.render()
+  assert.equal(api.getAnalyticsCounters('c').sessions, 0)
+  session.respond(id => Response.json({ user: profiles.find(user => user.id === id) }))
+  for (const id of ['c', 'b']) {
+    session.render().openLogin()
+    await session.render().resolveUser(id)
+    session.render()
+    assert.equal(api.getAnalyticsCounters(id).sessions, 1)
+  }
+  session.render().requestLogout()
+  assert.equal(session.render().user, null)
+  assert.equal(api.getAnalyticsCounters('b').sessions, 1)
+  assert.equal(api.getAnalyticsCounters().sessions, 0)
+  await api.flushAnalytics()
+})
 
 test('inicia null, sin restauración ni escrituras de Session', t => {
   const previous = globalThis.window
