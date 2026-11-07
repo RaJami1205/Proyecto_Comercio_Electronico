@@ -381,10 +381,9 @@ test('Header informativo mantiene retorno al catálogo y respeta clicks modifica
   const tree = Header({policyView:true, onCatalogClick:()=>calls++})
   const links = nodes(tree).filter(n=>n.type === 'a' && n.props.href !== '#analytics')
   assert.ok(links.every(n=>n.props.href === '#catalog'))
-  // CN-74: el acceso a Analytics es un hash nativo que App resuelve; no intercepta el click.
+  // El usuario B2C de este caso no debe recibir acceso a Analytics.
   const activity = nodes(tree).filter(n=>n.type === 'a' && n.props.href === '#analytics')
-  assert.equal(activity.length, 1)
-  assert.equal(activity[0].props.onClick, undefined)
+  assert.equal(activity.length, 0)
   for (const link of links) {
     assert.equal(click(link.props, {metaKey:true}).defaultPrevented, false)
     assert.equal(click(link.props).defaultPrevented, true)

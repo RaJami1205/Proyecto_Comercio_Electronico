@@ -108,20 +108,20 @@ const result = (scenario, changes = {}) => ({
     paymentStatus: scenario.replace('PAYMENT_', '')}, ...changes,
 })
 /** Prepara la Order y el escenario solicitado con fetch simulado; devuelve handlers y requests capturados. */
-async function paymentFlow(t, scenario = 'PAYMENT_DECLINED', Page = CheckoutPage) {
+async function paymentFlow(t, scenario = 'PAYMENT_DECLINED', Page = CheckoutPage, orderId = 'order-1') {
   const original = globalThis.fetch
   t.after(() => { globalThis.fetch = original })
   const requests = []
   /** Construye la respuesta simulada para el escenario incluido en la solicitud de pago. */
-  let respond = request => Response.json(result(request.scenario))
+  let respond = request => { const response = result(request.scenario); return Response.json({ ...response, order: { ...response.order, id: orderId } }) }
   globalThis.fetch = async (url, options) => {
     assert.equal(options.method, 'POST')
     const payload = JSON.parse(options.body)
     assert.equal(typeof payload.idempotencyKey, 'string')
     assert.ok(payload.idempotencyKey.length > 0)
     requests.push({url, payload})
-    if (url === '/api/orders') return Response.json(order(), {status:201})
-    assert.equal(url, '/api/orders/order-1/payment')
+    if (url === '/api/orders') return Response.json({ ...order(), id: orderId }, {status:201})
+    assert.equal(url, '/api/orders/' + orderId + '/payment')
     assert.deepEqual(Object.keys(payload).sort(), ['idempotencyKey', 'scenario'])
     return respond(payload)
   }
@@ -140,6 +140,23 @@ async function trackedCheckout(t) {
   return { api, Page, ...storage }
 }
 
+test('Dos compras aprobadas B2C con Orders distintas producen dos compras agregadas para ADMIN', async t => {
+  const { api, Page } = await trackedCheckout(t)
+  for (const id of ['order-one', 'order-two']) {
+    const flow = await paymentFlow(t, 'PAYMENT_APPROVED', Page, id)
+    await flow.payment().onProcessPayment()
+    flow.render()
+    assert.ok(flow.find('OrderConfirmationPage'))
+  }
+  await api.flushAnalytics()
+  const aggregate = api.getAggregateAnalyticsSnapshot()
+  assert.equal(aggregate.status, 'ready')
+  assert.equal(aggregate.counters.purchases, 2)
+  assert.equal(api.getAnalyticsCounters('test-user').purchases, 2)
+  const { api: reload } = await loadAnalytics()
+  assert.equal(reload.getAggregateAnalyticsSnapshot().counters.purchases, 2)
+})
+
 for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR', 'network', 'pending']) test('Analytics no registra compra: ' + scenario, async t => {
   const { api, Page } = await trackedCheckout(t)
   const flow = await paymentFlow(t, scenario.startsWith('PAYMENT_') ? scenario : 'PAYMENT_APPROVED', Page)
@@ -148,6 +165,7 @@ for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR', 'network', 'pending
   await flow.payment().onProcessPayment()
   flow.render()
   assert.equal(api.getAnalyticsCounters('test-user').purchases, 0)
+  assert.equal(api.getAggregateAnalyticsSnapshot().counters.purchases, 0)
   assert.equal(runtime.cleanupCount, 0)
   await api.flushAnalytics()
 })

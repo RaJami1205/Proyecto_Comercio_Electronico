@@ -35,13 +35,13 @@ function Header({ cartView = false, checkoutView = false, policyView = false, an
   }
 
   // Hash nativo: App resuelve #analytics con su listener de History/hashchange, incluido Back/Forward.
-  const activityLink = (
+  const activityLink = session.user?.role === 'ADMIN' ? (
     <li>
       <a href="#analytics" aria-current={analyticsView ? 'page' : undefined}>
-        Mi actividad
+        Analytics
       </a>
     </li>
-  )
+  ) : null
 
   return (
     <header className={styles.header}>

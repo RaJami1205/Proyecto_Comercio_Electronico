@@ -7,7 +7,7 @@ let instance = 0
 /** Harness de handlers y fases render/commit; no pretende sustituir React DOM. */
 export async function reactHarness() {
   const url = dataUrl(`
-    const scopes=new Map(); let current,cursor=0;
+    const scopes=new Map(); let current,cursor=0,nextId=0;
     export let cartContext={}, sessionUser={id:'u',role:'B2C'}, epoch=0;
     export function setCart(value){cartContext=value;}
     export function setUser(value){sessionUser=value;epoch++;}
@@ -15,10 +15,12 @@ export async function reactHarness() {
     export function dirty(){return current.dirty;}
     export function useState(initial){const at=cursor++,scope=current;if(!(at in scope.slots))scope.slots[at]=typeof initial==='function'?initial():initial;return [scope.slots[at],value=>{const next=typeof value==='function'?value(scope.slots[at]):value;if(!Object.is(next,scope.slots[at]))scope.dirty=true;scope.slots[at]=next;}];}
     export function useRef(initial){const [value]=useState(()=>({current:initial}));return value;}
+    export function useId(){const [value]=useState(()=>'test-id-'+nextId++);return value;}
     export function useCallback(callback,deps){const at=cursor++,old=current.slots[at];if(!old||deps.some((v,i)=>!Object.is(v,old.deps[i])))current.slots[at]={callback,deps};return current.slots[at].callback;}
     export function useEffect(effect,deps){const at=cursor++,old=current.slots[at];if(!old||deps.some((v,i)=>!Object.is(v,old.deps[i])))current.effects.set(at,{effect,deps});}
     export function commit(name){const scope=scopes.get(name),replay=[];for(const [at,{effect,deps}] of scope.effects){scope.slots[at]?.cleanup?.();scope.slots[at]={deps,cleanup:effect()};replay.push(effect);}scope.effects.clear();scope.lastEffects=replay;return replay;}
     export function replay(name){scopes.get(name).lastEffects.forEach(effect=>effect());}
+    export function unmount(name){const scope=scopes.get(name);if(scope)for(const slot of scope.slots)slot?.cleanup?.();scopes.delete(name);}
     export function dispose(){for(const scope of scopes.values())for(const slot of scope.slots)slot?.cleanup?.();scopes.clear();}
     export function useReducer(reducer,initial,initialize){const [state,set]=useState(()=>initialize?initialize(initial):initial);return [state,action=>set(value=>reducer(value,action))];}
     export function useCart(){return cartContext;}

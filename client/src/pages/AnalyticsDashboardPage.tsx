@@ -1,4 +1,4 @@
-/** Analytics Dashboard (CN-74): cuatro métricas locales del usuario activo leídas desde Analytics Core.
+/** Analytics Dashboard (CN-74): cuatro métricas locales agregadas leídas desde Analytics Core.
  * No registra eventos, no persiste datos propios y no consulta Orders, PostgreSQL ni Algolia.
  */
 import Header from '../components/layout/Header'
@@ -20,17 +20,17 @@ interface AnalyticsDashboardPageProps {
 const svg = (children: ReactNode) => <svg viewBox="0 0 24 24" focusable="false">{children}</svg>
 
 const metricDefinitions: ReadonlyArray<{ key: keyof DashboardMetrics; label: string; description: string; tone: MetricTone; icon: ReactNode }> = [
-  { key: 'productViews', label: 'Productos vistos', description: 'Veces que abriste el detalle de un producto.', tone: 'views',
+  { key: 'productViews', label: 'Productos vistos', description: 'Aperturas de detalles de productos registradas.', tone: 'views',
     icon: svg(<><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>) },
   { key: 'searches', label: 'Búsquedas', description: 'Búsquedas ejecutadas en el catálogo.', tone: 'searches',
     icon: svg(<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>) },
   { key: 'cartAdditions', label: 'Agregados al carrito', description: 'Acciones de agregar al carrito, sin importar las unidades.', tone: 'cart',
     icon: svg(<><path d="M3 4h2l2.2 10.1a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 1.9-1.4L21 8H7" /><circle cx="10" cy="20" r="1.3" /><circle cx="18" cy="20" r="1.3" /></>) },
-  { key: 'completedPurchases', label: 'Compras completadas', description: 'Órdenes confirmadas con pago aprobado.', tone: 'purchases',
+  { key: 'completedPurchases', label: 'Compras completadas', description: 'Órdenes distintas confirmadas con pago aprobado.', tone: 'purchases',
     icon: svg(<><path d="M5 8h14l-1 12H6L5 8Z" /><path d="M9 8V6a3 3 0 0 1 6 0v2" /><path d="m9.5 14 2 2 3.5-3.5" /></>) },
 ]
 
-function AnalyticsDashboardPage({ onCatalogClick, onPolicyNavigate, onCartClick }: AnalyticsDashboardPageProps) {
+function AuthorizedAnalyticsDashboard({ onCatalogClick, onPolicyNavigate, onCartClick }: AnalyticsDashboardPageProps) {
   const session = useSession()
   const user = session.user
   const { state, retry } = useAnalyticsMetrics(user?.id)
@@ -57,19 +57,22 @@ function AnalyticsDashboardPage({ onCatalogClick, onPolicyNavigate, onCartClick 
   } else {
     content = (
       <>
-        {state.storage === 'incompatible' ? (
+        {state.persistence.excludedScopes > 0 ? (
           <p className={styles.warning} role="alert">
-            Los datos guardados en este navegador están dañados o pertenecen a otra versión, por lo que no se pueden mostrar.
-            La actividad nueva se cuenta solo durante esta sesión.
+            Se omitieron datos dañados, incompatibles o con referencias inválidas. Las métricas disponibles pueden estar incompletas.
           </p>
-        ) : state.storage === 'memory-only' ? (
+        ) : null}
+        {state.persistence.unavailable ? <p className={styles.warning} role="status">
+          No se pudo leer todo el almacenamiento local. Se muestra únicamente la actividad disponible.
+        </p> : null}
+        {state.persistence.memoryOnly ? (
           <p className={styles.warning} role="status">
-            Este navegador no permite guardar las métricas. Se muestran solo las interacciones de esta sesión.
+            Parte de la actividad actual se conserva solo en memoria y puede perderse al recargar.
           </p>
         ) : null}
         {state.isEmpty ? (
           <p className={styles.status} role="status">
-            Todavía no tienes actividad registrada. Explora el catálogo y tus métricas aparecerán aquí.
+            Todavía no hay actividad registrada. Las interacciones de usuarios y visitantes aparecerán aquí.
           </p>
         ) : null}
         <div className={styles.grid}>
@@ -87,14 +90,13 @@ function AnalyticsDashboardPage({ onCatalogClick, onPolicyNavigate, onCartClick 
       <Header analyticsView onCatalogClick={() => onCatalogClick('#catalog')} onCartClick={onCartClick} />
       <main className={styles.main}>
         <div className={styles.container}>
-          <p className={styles.eyebrow}>Mi actividad</p>
+          <p className={styles.eyebrow}>Analytics</p>
           <h1 className={styles.title} tabIndex={-1} data-app-heading>Analytics Dashboard</h1>
           <p className={styles.introduction}>
-            Resumen de tus interacciones en CiberNova: productos vistos, búsquedas, agregados al carrito y compras completadas.
+            Resumen de la actividad local registrada en CiberNova: productos vistos, búsquedas, agregados al carrito y compras completadas.
           </p>
           <p className={styles.scope}>
-            <strong>Datos locales de este navegador</strong>
-            {user ? <> para <span className={styles.owner}>{user.displayName}</span></> : null}.
+            <strong>Estadísticas agregadas de usuarios y visitantes de este navegador.</strong>{' '}
             No son estadísticas globales de CiberNova.
           </p>
           <section className={styles.content} aria-label="Métricas de actividad" aria-busy={state.status === 'loading'}>
@@ -107,4 +109,8 @@ function AnalyticsDashboardPage({ onCatalogClick, onPolicyNavigate, onCartClick 
   )
 }
 
-export default AnalyticsDashboardPage
+/** El contenido y su hook solo se montan para una identidad ADMIN resuelta por SessionContext. */
+export default function AnalyticsDashboardPage(props: AnalyticsDashboardPageProps) {
+  const { user } = useSession()
+  return user?.role === 'ADMIN' ? <AuthorizedAnalyticsDashboard key={user.id} {...props} /> : null
+}

@@ -1,7 +1,7 @@
-/** Proyecta los contadores de Analytics Core del usuario activo para el Dashboard del Laboratorio 5 (CN-74). */
+/** Proyecta la actividad agregada disponible; se monta dentro del límite ADMIN del Dashboard. */
 import { useEffect, useState } from 'react'
-import type { AnalyticsCounters, AnalyticsStorageStatus } from '../types/analytics'
-import { analyticsStorage, getAnalyticsCounters, getAnalyticsStorageStatus, refreshAnalyticsState } from '../services/analytics'
+import type { AnalyticsAggregateCounters, AnalyticsAggregatePersistence } from '../types/analytics'
+import { analyticsStorage, getAggregateAnalyticsSnapshot, isAnalyticsStorageKey } from '../services/analytics'
 
 export interface DashboardMetrics {
   productViews: number
@@ -14,14 +14,14 @@ export type AnalyticsMetricsState =
   | { status: 'no-session' }
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; metrics: DashboardMetrics; storage: AnalyticsStorageStatus; isEmpty: boolean }
+  | { status: 'ready'; metrics: DashboardMetrics; persistence: AnalyticsAggregatePersistence; isEmpty: boolean }
 
 type Snapshot =
-  | { owner: string; status: 'ready'; metrics: DashboardMetrics; storage: AnalyticsStorageStatus }
+  | { owner: string; status: 'ready'; metrics: DashboardMetrics; persistence: AnalyticsAggregatePersistence }
   | { owner: string; status: 'error' }
 
 /** Selecciona las cuatro métricas del laboratorio sin recalcular nada desde el log de eventos. */
-export function toDashboardMetrics(counters: AnalyticsCounters): DashboardMetrics {
+export function toDashboardMetrics(counters: AnalyticsAggregateCounters): DashboardMetrics {
   return {
     productViews: counters.productViews,
     searches: counters.searches,
@@ -34,12 +34,14 @@ function isSafeCount(value: number) {
   return Number.isSafeInteger(value) && value >= 0
 }
 
-/** Lee contadores acumulados; el estado de storage solo se vuelve a consultar cuando puede haber cambiado. */
-function readSnapshot(userId: string, storage?: AnalyticsStorageStatus): Snapshot {
+/** Lee contadores acumulados y el resultado actual del IO coordinado. */
+function readSnapshot(userId: string): Snapshot {
   try {
-    const metrics = toDashboardMetrics(getAnalyticsCounters(userId))
+    const aggregate = getAggregateAnalyticsSnapshot()
+    if (aggregate.status === 'error') return { owner: userId, status: 'error' }
+    const metrics = toDashboardMetrics(aggregate.counters)
     if (!Object.values(metrics).every(isSafeCount)) return { owner: userId, status: 'error' }
-    return { owner: userId, status: 'ready', metrics, storage: storage ?? getAnalyticsStorageStatus(userId) }
+    return { owner: userId, status: 'ready', metrics, persistence: aggregate.persistence }
   } catch {
     return { owner: userId, status: 'error' }
   }
@@ -53,22 +55,22 @@ export function useAnalyticsMetrics(userId: string | undefined): { state: Analyt
   useEffect(() => {
     if (userId === undefined) return
     let cancelled = false
-    let storage: AnalyticsStorageStatus | undefined
-    const refresh = (recheckStorage: boolean) => {
+    let queued = false
+    const refresh = () => {
       if (cancelled) return
-      const next = readSnapshot(userId, recheckStorage ? undefined : storage)
-      if (next.status === 'ready') storage = next.storage
-      setSnapshot(next)
+      setSnapshot(readSnapshot(userId))
     }
-    refresh(true)
-    const scopeKey = analyticsStorage.keyPrefix + 'user:' + encodeURIComponent(userId)
-    // Eventos de la misma pestaña: Analytics Core ya actualizó su copia en memoria.
-    const handleAnalytics = () => refresh(false)
-    // Otra pestaña escribió el mismo scope: reconciliar antes de leer.
+    refresh()
+    const scheduleRefresh = () => {
+      if (queued || cancelled) return
+      queued = true
+      queueMicrotask(() => { queued = false; refresh() })
+    }
+    const handleAnalytics = () => scheduleRefresh()
+    // Incluye otros usuarios, Anonymous, migraciones, nuevos scopes y storage.clear().
     const handleStorage = (event: StorageEvent) => {
-      if (event.key !== null && event.key !== scopeKey) return
-      refreshAnalyticsState(userId)
-      refresh(true)
+      if (event.key !== null && !isAnalyticsStorageKey(event.key)) return
+      scheduleRefresh()
     }
     window.addEventListener(analyticsStorage.changedEvent, handleAnalytics)
     window.addEventListener('storage', handleStorage)
@@ -84,5 +86,5 @@ export function useAnalyticsMetrics(userId: string | undefined): { state: Analyt
   if (snapshot === null || snapshot.owner !== userId) return { state: { status: 'loading' }, retry }
   if (snapshot.status === 'error') return { state: { status: 'error' }, retry }
   const isEmpty = Object.values(snapshot.metrics).every(value => value === 0)
-  return { state: { status: 'ready', metrics: snapshot.metrics, storage: snapshot.storage, isEmpty }, retry }
+  return { state: { status: 'ready', metrics: snapshot.metrics, persistence: snapshot.persistence, isEmpty }, retry }
 }

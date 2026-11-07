@@ -1,5 +1,5 @@
 /** Analytics local por identidad; ningún fallo de validación/storage debe bloquear comercio. */
-import type { AnalyticsCounters, AnalyticsEvent, AnalyticsEventInput, AnalyticsStorageStatus } from '../types/analytics'
+import type { AnalyticsAggregateSnapshot, AnalyticsCounters, AnalyticsEvent, AnalyticsEventInput, AnalyticsStorageStatus } from '../types/analytics'
 
 const STORAGE_PREFIX = 'cibernova:analytics:v2:'
 const LEGACY_PREFIX = 'cibernova:analytics:v1:'
@@ -24,6 +24,8 @@ interface AnalyticsState {
 const memory = new Map<string, AnalyticsState>()
 const pending = new Map<string, AnalyticsEvent[]>()
 const jobs = new Map<string, Promise<void>>()
+// Resultado de IO por scope; no forma parte del snapshot persistido ni del contrato de eventos.
+const writeOutcomes = new Map<string, 'persisted' | 'failed'>()
 const emptyCounters = (): AnalyticsCounters => ({ sessions: 0, searches: 0, productViews: 0, cartAdds: 0, checkouts: 0, purchases: 0 })
 const emptyState = (userId: string | null): AnalyticsState => ({ schemaVersion: SCHEMA_VERSION, userId,
   events: [], counters: emptyCounters(), recentProductIds: [], completedOrderIds: [] })
@@ -104,22 +106,17 @@ function parseState(value: unknown, userId: string | null, legacy = false): Anal
 }
 
 /** Una versión desconocida/corrupta queda intacta; los eventos nuevos siguen solo en memoria. */
-function storedState(userId: string | null): { state: AnalyticsState; writable: boolean } {
+function storedState(userId: string | null): { state: AnalyticsState; writable: boolean; status: 'valid' | 'missing' | 'incompatible' | 'unavailable' } {
   const fallback = emptyState(userId)
   try {
     const scope = scopeFor(userId)
     const raw = window.localStorage.getItem(STORAGE_PREFIX + scope)
-    if (raw !== null) {
-      const state = parseState(JSON.parse(raw), userId)
-      return { state: state ?? fallback, writable: state !== null }
-    }
-    const legacy = window.localStorage.getItem(LEGACY_PREFIX + scope)
-    if (legacy !== null) {
-      const state = parseState(JSON.parse(legacy), userId, true)
-      return { state: state ?? fallback, writable: state !== null }
-    }
-    return { state: fallback, writable: true }
-  } catch { return { state: fallback, writable: false } }
+    const serialized = raw ?? window.localStorage.getItem(LEGACY_PREFIX + scope)
+    if (serialized === null) return { state: fallback, writable: true, status: 'missing' }
+    let state: AnalyticsState | null
+    try { state = parseState(JSON.parse(serialized), userId, raw === null) } catch { state = null }
+    return { state: state ?? fallback, writable: state !== null, status: state ? 'valid' : 'incompatible' }
+  } catch { return { state: fallback, writable: false, status: 'unavailable' } }
 }
 
 function readState(userId: string | null): AnalyticsState {
@@ -152,8 +149,9 @@ function notify() {
 function scheduleWrite(userId: string | null) {
   const scope = scopeFor(userId)
   if (jobs.has(scope) || typeof navigator === 'undefined' || !navigator.locks) return
+  const locks = navigator.locks
   let committed = false
-  const job = navigator.locks.request(STORAGE_PREFIX + scope, () => {
+  const job = Promise.resolve().then(() => locks.request(STORAGE_PREFIX + scope, () => {
     const buffered = pending.get(scope)
     if (!buffered?.length) return
     const latest = storedState(userId)
@@ -164,12 +162,18 @@ function scheduleWrite(userId: string | null) {
     window.localStorage.setItem(STORAGE_PREFIX + scope, serialized)
     pending.delete(scope)
     memory.set(scope, state)
+    writeOutcomes.set(scope, 'persisted')
     committed = true
     if (changed) notify()
-  }).catch(() => { /* Quota, permisos o lock rechazado: mantener el buffer y la copia en memoria. */ })
+  })).catch(() => {
+    // Quota, permisos o lock rechazado: mantener el buffer y la copia en memoria.
+    writeOutcomes.set(scope, 'failed')
+  })
     .finally(() => {
       jobs.delete(scope)
       if (committed && pending.has(scope)) scheduleWrite(userId)
+      // También notificar cuando solo cambió la persistencia, sin cambiar los contadores.
+      notify()
     })
   jobs.set(scope, job)
 }
@@ -229,13 +233,82 @@ export function refreshAnalyticsState(userId: string | null = null): void {
   } catch { /* Preservar la copia local ante storage no disponible. */ }
 }
 
-/** Informa si las métricas del scope pueden persistirse; no modifica storage ni la copia en memoria. */
+/** Distingue snapshots persistidos, IO pendiente y actividad en memoria sin modificar storage. */
 export function getAnalyticsStorageStatus(userId: string | null = null): AnalyticsStorageStatus {
   try {
     if (typeof window === 'undefined' || !owner(userId) || typeof navigator === 'undefined' || !navigator.locks) return 'memory-only'
     window.localStorage.getItem(STORAGE_PREFIX + scopeFor(userId))
   } catch { return 'memory-only' }
-  return storedState(userId).writable ? 'persistent' : 'incompatible'
+  if (!storedState(userId).writable) return 'incompatible'
+  const scope = scopeFor(userId)
+  if (writeOutcomes.get(scope) === 'failed') return 'memory-only'
+  return jobs.has(scope) ? 'pending' : 'persistent'
+}
+
+/** Un único nombre canónico evita aliases de IDs y mantiene Anonymous separado. */
+function ownerForScope(scope: string): string | null | undefined {
+  if (scope === 'anonymous') return null
+  if (!scope.startsWith('user:')) return undefined
+  try {
+    const userId = decodeURIComponent(scope.slice(5))
+    return text(userId) && scopeFor(userId) === scope ? userId : undefined
+  } catch { return undefined }
+}
+
+function scopeFromStorageKey(key: string): string | undefined {
+  const prefix = [STORAGE_PREFIX, LEGACY_PREFIX].find(value => key.startsWith(value))
+  if (!prefix) return undefined
+  const scope = key.slice(prefix.length)
+  return ownerForScope(scope) !== undefined ? scope : undefined
+}
+
+export function isAnalyticsStorageKey(key: string): boolean {
+  return scopeFromStorageKey(key) !== undefined
+}
+
+/** Lee todos los scopes disponibles del origen, sin persistir otro total ni reasignar eventos.
+ * La memoria de otras pestañas solo está disponible después de sincronizarse con localStorage.
+ */
+export function getAggregateAnalyticsSnapshot(): AnalyticsAggregateSnapshot {
+  try {
+    const scopes = new Set([...memory.keys(), ...pending.keys()])
+    const invalidKeys = new Set<string>()
+    const persistence = { pending: false, memoryOnly: false, unavailable: false, excludedScopes: 0 }
+    try {
+      const storage = window.localStorage
+      for (let index = 0; index < storage.length; index++) {
+        const key = storage.key(index)
+        if (key === null || ![STORAGE_PREFIX, LEGACY_PREFIX].some(prefix => key.startsWith(prefix))) continue
+        const scope = scopeFromStorageKey(key)
+        if (scope === undefined) invalidKeys.add(key)
+        else scopes.add(scope)
+      }
+    } catch { persistence.unavailable = true; persistence.memoryOnly = true }
+    persistence.excludedScopes = invalidKeys.size
+    const counters = { productViews: 0, searches: 0, cartAdds: 0, purchases: 0 }
+    const completedOrders = new Set<string>()
+    for (const scope of scopes) {
+      const userId = ownerForScope(scope)
+      if (userId === undefined) { persistence.excludedScopes++; continue }
+      const latest = storedState(userId)
+      const buffered = pending.get(scope) ?? []
+      // La misma reconciliación del Core, en lectura: nunca sumar memoria + storage.
+      const state = latest.writable ? buffered.reduce(applyEvent, latest.state)
+        : memory.get(scope) ?? buffered.reduce(applyEvent, latest.state)
+      if (latest.status === 'incompatible') persistence.excludedScopes++
+      if (latest.status === 'unavailable') { persistence.unavailable = true; persistence.memoryOnly = true }
+      if (buffered.length && (writeOutcomes.get(scope) === 'failed' || !jobs.has(scope))) persistence.memoryOnly = true
+      if (jobs.has(scope)) persistence.pending = true
+      for (const key of ['productViews', 'searches', 'cartAdds'] as const) {
+        counters[key] += state.counters[key]
+        if (!Number.isSafeInteger(counters[key]) || counters[key] < 0) return { status: 'error' }
+      }
+      for (const orderId of state.completedOrderIds) completedOrders.add(orderId)
+    }
+    counters.purchases = completedOrders.size
+    if (!Number.isSafeInteger(counters.purchases)) return { status: 'error' }
+    return { status: 'ready', counters, persistence }
+  } catch { return { status: 'error' } }
 }
 
 export const analyticsStorage = { keyPrefix: STORAGE_PREFIX, legacyKeyPrefix: LEGACY_PREFIX,
