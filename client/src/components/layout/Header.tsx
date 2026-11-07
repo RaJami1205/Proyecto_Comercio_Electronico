@@ -11,15 +11,16 @@ interface HeaderProps {
   cartView?: boolean
   checkoutView?: boolean
   policyView?: boolean
+  analyticsView?: boolean
   onCartClick?: () => void
   onCatalogClick?: () => void
 }
 
 /** Presenta los accesos según la vista activa usando totalUnits de useCart. */
-function Header({ cartView = false, checkoutView = false, policyView = false, onCartClick, onCatalogClick }: HeaderProps) {
+function Header({ cartView = false, checkoutView = false, policyView = false, analyticsView = false, onCartClick, onCatalogClick }: HeaderProps) {
   const { totalUnits } = useCart()
   const session = useSession()
-  const outsideCatalog = cartView || checkoutView || policyView
+  const outsideCatalog = cartView || checkoutView || policyView || analyticsView
 
   /** Permite regresar al catálogo mediante el callback de navegación o un ancla. */
   function handleCatalogNavigation(event: MouseEvent<HTMLAnchorElement>) {
@@ -32,6 +33,15 @@ function Header({ cartView = false, checkoutView = false, policyView = false, on
 
     handleAnchorNavigation(event)
   }
+
+  // Hash nativo: App resuelve #analytics con su listener de History/hashchange, incluido Back/Forward.
+  const activityLink = session.user?.role === 'ADMIN' ? (
+    <li>
+      <a href="#analytics" aria-current={analyticsView ? 'page' : undefined}>
+        Analytics
+      </a>
+    </li>
+  ) : null
 
   return (
     <header className={styles.header}>
@@ -49,11 +59,14 @@ function Header({ cartView = false, checkoutView = false, policyView = false, on
         <nav className={styles.navigation} aria-label="Navegación principal">
           <ul>
             {outsideCatalog ? (
-              <li>
-                <a href="#catalog" onClick={handleCatalogNavigation}>
-                  Volver al catálogo
-                </a>
-              </li>
+              <>
+                <li>
+                  <a href="#catalog" onClick={handleCatalogNavigation}>
+                    Volver al catálogo
+                  </a>
+                </li>
+                {checkoutView ? null : activityLink}
+              </>
             ) : (
               <>
                 <li>
@@ -76,6 +89,7 @@ function Header({ cartView = false, checkoutView = false, policyView = false, on
                     Nosotros
                   </a>
                 </li>
+                {activityLink}
               </>
             )}
           </ul>

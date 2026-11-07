@@ -1,0 +1,37 @@
+/** Tarjeta de métrica con acento por tipo, coherente con la paleta tecnológica de CiberNova. */
+.card {
+  --tone: var(--color-primary);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "icon label" "value value" "description description";
+  gap: 0.6rem 0.75rem;
+  align-items: center;
+  align-content: start;
+  min-width: 0;
+  padding: clamp(1rem, 2.5vw, 1.4rem);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--tone);
+  border-radius: var(--border-radius);
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(27, 51, 94, 0.08);
+}
+.views { --tone: var(--color-primary); }
+.searches { --tone: var(--color-secondary); }
+.cart { --tone: #0fb5c2; }
+.purchases { --tone: #1f9d63; }
+
+.icon {
+  grid-area: icon;
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  color: var(--tone);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+}
+.icon svg { width: 1.3rem; height: 1.3rem; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+
+.label { grid-area: label; margin: 0; color: var(--color-text-primary); font-size: 0.95rem; font-weight: 700; line-height: 1.3; }
+.value { grid-area: value; margin: 0.25rem 0 0; color: var(--color-text-primary); font-size: clamp(2rem, 4vw, 2.6rem); font-weight: 850; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.description { grid-area: description; margin: 0; color: var(--color-text-muted); font-size: 0.85rem; line-height: 1.5; }

@@ -38,7 +38,7 @@ modules.set('./services/analytics', dataUrl('export function trackEvent() {}'))
 modules.set('./hooks/useSession', runtimeUrl)
 modules.set('./components/session/LoginDialog', dataUrl("export default 'LoginDialog'"))
 for (const name of ['Header','Footer']) modules.set('../components/layout/'+name,dataUrl(`export default '${name}'`))
-for (const name of ['ProductListingPage','CartPage','CheckoutPage','PolicyPlaceholderPage','TermsPage','ReturnsPolicyPage','FaqPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
+for (const name of ['ProductListingPage','CartPage','CheckoutPage','PolicyPlaceholderPage','TermsPage','ReturnsPolicyPage','FaqPage','AnalyticsDashboardPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
 for (const name of ['ShippingPolicyPage','PrivacyPolicyPage']) modules.set('./pages/'+name,dataUrl(`export const ${name} = '${name}'`))
 modules.set('./components/cart/CartPreviewDrawer',dataUrl("export default 'CartPreviewDrawer'"))
 /** Transpila el archivo indicado y resuelve únicamente las dependencias aisladas del harness. */

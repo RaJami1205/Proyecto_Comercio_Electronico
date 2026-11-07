@@ -16,6 +16,8 @@ export function analyticsEnvironment(t, { locks = true } = {}) {
   const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
   const stored = new Map(), queues = new Map(), listeners = new Set()
   const storage = {
+    get length() { return stored.size },
+    key: index => [...stored.keys()][index] ?? null,
     getItem: key => stored.get(key) ?? null,
     setItem: (key, value) => stored.set(key, value),
   }

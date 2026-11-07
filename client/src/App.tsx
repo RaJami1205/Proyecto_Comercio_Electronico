@@ -15,6 +15,7 @@ import { hashForView, policyDestinations, viewFromHash, type AppView, type Catal
 import { ShippingPolicyPage } from './pages/ShippingPolicyPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import FaqPage from './pages/FaqPage'
+import AnalyticsDashboardPage from './pages/AnalyticsDashboardPage'
 import { trackEvent } from './services/analytics'
 
 interface NavigationState {
@@ -32,6 +33,7 @@ function viewFromLocation(): AppView {
 function App() {
   const { items, hasExternalConflict } = useCart()
   const session = useSession()
+  const canViewAnalytics = session.user?.role === 'ADMIN'
   const { getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState } = session
   const checkoutLockedRef = useRef(false)
   const [checkoutLocked, setCheckoutLocked] = useState(false)
@@ -51,6 +53,11 @@ function App() {
   if (navigation.view === 'checkout' && !checkoutLocked && !checkoutHasOrder && !isTransactionBlocked()
     && (items.length === 0 || !session.user || session.user.role !== 'B2C')) {
     setNavigation({ view: 'cart', emptyCartNotice: items.length === 0, checkoutNotice: session.purchaseBlockReason ?? undefined })
+    if (isCartPreviewOpen) setIsCartPreviewOpen(false)
+  }
+  // Revocar antes del commit evita conservar contenido protegido durante cambios de Session.
+  if (navigation.view === 'analytics' && !canViewAnalytics) {
+    setNavigation({ view: 'catalog', emptyCartNotice: false })
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }
   const { view, emptyCartNotice } = navigation
@@ -79,8 +86,10 @@ function App() {
         return
       }
       const requested = viewFromLocation()
+      const analyticsDenied = requested === 'analytics' && !canViewAnalytics
       const reason = requested === 'checkout' ? getPurchaseBlockReason() : null
-      const next = reason ? 'cart' : requested
+      const next = analyticsDenied ? 'catalog' : reason ? 'cart' : requested
+      if (analyticsDenied) window.history.replaceState({ view: 'catalog' }, '', '#catalog')
       if (reason) window.history.replaceState({ view: 'cart' }, '', '#cart-page')
       if (next !== 'checkout') { setCheckoutHasOrder(false); setTransactionState('idle') }
       setCheckoutMounted(next === 'checkout')
@@ -99,11 +108,14 @@ function App() {
       window.removeEventListener('hashchange', syncLocation)
       window.removeEventListener('beforeunload', protectReload)
     }
-  }, [getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState])
+  }, [getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState, canViewAnalytics])
 
   useEffect(() => setCheckoutMounted(view === 'checkout'), [view, setCheckoutMounted])
 
   useEffect(() => {
+    if (!canViewAnalytics && window.location.hash === '#analytics') {
+      window.history.replaceState({ view: 'catalog' }, '', '#catalog')
+    }
     if ((emptyCartNotice || navigation.checkoutNotice) && window.location.hash === '#checkout') {
       window.history.replaceState({ view: 'cart' }, '', '#cart-page')
     }
@@ -119,7 +131,7 @@ function App() {
       heading?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
-  }, [navigation, view, emptyCartNotice])
+  }, [navigation, view, emptyCartNotice, canViewAnalytics])
 
   useEffect(() => () => {
     if (feedbackTimeoutRef.current !== null) clearTimeout(feedbackTimeoutRef.current)
@@ -143,13 +155,15 @@ function App() {
     restoreDrawerFocusRef.current = false
     setIsCartPreviewOpen(false)
     const reason = requestedView === 'checkout' ? getPurchaseBlockReason() : null
+    const analyticsDenied = requestedView === 'analytics' && !canViewAnalytics
     const denied = requestedView === 'checkout' && (items.length === 0 || Boolean(reason))
-    const nextView = denied ? 'cart' : requestedView
+    const nextView = analyticsDenied ? 'catalog' : denied ? 'cart' : requestedView
+    const nextCatalogHash = analyticsDenied ? '#catalog' : catalogHash
     const destination = nextView === 'catalog'
-      ? `${window.location.pathname}${window.location.search}${catalogHash}`
+      ? `${window.location.pathname}${window.location.search}${nextCatalogHash}`
       : hashForView(nextView)
-    if (viewFromLocation() !== nextView || (nextView === 'catalog' && window.location.hash !== catalogHash)) {
-      if (denied && window.location.hash === '#checkout') {
+    if (viewFromLocation() !== nextView || (nextView === 'catalog' && window.location.hash !== nextCatalogHash)) {
+      if (analyticsDenied || (denied && window.location.hash === '#checkout')) {
         window.history.replaceState({ view: nextView }, '', destination)
       } else {
         window.history.pushState({ view: nextView }, '', destination)
@@ -200,6 +214,13 @@ function App() {
           getPurchaseBlockReason={getPurchaseBlockReason}
           onBackToCart={() => navigate('cart')}
           onCatalogClick={(hash) => navigate('catalog', hash)}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'analytics' && canViewAnalytics ? (
+        <AnalyticsDashboardPage
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
           onCartClick={openCartPreview}
         />
       ) : null}

@@ -22,3 +22,20 @@ export type AnalyticsCounters = {
   checkouts: number
   purchases: number
 }
+
+/** persistent: snapshot local válido sin escrituras pendientes; pending: escritura coordinada en curso;
+ * memory-only: sin localStorage/Web Locks o última escritura fallida;
+ * incompatible: snapshot corrupto o de otra versión, que se conserva intacto mientras la sesión sigue en memoria. */
+export type AnalyticsStorageStatus = 'persistent' | 'pending' | 'memory-only' | 'incompatible'
+
+/** Proyección administrativa derivada; nunca se guarda como otro acumulado. */
+export type AnalyticsAggregateCounters = Pick<AnalyticsCounters, 'productViews' | 'searches' | 'cartAdds' | 'purchases'>
+export interface AnalyticsAggregatePersistence {
+  pending: boolean
+  memoryOnly: boolean
+  unavailable: boolean
+  excludedScopes: number
+}
+export type AnalyticsAggregateSnapshot =
+  | { status: 'ready'; counters: AnalyticsAggregateCounters; persistence: AnalyticsAggregatePersistence }
+  | { status: 'error' }
