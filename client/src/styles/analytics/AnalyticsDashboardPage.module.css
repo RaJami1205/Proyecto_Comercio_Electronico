@@ -1,0 +1,64 @@
+/** Superficie del Analytics Dashboard: reutiliza variables globales y la escala de PolicyLayout. */
+.page { display: flex; flex-direction: column; min-height: 100vh; background: var(--color-surface); }
+.main { flex: 1; min-width: 0; padding: clamp(2rem, 6vw, 4.5rem) 1rem; }
+.container { width: min(100%, var(--content-max-width)); margin-inline: auto; overflow-wrap: anywhere; }
+.eyebrow { margin: 0 0 1rem; color: #164ed6; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.title { margin: 0 0 1rem; color: var(--color-text-primary); font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.2; letter-spacing: -0.04em; }
+.title[tabindex="-1"]:focus { outline: none; }
+.introduction { max-width: 48rem; margin: 0 0 1rem; color: var(--color-text-muted); line-height: 1.7; }
+
+.scope {
+  display: inline-block;
+  margin: 0 0 2rem;
+  padding: 0.55rem 0.9rem;
+  color: #12406b;
+  border: 1px solid rgba(24, 213, 227, 0.45);
+  border-radius: 12px;
+  background: rgba(24, 213, 227, 0.08);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.owner { font-weight: 700; }
+
+.content { min-height: 10rem; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(0.85rem, 2vw, 1.25rem);
+}
+
+.status, .warning, .error, .notice {
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  background: #fff;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+.warning { color: #6b4a00; border-color: #f0c96b; background: #fff8e6; }
+.error { color: #8a1c2b; border-color: #f1b2bb; background: #fff3f5; }
+.error p, .notice p { margin: 0 0 0.9rem; }
+.notice { padding: clamp(1.25rem, 4vw, 2rem); border-top: 3px solid var(--color-primary); box-shadow: 0 10px 28px rgba(27, 51, 94, 0.08); }
+.notice h2 { margin: 0 0 0.5rem; color: var(--color-text-primary); font-size: 1.25rem; }
+
+.primaryButton, .secondaryButton {
+  min-height: 44px;
+  padding: 0.6rem 1.1rem;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.primaryButton { color: #fff; border: 1px solid transparent; background: linear-gradient(135deg, var(--color-primary), var(--color-secondary)); }
+.secondaryButton { color: var(--color-text-primary); border: 1px solid var(--color-border); background: #fff; }
+.primaryButton:disabled { opacity: 0.6; cursor: default; }
+
+@media (max-width: 960px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 520px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .scope { display: block; }
+}

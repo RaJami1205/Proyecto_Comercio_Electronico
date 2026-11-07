@@ -1,5 +1,5 @@
 /** Analytics local por identidad; ningún fallo de validación/storage debe bloquear comercio. */
-import type { AnalyticsCounters, AnalyticsEvent, AnalyticsEventInput } from '../types/analytics'
+import type { AnalyticsCounters, AnalyticsEvent, AnalyticsEventInput, AnalyticsStorageStatus } from '../types/analytics'
 
 const STORAGE_PREFIX = 'cibernova:analytics:v2:'
 const LEGACY_PREFIX = 'cibernova:analytics:v1:'
@@ -227,6 +227,15 @@ export function refreshAnalyticsState(userId: string | null = null): void {
       if (latest.writable) memory.set(scope, buffered.reduce(applyEvent, latest.state))
     }
   } catch { /* Preservar la copia local ante storage no disponible. */ }
+}
+
+/** Informa si las métricas del scope pueden persistirse; no modifica storage ni la copia en memoria. */
+export function getAnalyticsStorageStatus(userId: string | null = null): AnalyticsStorageStatus {
+  try {
+    if (typeof window === 'undefined' || !owner(userId) || typeof navigator === 'undefined' || !navigator.locks) return 'memory-only'
+    window.localStorage.getItem(STORAGE_PREFIX + scopeFor(userId))
+  } catch { return 'memory-only' }
+  return storedState(userId).writable ? 'persistent' : 'incompatible'
 }
 
 export const analyticsStorage = { keyPrefix: STORAGE_PREFIX, legacyKeyPrefix: LEGACY_PREFIX,

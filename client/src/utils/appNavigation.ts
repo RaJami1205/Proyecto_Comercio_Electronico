@@ -16,6 +16,7 @@ export type CatalogHash = '' | '#top' | '#catalog' | '#about'
 const destinations = [
   { view: 'cart', hash: '#cart-page' },
   { view: 'checkout', hash: '#checkout' },
+  { view: 'analytics', hash: '#analytics' },
   ...policyDestinations,
 ] as const
 export type AppView = 'catalog' | typeof destinations[number]['view']

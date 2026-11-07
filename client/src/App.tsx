@@ -15,6 +15,7 @@ import { hashForView, policyDestinations, viewFromHash, type AppView, type Catal
 import { ShippingPolicyPage } from './pages/ShippingPolicyPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import FaqPage from './pages/FaqPage'
+import AnalyticsDashboardPage from './pages/AnalyticsDashboardPage'
 import { trackEvent } from './services/analytics'
 
 interface NavigationState {
@@ -200,6 +201,13 @@ function App() {
           getPurchaseBlockReason={getPurchaseBlockReason}
           onBackToCart={() => navigate('cart')}
           onCatalogClick={(hash) => navigate('catalog', hash)}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'analytics' ? (
+        <AnalyticsDashboardPage
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
           onCartClick={openCartPreview}
         />
       ) : null}

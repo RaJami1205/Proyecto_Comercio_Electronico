@@ -9,7 +9,7 @@ async function setup(t) {
   const env = analyticsEnvironment(t)
   const { api, url } = await loadAnalytics()
   h.overrides.set('services/analytics', url)
-  for (const name of ['ProductListingPage','CartPage','CheckoutPage','PolicyPlaceholderPage','TermsPage','ReturnsPolicyPage','FaqPage']) h.overrides.set('pages/' + name, dataUrl(`export default '${name}'`))
+  for (const name of ['ProductListingPage','CartPage','CheckoutPage','PolicyPlaceholderPage','TermsPage','ReturnsPolicyPage','FaqPage','AnalyticsDashboardPage']) h.overrides.set('pages/' + name, dataUrl(`export default '${name}'`))
   for (const name of ['ShippingPolicyPage','PrivacyPolicyPage']) h.overrides.set('pages/' + name, dataUrl(`export const ${name} = '${name}'`))
   h.overrides.set('context/CartContext', dataUrl('export const CartContext={Provider:"CartProvider"}'))
   h.overrides.set('components/cart/CartPreviewDrawer', dataUrl('export default "CartPreviewDrawer"'))

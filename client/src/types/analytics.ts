@@ -22,3 +22,7 @@ export type AnalyticsCounters = {
   checkouts: number
   purchases: number
 }
+
+/** persistent: snapshot local válido y escrituras coordinadas; memory-only: sin localStorage/Web Locks;
+ * incompatible: snapshot corrupto o de otra versión, que se conserva intacto mientras la sesión sigue en memoria. */
+export type AnalyticsStorageStatus = 'persistent' | 'memory-only' | 'incompatible'
