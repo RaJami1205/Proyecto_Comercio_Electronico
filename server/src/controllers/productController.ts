@@ -6,10 +6,11 @@ import {
   mapProductRecord,
   mapSearchProductRecord,
 } from '../mappers/productMapper.js'
-import { getCatalogPage, searchProducts } from '../services/productService.js'
+import { getCatalogPage, getProductById, searchProducts } from '../services/productService.js'
 
 const DEFAULT_PRODUCTS_PER_PAGE = 20
 const MAX_PRODUCTS_PER_PAGE = 100
+const MAX_HISTORY_PRODUCT_IDS = 10
 
 /** Normaliza paginación con fallback y límite superior para entradas inválidas. */
 function parsePositiveInteger(
@@ -57,6 +58,25 @@ export async function getProducts(
   next: NextFunction,
 ): Promise<void> {
   try {
+    if (Object.hasOwn(request.query, 'ids')) {
+      const rawIds: unknown = request.query.ids
+      const requestedIds: unknown[] = typeof rawIds === 'string' ? [rawIds] : Array.isArray(rawIds) ? rawIds : []
+      if (requestedIds.length > MAX_HISTORY_PRODUCT_IDS) {
+        response.status(400).json({ error: `Se permiten como máximo ${MAX_HISTORY_PRODUCT_IDS} productos por consulta.` })
+        return
+      }
+      if (requestedIds.length === 0 || !requestedIds.every((id: unknown): id is string =>
+        typeof id === 'string' && id.trim().length > 0 && !/^[\s,;|]+$/.test(id))) {
+        response.status(400).json({ error: 'El parámetro ids debe contener identificadores de producto válidos y no vacíos.' })
+        return
+      }
+      const ids = [...new Set(requestedIds.map(id => id.trim()))]
+      const records = await Promise.all(ids.map((id) => getProductById(id)))
+      const products = records.filter((record): record is NonNullable<typeof record> => record !== undefined)
+      response.json({ products: products.map(mapProductRecord), page: 1, totalPages: 1, totalProducts: products.length, facets: {} })
+      return
+    }
+
     const requestedPage = parsePositiveInteger(request.query.page, 1)
     const productsPerPage = parsePositiveInteger(
       request.query.perPage,

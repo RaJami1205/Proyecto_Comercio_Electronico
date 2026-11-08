@@ -3,6 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import { analyticsEnvironment, loadAnalytics } from './helpers/analyticsHarness.mjs'
 
 /** Codifica el código recibido como módulo importable en memoria. */
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
@@ -27,9 +28,12 @@ const runtimeUrl = dataUrl(`
   export const jsxs = jsx;
 `)
 const runtime = await import(runtimeUrl)
+const analyticsUrl = dataUrl('export function trackEvent() {}')
 const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
+  ['../hooks/useSession', dataUrl('export function useSession() {return {user:{id:"test-user"}}}')],
+  ['../services/analytics', analyticsUrl],
 ])
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
@@ -77,14 +81,15 @@ function nodes(tree) {
   return [tree, ...nodes(tree.props?.children)]
 }
 /** Inicializa el Cart y recorre Buyer y Delivery; devuelve controles del harness para probar Review y Payment. */
-function checkout({ acceptTerms = true } = {}) {
+function checkout({ acceptTerms = true, Page = CheckoutPage } = {}) {
   runtime.reset(structuredClone(cart))
   const events = []
+  const transactions = []
   const props = { onBackToCart: () => events.push('exit'), onCatalogClick: () => {}, onCartClick: () => {},
-    onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created') }
+    onNavigationLockChange: busy => events.push(busy), onOrderCreated: () => events.push('created'), onTransactionStateChange: state => transactions.push(state) }
   let tree
   /** Actualiza el árbol simulado de Checkout conservando sus slots de estado. */
-  const render = () => { runtime.renderStart(); tree = CheckoutPage(props) }
+  const render = () => { runtime.renderStart(); tree = Page(props) }
   /** Devuelve las propiedades del primer componente del tipo solicitado en el árbol simulado. */
   const find = type => nodes(tree).find(node => node.type === type)?.props
   render()
@@ -93,7 +98,7 @@ function checkout({ acceptTerms = true } = {}) {
   find('DeliveryStep').onContinue(delivery)
   render()
   if (acceptTerms) { find('ReviewStep').onTermsAcceptedChange(true); render() }
-  return { render, find, review: () => find('ReviewStep'), step: () => find('CheckoutStepper').currentStep, events }
+  return { render, find, review: () => find('ReviewStep'), step: () => find('CheckoutStepper').currentStep, events, transactions }
 }
 
 /** Construye un resultado de pago coherente con el escenario; permite sustituir campos para probar respuestas inválidas. */
@@ -103,28 +108,110 @@ const result = (scenario, changes = {}) => ({
     paymentStatus: scenario.replace('PAYMENT_', '')}, ...changes,
 })
 /** Prepara la Order y el escenario solicitado con fetch simulado; devuelve handlers y requests capturados. */
-async function paymentFlow(t, scenario = 'PAYMENT_DECLINED') {
+async function paymentFlow(t, scenario = 'PAYMENT_DECLINED', Page = CheckoutPage, orderId = 'order-1') {
   const original = globalThis.fetch
   t.after(() => { globalThis.fetch = original })
   const requests = []
   /** Construye la respuesta simulada para el escenario incluido en la solicitud de pago. */
-  let respond = request => Response.json(result(request.scenario))
+  let respond = request => { const response = result(request.scenario); return Response.json({ ...response, order: { ...response.order, id: orderId } }) }
   globalThis.fetch = async (url, options) => {
     assert.equal(options.method, 'POST')
     const payload = JSON.parse(options.body)
     assert.equal(typeof payload.idempotencyKey, 'string')
     assert.ok(payload.idempotencyKey.length > 0)
     requests.push({url, payload})
-    if (url === '/api/orders') return Response.json(order(), {status:201})
-    assert.equal(url, '/api/orders/order-1/payment')
+    if (url === '/api/orders') return Response.json({ ...order(), id: orderId }, {status:201})
+    assert.equal(url, '/api/orders/' + orderId + '/payment')
     assert.deepEqual(Object.keys(payload).sort(), ['idempotencyKey', 'scenario'])
     return respond(payload)
   }
-  const flow = checkout()
+  const flow = checkout({ Page })
   await flow.review().onConfirm(); flow.render()
   flow.find('PaymentStep').onScenarioChange(scenario); flow.render()
   return {...flow, requests, respond: fn => { respond = fn }, payment: () => flow.find('PaymentStep')}
 }
+
+async function trackedCheckout(t) {
+  const storage = analyticsEnvironment(t)
+  const { api, url } = await loadAnalytics()
+  modules.set('../services/analytics', url)
+  const { default: Page } = await import(compile('pages/CheckoutPage.tsx'))
+  modules.set('../services/analytics', analyticsUrl)
+  return { api, Page, ...storage }
+}
+
+test('Dos compras aprobadas B2C con Orders distintas producen dos compras agregadas para ADMIN', async t => {
+  const { api, Page } = await trackedCheckout(t)
+  for (const id of ['order-one', 'order-two']) {
+    const flow = await paymentFlow(t, 'PAYMENT_APPROVED', Page, id)
+    await flow.payment().onProcessPayment()
+    flow.render()
+    assert.ok(flow.find('OrderConfirmationPage'))
+  }
+  await api.flushAnalytics()
+  const aggregate = api.getAggregateAnalyticsSnapshot()
+  assert.equal(aggregate.status, 'ready')
+  assert.equal(aggregate.counters.purchases, 2)
+  assert.equal(api.getAnalyticsCounters('test-user').purchases, 2)
+  const { api: reload } = await loadAnalytics()
+  assert.equal(reload.getAggregateAnalyticsSnapshot().counters.purchases, 2)
+})
+
+for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR', 'network', 'pending']) test('Analytics no registra compra: ' + scenario, async t => {
+  const { api, Page } = await trackedCheckout(t)
+  const flow = await paymentFlow(t, scenario.startsWith('PAYMENT_') ? scenario : 'PAYMENT_APPROVED', Page)
+  if (scenario === 'network') flow.respond(() => { throw new Error('network') })
+  if (scenario === 'pending') flow.respond(() => Response.json({ ...result('PAYMENT_APPROVED'), order: order() }))
+  await flow.payment().onProcessPayment()
+  flow.render()
+  assert.equal(api.getAnalyticsCounters('test-user').purchases, 0)
+  assert.equal(api.getAggregateAnalyticsSnapshot().counters.purchases, 0)
+  assert.equal(runtime.cleanupCount, 0)
+  await api.flushAnalytics()
+})
+
+test('Analytics compra real: Retry/Replay, rerender, remount y reload conservan una compra', async t => {
+  const { api, Page } = await trackedCheckout(t)
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED', Page)
+  const process = flow.payment().onProcessPayment
+  flow.respond(() => { throw new Error('timeout') })
+  await process()
+  assert.equal(api.getAnalyticsCounters('test-user').purchases, 0)
+  const originalKey = flow.requests.at(-1).payload.idempotencyKey
+  flow.respond(() => Response.json(result('PAYMENT_APPROVED')))
+  await process()
+  flow.render()
+  await process()
+  assert.equal(flow.requests.at(-1).payload.idempotencyKey, originalKey)
+  assert.equal(api.getAnalyticsCounters('test-user').purchases, 1)
+  assert.equal(runtime.cleanupCount, 1)
+  await api.flushAnalytics()
+  const replay = await paymentFlow(t, 'PAYMENT_APPROVED', Page)
+  await replay.payment().onProcessPayment()
+  assert.equal(api.getAnalyticsCounters('test-user').purchases, 1)
+  const { api: reload, url: reloadUrl } = await loadAnalytics()
+  modules.set('../services/analytics', reloadUrl)
+  // Un nuevo módulo de Analytics y un Checkout nuevo recuperan el mismo Order ID persistido.
+  const { default: ReloadPage } = await import(compile('pages/CheckoutPage.tsx'))
+  modules.set('../services/analytics', analyticsUrl)
+  const fresh = await paymentFlow(t, 'PAYMENT_APPROVED', ReloadPage)
+  await fresh.payment().onProcessPayment()
+  await reload.flushAnalytics()
+  assert.equal(reload.getAnalyticsCounters('test-user').purchases, 1)
+})
+
+test('Analytics fail-open no impide Payment aprobado ni Safe Cart Cleanup', async t => {
+  const { api, Page, storage } = await trackedCheckout(t)
+  storage.getItem = () => { throw new Error('blocked') }
+  storage.setItem = () => { throw new Error('quota') }
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED', Page)
+  await flow.payment().onProcessPayment()
+  flow.render()
+  assert.ok(flow.find('OrderConfirmationPage'))
+  assert.equal(runtime.cleanupCount, 1)
+  assert.equal(api.getAnalyticsCounters('test-user').purchases, 1)
+  await api.flushAnalytics()
+})
 
 test('F1 dos llamadas inmediatas emiten un POST y mantienen navegación bloqueada', async t => {
   const flow = await paymentFlow(t)
@@ -135,6 +222,7 @@ test('F1 dos llamadas inmediatas emiten un POST y mantienen navegación bloquead
   await handler()
   assert.equal(flow.requests.length, 2) // una creación, un pago
   assert.equal(flow.events.at(-1), true)
+  assert.equal(flow.transactions.at(-1), 'active')
   flow.render()
   assert.equal(flow.payment().isProcessingPayment, true)
   flow.payment().onScenarioChange('PAYMENT_APPROVED')
@@ -143,6 +231,7 @@ test('F1 dos llamadas inmediatas emiten un POST y mantienen navegación bloquead
   resolve(Response.json(result('PAYMENT_DECLINED')))
   await first
   assert.equal(flow.events.at(-1), false)
+  assert.equal(flow.transactions.at(-1), 'known')
   await handler() // callback anterior tampoco inicia otro intento completado
   assert.equal(flow.requests.length, 2)
 })
@@ -152,6 +241,7 @@ test('F2 fallo de red conserva Order, escenario y key incluso ante callback de s
   const snapshot = flow.payment().order
   flow.respond(() => { throw new TypeError('Fallo simulado') })
   await flow.payment().onProcessPayment(); flow.render()
+  assert.equal(flow.transactions.at(-1), 'uncertain')
   assert.equal(flow.payment().order, snapshot)
   assert.equal(flow.find('OrderConfirmationPage'), undefined)
   assert.equal(runtime.cleanupCount, 0)
@@ -160,6 +250,7 @@ test('F2 fallo de red conserva Order, escenario y key incluso ante callback de s
   assert.equal(flow.payment().selectedScenario, 'PAYMENT_DECLINED')
   flow.respond(request => Response.json(result(request.scenario)))
   await flow.payment().onProcessPayment(); flow.render()
+  assert.equal(flow.transactions.at(-1), 'known')
   assert.deepEqual(flow.requests[1], flow.requests[2])
   assert.equal(flow.requests.filter(r => r.url === '/api/orders').length, 1)
 })

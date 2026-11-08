@@ -1,11 +1,14 @@
-/** Configura Express, CORS y rutas de catálogo, Orders y pagos; traduce errores a respuestas públicas. */
+/** Configura Express, CORS y rutas de catálogo, Orders, pagos e identidades; traduce errores a respuestas públicas. */
 import cors from 'cors'
 import express, { type NextFunction, type Request, type Response } from 'express'
 
 import { ConfigurationError, serverConfig } from './config/env.js'
 import productsRouter from './routes/products.js'
 import ordersRouter from './routes/orders.js'
+import usersRouter from './routes/users.js'
+import sessionRouter from './routes/session.js'
 import { OrderError } from './domain/orderError.js'
+import { UserError } from './domain/userError.js'
 import type { ApiErrorResponse } from './types/apiError.js'
 
 const app = express()
@@ -20,10 +23,25 @@ app.use(
 
 app.use('/api/products', productsRouter)
 app.use('/api/orders', express.json(), ordersRouter)
+app.use('/api/users', usersRouter)
+app.use('/api/session', express.json(), sessionRouter)
 
-// Convierte errores de Orders y del catálogo a sus contratos HTTP sin exponer detalles internos.
+// Convierte errores de identidad, Orders y del catálogo a sus contratos HTTP sin exponer detalles internos.
 app.use(
   (error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+    if (_request.path.startsWith('/api/users') || _request.path.startsWith('/api/session')) {
+      let status = 500
+      let body: ApiErrorResponse = { error: { code: 'UNEXPECTED_ERROR', message: 'No se pudo completar la solicitud.' } }
+      if (error instanceof UserError) {
+        status = error.status
+        body = { error: { code: error.code, message: error.message } }
+      } else if (error !== null && typeof error === 'object' && 'type' in error && (error.type === 'entity.parse.failed' || error.type === 'entity.too.large')) {
+        status = error.type === 'entity.too.large' ? 413 : 400
+        body = { error: { code: 'INVALID_USER_ID', message: 'El cuerpo de la solicitud no es válido.' } }
+      }
+      response.status(status).json(body)
+      return
+    }
     if (_request.path === '/api/orders' || _request.path.startsWith('/api/orders/')) {
       let status = 500
       let body: ApiErrorResponse = { error: { code: 'UNEXPECTED_ERROR', message: 'No se pudo completar la solicitud.' } }

@@ -113,3 +113,86 @@ La fuente src/content/returnsPolicy.ts centraliza el plazo voluntaryReturnWindow
 El procedimiento es informativo: no hay canal operativo, formularios, reembolsos ni seguimiento logístico. La Order y el Sandbox siguen siendo demostrativos; esta página no modifica contratos ni estados transaccionales. Envíos, Privacidad y FAQ siguen como destinos en preparación; los términos publicados mantienen el mismo alcance académico.
 
 Verificación: npm run lint, npm run build y node --test tests/*.test.mjs. Las pruebas verifican contenido, secciones, plazo, PolicyLayout, Footer, navegación, asociaciones accesibles y ausencia de formularios.
+## Sesión simulada (CN-53)
+
+`CartProvider → SessionProvider → App` mantiene la identidad validada únicamente en memoria.
+`sessionApi` consume `GET /api/users` y `POST /api/session/resolve`; valida respuestas y no envía roles,
+Company ni headers de autorización como autoridad. No hay passwords, tokens, cookies o restauración automática.
+
+El catálogo sigue público y a precios Retail. Checkout se habilita temporalmente solo para B2C resuelto;
+B2B y ADMIN pueden seleccionarse, pero no comprar. Estas guardas Client no sustituyen RBAC Server.
+
+Login, cambio y Logout exigen descarte explícito si el Cart contiene productos. Un cambio durante
+la resolución o el consentimiento exige revisar nuevamente; cancelar o recibir un error conserva la sesión y el Cart.
+La sesión cambia en un único punto de commit. CN-72 publica `SESSION_STARTED` después del commit de React,
+mediante una transición explícita e idempotente, sin tracking provisional.
+Recent Searches y Search se reinician en memoria sin desmontar el catálogo completo.
+
+La clave `cibernova:cart:v1` sigue compartida: los eventos externos se marcan como conflicto y no hidratan
+productos automáticamente. Checkout queda bloqueado hasta un descarte confirmado. Esto no ofrece ownership,
+aislamiento del almacenamiento entre pestañas ni migración por usuario; corresponden a CN-60.
+
+Las operaciones activas o inciertas impiden navegación y cambios de identidad. Retry conserva Order,
+payload y claves. Los resultados controlados DECLINED/ERROR permiten Retry y salida segura.
+El aviso del navegador ante reload es preventivo: una recarga forzada pierde Session y referencias
+transaccionales en memoria, sin recuperación durable. Cart restaurado vuelve a tener propietario no verificado.
+
+Validación: `npm run lint`, `npm run build`, `node --test tests/*.test.mjs` desde `client/`.
+
+## Analytics Core (CN-72)
+
+Los seis eventos son `SESSION_STARTED`, `SEARCH_PERFORMED`, `PRODUCT_VIEWED`, `CART_ITEM_ADDED`,
+`CHECKOUT_STARTED` y `PURCHASE_COMPLETED`. Los emisores entregan metadata discriminada; `trackEvent`
+valida y crea un envelope con `eventId`, `type`, `occurredAt`, `userId` (`null` para anónimo) y `schemaVersion: 2`.
+Search se registra al ejecutar la consulta del catálogo por un cambio efectivo de query; autocomplete,
+Enter repetido sin cambio, filtros, sorting, pagination y replay de Effects no crean búsquedas adicionales.
+El texto de búsqueda y Recent Searches continúan únicamente en memoria.
+
+Se guarda un snapshot en `cibernova:analytics:v2:user:<userId codificado>` o `cibernova:analytics:v2:anonymous`.
+Contiene los últimos 500 eventos, contadores acumulativos, hasta diez IDs recientes y todos los Order IDs
+de compras contadas. Nunca se recalculan acumulados desde el log truncado ni se eliminan referencias
+de compras mientras esas compras sigan contadas. Cada compra requiere el resultado autoritativo
+`PAYMENT_APPROVED` con Order `CONFIRMED`/`APPROVED`; se deduplica por Order ID y usuario.
+No se guardan queries, Buyer/Delivery PII, productos completos ni datos de tarjeta.
+
+La lectura valida versión, owner, campos exactos, fechas, IDs, metadata y coherencia de contadores/referencias.
+Los snapshots v1 válidos se proyectan a v2 conservando acumulados y referencias, con IDs de eventos
+legacy deterministas; la primera escritura v2 se hace bajo el mismo lock. La clave v1 queda intacta.
+Datos corruptos o incompatibles tampoco se borran ni sobrescriben: ese scope continúa en memoria.
+
+Las escrituras v2 usan un Web Lock exclusivo por scope para leer el último snapshot, aplicar el buffer
+local y persistirlo. Esto evita que dos pestañas cooperantes pierdan acumulados o cuenten dos veces
+el mismo Order ID. Los selectors y notificaciones usados por CN-73 conservan sus interfaces síncronas;
+las métricas se actualizan en memoria inmediatamente. `flushAnalytics()` permite esperar las escrituras
+programadas en pruebas, sin bloquear operaciones comerciales.
+
+Si Web Locks no está disponible, el lock falla o localStorage está bloqueado/sin quota, Analytics continúa
+en memoria y evita escrituras sin coordinación. El buffer se reintenta ante actividad posterior cuando
+la capacidad vuelve a estar disponible. La actividad aún no persistida puede perderse al cerrar/recargar;
+las referencias de compras y el buffer pueden crecer con el uso. Es historia local del navegador, no
+reportería global ni fuente de verdad de Orders. Borrar browser storage pierde las métricas locales.
+
+## User History & Personalization (CN-73)
+
+El catálogo ofrece dos experiencias basadas en actividad real: Vistos recientemente, alimentado por
+`PRODUCT_VIEWED`, y Recent Searches, alimentado por búsquedas confirmadas y conservado solo en memoria.
+Una transición cancelada conserva Recent Searches; un cambio efectivo de identidad, Logout o reload lo reinicia.
+
+Vistos recientemente usa los diez IDs ordenados del scope Analytics actual y resuelve sus datos vigentes
+mediante `GET /api/products?ids=...` (parámetros repetidos, máximo diez). IDs ausentes conservan Listing;
+IDs presentes pero vacíos/inválidos responden 400. El Server conserva orden y dedup y omite productos inexistentes.
+El Client valida la respuesta desde `unknown`, proyecta `Product`/`ProductSpecification`, rechaza IDs ajenos
+y conserva el orden solicitado. `Product.category` refleja la etiqueta string del mapper Server, incluyendo
+categorías como Almacenamiento y Componentes, sin traducir ni modificar sus valores comerciales.
+
+Sin historial, la sección no ocupa espacio. Con IDs, distingue Loading, Empty por productos eliminados,
+Error y Success. Reintentar/Actualizar permiten recuperar datos vigentes; durante carga o error solo se
+conservan productos ya válidos del mismo owner y todavía incluidos en el historial, con un aviso explícito.
+Los precios/stock resueltos viven únicamente en React y nunca sustituyen la autoridad de Checkout/Server.
+
+Cada montaje/cambio de owner resuelve el historial; las notificaciones comparan los IDs ordenados y
+solo vuelven a consultar si cambian. Storage de otros scopes se ignora. Actualizar fuerza una consulta
+comercial nueva, sin caché persistente. Las respuestas antiguas se descartan al cambiar owner o solicitud.
+
+Las pruebas usan componentes/servicios reales con storage, fetch y catálogo aislados; los tests HTTP del
+controller usan Express y el mapper real en loopback. No prueban Algolia ni despliegues remotos.

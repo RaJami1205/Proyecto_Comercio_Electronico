@@ -8,15 +8,18 @@ import CatalogToolbar, { type ActivePanel } from '../components/catalog/CatalogT
 import Pagination from '../components/catalog/Pagination'
 import ProductGrid from '../components/catalog/ProductGrid'
 import ProductQuickView from '../components/catalog/ProductQuickView'
+import RecentlyViewedProducts from '../components/catalog/RecentlyViewedProducts'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
 import type { Product } from '../types/product'
 import { useCatalogPagination } from '../hooks/useCatalogPagination'
+import { useSession } from '../hooks/useSession'
 import { useProductCatalog } from '../hooks/useProductCatalog'
 import type { CatalogFilters as CatalogFiltersState } from '../services/productApi'
 import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 import type { PolicyView } from '../utils/appNavigation'
+import { trackEvent } from '../services/analytics'
 
 export interface CartFeedback {
   productId: string
@@ -43,19 +46,28 @@ const EMPTY_FILTERS: CatalogFiltersState = {
 
 /** Posee filtros, query, selección de Quick View y feedback temporal de presentación. */
 function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, onProductAdded, onPolicyNavigate }: ProductListingPageProps) {
+  const { epoch, user } = useSession()
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
-  const [catalogQuery, setCatalogQuery] = useState('')
+  const [catalogSearch, setCatalogSearch] = useState<{ query: string; source: 'catalog' | 'recent' }>({ query: '', source: 'catalog' })
+  const catalogQuery = catalogSearch.query
   
   // Un único panel activo evita desplegar grupos de filtros simultáneamente.
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
   
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [searchEpoch, setSearchEpoch] = useState(epoch)
+  if (searchEpoch !== epoch) {
+    setSearchEpoch(epoch)
+    setCatalogSearch({ query: '', source: 'catalog' })
+    setSelectedProduct(null)
+    setCurrentPage(1)
+  }
 
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
   const { products, totalPages, nbHits, facets, isLoading, error } =
-    useProductCatalog(currentPage, pageSize, filters, catalogQuery)
+    useProductCatalog(currentPage, pageSize, filters, catalogQuery, user?.id, catalogSearch.source)
 
   /** El preview comparte owner con las vistas y nunca se superpone al Quick View. */
   function openCartPreview() {
@@ -63,10 +75,16 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
     onCartClick()
   }
 
+  /** Registra una visita solo cuando una interacción abre el detalle del producto. */
+  function openProduct(product: Product) {
+    trackEvent({ type: 'PRODUCT_VIEWED', occurredAt: new Date().toISOString(), metadata: { productId: product.id } }, user?.id)
+    setSelectedProduct(product)
+  }
+
   /** Reinicia la paginación únicamente cuando cambia el query del catálogo. */
-  const handleSearchChange = useCallback((query: string) => {
+  const handleSearchChange = useCallback((query: string, source: 'catalog' | 'recent' = 'catalog') => {
     if (query === catalogQuery) return
-    setCatalogQuery(query)
+    setCatalogSearch({ query, source })
     setCurrentPage(1)
   }, [catalogQuery, setCurrentPage])
 
@@ -93,6 +111,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
       <Header onCartClick={openCartPreview} />
 
       <main>
+        <p className="retail-notice">Catálogo público a precios Retail. Checkout disponible temporalmente solo para identidades B2C.</p>
         <CatalogHero />
 
         <section className={styles.catalog} id="catalog" aria-labelledby="catalog-title">
@@ -110,11 +129,12 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
 
             {/* Pasamos el estado del panel activo y la función para cambiarlo */}
             <CatalogToolbar
+              key={epoch}
               productCount={nbHits}
               activePanel={activePanel}
               onTogglePanel={setActivePanel}
               onSearchChange={handleSearchChange}
-              onProductSelect={setSelectedProduct}
+              onProductSelect={openProduct}
             />
 
             {/* CatalogFilters ahora renderiza internamente solo la sección según 'activePanel' */}
@@ -124,6 +144,8 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
               onChange={handleFiltersChange}
               activePanel={activePanel}
             />
+
+            <RecentlyViewedProducts userId={user?.id} onProductSelect={openProduct} />
 
             <div className={styles.results} ref={resultsStartRef}>
               {error ? (
@@ -144,7 +166,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
                   addedProductId={feedback?.productId}
                   currentPage={currentPage}
                   totalPages={totalPages}
-                  onProductSelect={setSelectedProduct}
+                  onProductSelect={openProduct}
                 />
               )}
 

@@ -130,3 +130,77 @@ node --test tests/*.test.mjs
 ```
 
 Esta Story no incorpora interfaz de pagos, Confirmation Page ni limpieza del carrito.
+
+## Usuarios simulados (CN-52)
+
+Las identidades de la simulación residen en un índice Algolia `users`, separado del catálogo. No hay contraseñas, tokens ni sesiones: esto **no es autenticación real**. El Login simulado, `SessionContext` y RBAC pertenecen a Issues posteriores.
+
+### Configuración
+
+| Variable | Propósito |
+| --- | --- |
+| `ALGOLIA_USERS_INDEX_NAME` | Nombre del índice de usuarios. No puede coincidir con `ALGOLIA_INDEX_NAME` ni con sus réplicas `_price_asc`/`_price_desc`. |
+
+Las lecturas reutilizan `ALGOLIA_APP_ID` y `ALGOLIA_API_KEY`; esa clave debe tener permiso `search` sobre este índice. Si falta la variable, los endpoints de usuarios responden 503 y el catálogo sigue funcionando.
+
+### Preparar los usuarios
+
+`data/users.json` contiene cuatro records con `objectID` estables: un B2C, un B2B con Company, un ADMIN y un B2C deshabilitado para evaluar el rechazo. Forma del record: `objectID`, `displayName`, `role`, `enabled` y `company` (solo B2B, con `id` y `name`).
+
+1. Validar sin red, sin `.env` y sin credenciales:
+
+   ```sh
+   npm run seed:users
+   ```
+
+   Rechaza IDs duplicados o inválidos, roles desconocidos, Company inválida o presente fuera de B2B, cualquier campo fuera del contrato (por ejemplo `password` o `email`) y la falta de un usuario habilitado de cada rol.
+
+2. Solo con autorización para el índice destino, definir `ALGOLIA_USERS_INDEX_NAME`, `ALGOLIA_INDEX_NAME` (para la protección del catálogo), `ALGOLIA_APP_ID` y `ALGOLIA_SEED_API_KEY`. La clave necesita `addObject` sobre el índice de usuarios. No ejecutar contra producción sin aprobación explícita.
+
+   ```sh
+   npm run seed:users -- --write --confirm-index=NOMBRE_DEL_INDICE_DE_USUARIOS
+   ```
+
+   Aborta antes de enviar requests si la confirmación no coincide exactamente, si el destino es el índice de productos o una réplica, o si falta una variable. No usa `ALGOLIA_API_KEY` como alternativa.
+
+La única escritura es `saveObjects`: agrega o reemplaza por `objectID`, por lo que repetirla no duplica records. No borra records ni modifica settings, y los records remotos ausentes del archivo permanecen en el índice. Una falla puede dejar una carga parcial.
+
+3. Verificar la carga con el servidor en marcha: `GET /api/users` debe listar tres usuarios, y `POST /api/session/resolve` con `user-b2c-disabled-01` debe responder 403.
+
+### Endpoints
+
+`GET /api/users` responde 200 con `{ "users": ResolvedUser[] }`, solo con usuarios habilitados y válidos, ordenados por `id`. Recupera todas las páginas antes de filtrar. Si los límites de Algolia, un conteo no exhaustivo o páginas inconsistentes impiden verificar el listado completo, responde 503 en lugar de devolver información parcial. Los records inválidos se omiten y se registra únicamente su cantidad.
+
+`POST /api/session/resolve` recibe `{ "userId": "user-b2b-01" }` y responde 200 con el perfil:
+
+```json
+{
+  "user": {
+    "id": "user-b2b-01",
+    "displayName": "Compras Empresa Demo",
+    "role": "B2B",
+    "company": { "id": "company-demo-01", "name": "Distribuidora Demo" }
+  }
+}
+```
+
+Ignora cualquier otro campo del cuerpo, no devuelve `enabled` y no crea tokens, cookies ni sesiones.
+
+| Caso | Estado | Código |
+| --- | --- | --- |
+| `userId` ausente, con formato inválido o cuerpo no válido | 400 (413 si excede el tamaño) | `INVALID_USER_ID` |
+| Usuario inexistente | 404 | `USER_NOT_FOUND` |
+| Usuario deshabilitado | 403 | `USER_DISABLED` |
+| Rol no reconocido | 422 | `UNKNOWN_USER_ROLE` |
+| Company inválida en B2B | 422 | `INVALID_B2B_DATA` |
+| Otro dato inválido en el record | 422 | `INVALID_USER_DATA` |
+| Fallo de Algolia o configuración incompleta | 503 | `USER_SERVICE_UNAVAILABLE` |
+
+Los errores usan `ApiErrorResponse` sin detalles internos. Ante un 404 al consultar un objeto, una búsqueda sin recuperar hits comprueba que el índice esté disponible: solo entonces se responde `404 USER_NOT_FOUND`. Si el índice está ausente o no está disponible, ambos endpoints responden `503 USER_SERVICE_UNAVAILABLE`. No se consulta la disponibilidad adicionalmente cuando el objeto existe o el error original es distinto de 404.
+
+Verificación sin requests a Algolia:
+
+```sh
+npm run build
+node --test tests/users.test.mjs
+```

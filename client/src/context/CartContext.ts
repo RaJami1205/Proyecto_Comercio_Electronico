@@ -6,6 +6,8 @@ import type { CartItem, CartPurchaseCleanup } from '../types/cart'
 // Se consume mediante useCart(), sin acceder al reducer; dispatch permanece interno al Provider.
 export interface CartContextValue {
   items: CartItem[]
+  hasExternalConflict: boolean
+  getSnapshot: () => { items: readonly CartItem[]; revision: number; hasExternalConflict: boolean }
   addItem: (item: Omit<CartItem, 'quantity'>) => void
   incrementItem: (productId: string) => void
   decrementItem: (productId: string) => void

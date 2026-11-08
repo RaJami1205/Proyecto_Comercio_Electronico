@@ -1,0 +1,15 @@
+.dialog { width: min(34rem, calc(100% - 1.5rem)); max-width: none; max-height: calc(100dvh - 1.5rem); padding: 0; border: 1px solid #5275bb; border-radius: 16px; color: #e5edff; background: #0d1935; overflow: hidden; }
+.dialog[open] { display: flex; flex-direction: column; }
+.dialog::backdrop { background: rgba(3, 8, 24, .78); }
+.heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid #334b75; flex-shrink: 0; }
+.heading h2 { margin: 0; font-size: clamp(1.1rem, 4vw, 1.4rem); overflow-wrap: anywhere; }
+.content { padding: 1.25rem; overflow-y: auto; overscroll-behavior: contain; line-height: 1.6; overflow-wrap: anywhere; }
+.content p:first-child { margin-top: 0; }
+.content form { display: grid; gap: .8rem; }
+.dialog button, .dialog select { min-height: 44px; max-width: 100%; padding: .65rem .85rem; border: 1px solid #617eb4; border-radius: 9px; background: #172b50; color: #f1f6ff; font: inherit; }
+.dialog select { width: 100%; min-width: 0; }
+.dialog button { cursor: pointer; }
+.dialog button:disabled { opacity: .6; cursor: default; }
+.dialog .primary { background: #1f5eff; border-color: #73b4ff; font-weight: 700; }
+.dialog button:focus-visible, .dialog select:focus-visible { outline: 3px solid #73eff4; outline-offset: 3px; }
+@media (max-width: 420px) { .heading { flex-wrap: wrap; } .content { padding: 1rem; } }

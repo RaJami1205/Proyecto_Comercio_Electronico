@@ -9,8 +9,11 @@ const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).t
 const runtimeUrl = dataUrl(`
   let slots=[], cursor=0, effects=[], ids=0;
   export let cart=[];
+  export let sessionUser={id:'c',displayName:'Cliente',role:'B2C'}, transaction='idle', conflict=false;
+  export function setSession(user) { sessionUser=user; }
+  export function setConflict(value) { conflict=value; }
   export function dispose() { slots.forEach(slot=>slot?.cleanup?.()); }
-  export function reset(items=[]) { slots=[]; cursor=0; effects=[]; ids=0; cart=items; }
+  export function reset(items=[]) { slots=[]; cursor=0; effects=[]; ids=0; cart=items; sessionUser={id:'c',displayName:'Cliente',role:'B2C'};transaction='idle';conflict=false; }
   export function begin() { cursor=0; }
   export function useState(initial) {
     const index=cursor++;
@@ -29,6 +32,10 @@ const runtimeUrl = dataUrl(`
   }
   export function flush() { const pending=effects; effects=[]; pending.forEach(effect=>effect()); }
   export function useCart() { return {items:cart,totalUnits:cart.length}; }
+  const purchaseReason=()=>conflict?'Conflicto externo':!sessionUser?'Inicia sesión':sessionUser.role!=='B2C'?'Solo B2C':null;
+  export function useSession() { return {user:sessionUser,epoch:0,dialog:null,purchaseBlockReason:purchaseReason(),transitionBlockReason:null,resolving:false,
+    getPurchaseBlockReason:purchaseReason,isTransactionBlocked:()=>transaction==='active'||transaction==='uncertain',
+    setCheckoutMounted:()=>{},setTransactionState:state=>{transaction=state},openLogin:()=>{},requestLogout:()=>{}}; }
   export const Fragment='Fragment';
   export function jsx(type,props) { return {type,props}; }
   export const jsxs=jsx;
@@ -37,11 +44,13 @@ const runtimeUrl = dataUrl(`
 const runtime = await import(runtimeUrl)
 const modules = new Map()
 // Solo se sustituyen las vistas ajenas al alcance. Las rutas, Footer, Header y políticas son código real.
-for (const name of ['ProductListingPage', 'CartPage', 'CheckoutPage']) {
+for (const name of ['ProductListingPage', 'CartPage', 'CheckoutPage', 'AnalyticsDashboardPage']) {
   modules.set(`pages/${name}`, dataUrl(`export default '${name}'`))
 }
 modules.set('components/cart/CartPreviewDrawer', dataUrl("export default 'CartPreviewDrawer'"))
 modules.set('hooks/useCart', runtimeUrl)
+modules.set('hooks/useSession', runtimeUrl)
+modules.set('components/session/LoginDialog', dataUrl("export default 'LoginDialog'"))
 
 /** Transpila módulos locales y aísla estilos/React; falla ante una dependencia externa inesperada. */
 function compile(file) {
@@ -158,6 +167,7 @@ function environment(t, hash = '#catalog', items = [{productId:'p', quantity:1}]
     render() { runtime.begin(); const tree = App(); runtime.flush(); const pending=[...frames.values()]; frames.clear(); pending.forEach(callback=>callback()); return tree },
     travel(delta) { index += delta; windowMock.location=history[index]; listeners.get('popstate')(); listeners.get('hashchange')() },
     hashchange(hash) { windowMock.location = new URL(hash, windowMock.location); listeners.get('hashchange')() },
+    beforeunload(event) { listeners.get('beforeunload')(event) },
   }
 }
 
@@ -237,6 +247,66 @@ test('entrada a Checkout sin productos mantiene reemplazo por Cart', t => {
   assert.equal(nodes(tree).some(n => n.type === 'CheckoutPage'), false)
 })
 
+for (const user of [null, {id:'b',displayName:'Empresa',role:'B2B',company:{id:'co',name:'Empresa'}}, {id:'a',displayName:'Admin',role:'ADMIN'}]) {
+  test('CN-53 bloquea acceso directo, callbacks e historial de Checkout para ' + (user?.role ?? 'sin sesión'), t => {
+    const app = environment(t, '#checkout')
+    runtime.setSession(user)
+    app.render()
+    let tree = app.render()
+    assert.equal(nodes(tree).some(node => node.type === 'CheckoutPage'), false)
+    assert.equal(app.window.location.hash, '#cart-page')
+    nodes(tree).find(node => node.type === 'CartPage').props.onCheckoutRequested()
+    tree = app.render()
+    assert.equal(nodes(tree).some(node => node.type === 'CheckoutPage'), false)
+    assert.ok(nodes(tree).find(node => node.type === 'CartPage').props.navigationNotice)
+    runtime.setSession({id:'c',displayName:'Cliente',role:'B2C'})
+    nodes(tree).find(node => node.type === 'CartPage').props.onCheckoutRequested()
+    tree = app.render()
+    assert.ok(nodes(tree).find(node => node.type === 'CheckoutPage'))
+    nodes(tree).find(node => node.type === 'CheckoutPage').props.onCatalogClick()
+    app.render()
+    runtime.setSession(user)
+    app.travel(-1)
+    tree = app.render()
+    assert.equal(nodes(tree).some(node => node.type === 'CheckoutPage'), false)
+    assert.equal(app.window.location.hash, '#cart-page')
+    app.travel(1); app.render()
+    app.hashchange('#checkout'); tree = app.render()
+    assert.equal(nodes(tree).some(node => node.type === 'CheckoutPage'), false)
+  })
+}
+
+test('CN-53 incertidumbre bloquea callbacks, hash, Back y reload aunque navegación indique false', t => {
+  const app = environment(t, '#cart-page')
+  let tree = app.render()
+  nodes(tree).find(node => node.type === 'CartPage').props.onCheckoutRequested()
+  tree = app.render()
+  const checkout = nodes(tree).find(node => node.type === 'CheckoutPage').props
+  checkout.onTransactionStateChange('uncertain')
+  checkout.onNavigationLockChange(false)
+  checkout.onBackToCart()
+  app.travel(-1); tree = app.render()
+  assert.equal(app.window.location.hash, '#checkout')
+  app.hashchange('#faq'); tree = app.render()
+  assert.ok(nodes(tree).find(node => node.type === 'CheckoutPage'))
+  let prevented = false
+  app.beforeunload({preventDefault(){prevented=true}})
+  assert.equal(prevented, true)
+  checkout.onTransactionStateChange('known')
+  checkout.onBackToCart(); tree = app.render()
+  assert.ok(nodes(tree).find(node => node.type === 'CartPage'))
+})
+
+test('CN-53 un conflicto externo bloquea nueva entrada a Checkout', t => {
+  const app = environment(t, '#cart-page')
+  const tree = app.render()
+  runtime.setConflict(true)
+  nodes(tree).find(node => node.type === 'CartPage').props.onCheckoutRequested()
+  const next = app.render()
+  assert.equal(nodes(next).some(node => node.type === 'CheckoutPage'), false)
+  assert.match(nodes(next).find(node => node.type === 'CartPage').props.navigationNotice, /Conflicto/)
+})
+
 test('Footer delega enlaces ordinarios y conserva clicks modificados', () => {
   runtime.reset()
   const calls = []
@@ -309,8 +379,11 @@ test('Header informativo mantiene retorno al catálogo y respeta clicks modifica
   runtime.reset()
   let calls = 0
   const tree = Header({policyView:true, onCatalogClick:()=>calls++})
-  const links = nodes(tree).filter(n=>n.type === 'a')
+  const links = nodes(tree).filter(n=>n.type === 'a' && n.props.href !== '#analytics')
   assert.ok(links.every(n=>n.props.href === '#catalog'))
+  // El usuario B2C de este caso no debe recibir acceso a Analytics.
+  const activity = nodes(tree).filter(n=>n.type === 'a' && n.props.href === '#analytics')
+  assert.equal(activity.length, 0)
   for (const link of links) {
     assert.equal(click(link.props, {metaKey:true}).defaultPrevented, false)
     assert.equal(click(link.props).defaultPrevented, true)

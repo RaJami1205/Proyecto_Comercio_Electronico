@@ -5,6 +5,8 @@ import CartPage from './pages/CartPage'
 import CheckoutPage from './pages/CheckoutPage'
 import CartPreviewDrawer from './components/cart/CartPreviewDrawer'
 import { useCart } from './hooks/useCart'
+import { useSession } from './hooks/useSession'
+import LoginDialog from './components/session/LoginDialog'
 import type { Product } from './types/product'
 import PolicyPlaceholderPage from './pages/PolicyPlaceholderPage'
 import TermsPage from './pages/TermsPage'
@@ -13,10 +15,13 @@ import { hashForView, policyDestinations, viewFromHash, type AppView, type Catal
 import { ShippingPolicyPage } from './pages/ShippingPolicyPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import FaqPage from './pages/FaqPage'
+import AnalyticsDashboardPage from './pages/AnalyticsDashboardPage'
+import { trackEvent } from './services/analytics'
 
 interface NavigationState {
   view: AppView
   emptyCartNotice: boolean
+  checkoutNotice?: string
 }
 
 /** Resuelve el hash mediante el mapa de destinos comerciales e informativos de appNavigation. */
@@ -26,7 +31,10 @@ function viewFromLocation(): AppView {
 
 /** Mantiene la vista activa, protege la navegación durante operaciones y conecta las páginas con el Cart compartido. */
 function App() {
-  const { items } = useCart()
+  const { items, hasExternalConflict } = useCart()
+  const session = useSession()
+  const canViewAnalytics = session.user?.role === 'ADMIN'
+  const { getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState } = session
   const checkoutLockedRef = useRef(false)
   const [checkoutLocked, setCheckoutLocked] = useState(false)
   const [checkoutHasOrder, setCheckoutHasOrder] = useState(false)
@@ -42,35 +50,75 @@ function App() {
   const shouldRestoreDrawerFocus = useCallback(() => restoreDrawerFocusRef.current, [])
 
   // Ajuste antes del commit: nunca se monta Checkout con un Cart vacío.
-  if (navigation.view === 'checkout' && items.length === 0 && !checkoutLocked && !checkoutHasOrder) {
-    setNavigation({ view: 'cart', emptyCartNotice: true })
+  if (navigation.view === 'checkout' && !checkoutLocked && !checkoutHasOrder && !isTransactionBlocked()
+    && (items.length === 0 || !session.user || session.user.role !== 'B2C')) {
+    setNavigation({ view: 'cart', emptyCartNotice: items.length === 0, checkoutNotice: session.purchaseBlockReason ?? undefined })
+    if (isCartPreviewOpen) setIsCartPreviewOpen(false)
+  }
+  // Revocar antes del commit evita conservar contenido protegido durante cambios de Session.
+  if (navigation.view === 'analytics' && !canViewAnalytics) {
+    setNavigation({ view: 'catalog', emptyCartNotice: false })
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }
   const { view, emptyCartNotice } = navigation
+  const [sessionEpoch, setSessionEpoch] = useState(session.epoch)
+  if (sessionEpoch !== session.epoch) {
+    setSessionEpoch(session.epoch)
+    setFeedback(null)
+    setIsCartPreviewOpen(false)
+    if (navigation.checkoutNotice) setNavigation({ ...navigation, checkoutNotice: undefined })
+  }
   const policyDestination = policyDestinations.find(destination => destination.view === view)
+  /** La entrada a Checkout inicia el tracking una sola vez aunque React repita el efecto. */
+  const previousView = useRef<AppView | null>(null)
+
+  useEffect(() => {
+    if (view === 'checkout' && previousView.current !== 'checkout') {
+      trackEvent({ type: 'CHECKOUT_STARTED', occurredAt: new Date().toISOString(), metadata: {} }, session.user?.id)
+    }
+    previousView.current = view
+  }, [view, session.user?.id])
 
   useEffect(() => {
     /** Sincroniza la vista con el historial o conserva Checkout cuando la navegación está bloqueada. */
     function syncLocation() {
-      if (checkoutLockedRef.current) {
+      if (checkoutLockedRef.current || isTransactionBlocked()) {
         window.history.replaceState({ view: 'checkout' }, '', '#checkout')
         return
       }
-      if (viewFromLocation() !== 'checkout') setCheckoutHasOrder(false)
+      const requested = viewFromLocation()
+      const analyticsDenied = requested === 'analytics' && !canViewAnalytics
+      const reason = requested === 'checkout' ? getPurchaseBlockReason() : null
+      const next = analyticsDenied ? 'catalog' : reason ? 'cart' : requested
+      if (analyticsDenied) window.history.replaceState({ view: 'catalog' }, '', '#catalog')
+      if (reason) window.history.replaceState({ view: 'cart' }, '', '#cart-page')
+      if (next !== 'checkout') { setCheckoutHasOrder(false); setTransactionState('idle') }
+      setCheckoutMounted(next === 'checkout')
       restoreDrawerFocusRef.current = false
       setIsCartPreviewOpen(false)
-      setNavigation({ view: viewFromLocation(), emptyCartNotice: false })
+      setNavigation({ view: next, emptyCartNotice: false, checkoutNotice: reason ?? undefined })
     }
     window.addEventListener('popstate', syncLocation)
     window.addEventListener('hashchange', syncLocation)
+    /** Solicita confirmación del navegador si recargar interrumpiría una transacción activa o incierta. */
+    function protectReload(event: BeforeUnloadEvent) {
+      if (isTransactionBlocked()) { event.preventDefault(); event.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', protectReload)
     return () => {
       window.removeEventListener('popstate', syncLocation)
       window.removeEventListener('hashchange', syncLocation)
+      window.removeEventListener('beforeunload', protectReload)
     }
-  }, [])
+  }, [getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState, canViewAnalytics])
+
+  useEffect(() => setCheckoutMounted(view === 'checkout'), [view, setCheckoutMounted])
 
   useEffect(() => {
-    if (emptyCartNotice && window.location.hash === '#checkout') {
+    if (!canViewAnalytics && window.location.hash === '#analytics') {
+      window.history.replaceState({ view: 'catalog' }, '', '#catalog')
+    }
+    if ((emptyCartNotice || navigation.checkoutNotice) && window.location.hash === '#checkout') {
       window.history.replaceState({ view: 'cart' }, '', '#cart-page')
     }
     const frame = requestAnimationFrame(() => {
@@ -85,7 +133,7 @@ function App() {
       heading?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
-  }, [navigation, view, emptyCartNotice])
+  }, [navigation, view, emptyCartNotice, canViewAnalytics])
 
   useEffect(() => () => {
     if (feedbackTimeoutRef.current !== null) clearTimeout(feedbackTimeoutRef.current)
@@ -93,6 +141,8 @@ function App() {
 
   /** Publica un aviso temporal para el producto y origen indicados, sustituyendo el aviso anterior. */
   function showCartFeedback(product: Pick<Product, 'id' | 'name'>, source: CartFeedback['source']) {
+    /** Los controles de compra llaman a este handler tras aceptar la adición al Cart. */
+    trackEvent({ type: 'CART_ITEM_ADDED', occurredAt: new Date().toISOString(), metadata: { productId: product.id, quantity: 1 } }, session.user?.id)
     if (feedbackTimeoutRef.current !== null) clearTimeout(feedbackTimeoutRef.current)
     setFeedback({ productId: product.id, productName: product.name, source })
     feedbackTimeoutRef.current = window.setTimeout(() => {
@@ -103,34 +153,43 @@ function App() {
 
   /** Solicita una vista y actualiza el historial respetando el bloqueo y la guarda de carrito vacío. */
   function navigate(requestedView: AppView, catalogHash: CatalogHash = '') {
-    if (checkoutLockedRef.current) return
-    if (requestedView !== 'checkout') setCheckoutHasOrder(false)
+    if (checkoutLockedRef.current || isTransactionBlocked()) return
+    if (requestedView !== 'checkout') { setCheckoutHasOrder(false); setTransactionState('idle') }
     restoreDrawerFocusRef.current = false
     setIsCartPreviewOpen(false)
-    const denied = requestedView === 'checkout' && items.length === 0
-    const nextView = denied ? 'cart' : requestedView
+    const reason = requestedView === 'checkout' ? getPurchaseBlockReason() : null
+    const analyticsDenied = requestedView === 'analytics' && !canViewAnalytics
+    const denied = requestedView === 'checkout' && (items.length === 0 || Boolean(reason))
+    const nextView = analyticsDenied ? 'catalog' : denied ? 'cart' : requestedView
+    const nextCatalogHash = analyticsDenied ? '#catalog' : catalogHash
     const destination = nextView === 'catalog'
-      ? `${window.location.pathname}${window.location.search}${catalogHash}`
+      ? `${window.location.pathname}${window.location.search}${nextCatalogHash}`
       : hashForView(nextView)
-    if (viewFromLocation() !== nextView || (nextView === 'catalog' && window.location.hash !== catalogHash)) {
-      if (denied && window.location.hash === '#checkout') {
+    if (viewFromLocation() !== nextView || (nextView === 'catalog' && window.location.hash !== nextCatalogHash)) {
+      if (analyticsDenied || (denied && window.location.hash === '#checkout')) {
         window.history.replaceState({ view: nextView }, '', destination)
       } else {
         window.history.pushState({ view: nextView }, '', destination)
       }
     }
-    setNavigation({ view: nextView, emptyCartNotice: denied })
+    setCheckoutMounted(nextView === 'checkout')
+    setNavigation({ view: nextView, emptyCartNotice: denied && !reason, checkoutNotice: reason ?? undefined })
   }
 
   /** Abre el preview cuando la navegación está permitida y habilita el retorno del foco al trigger. */
   function openCartPreview() {
-    if (checkoutLockedRef.current) return
+    if (checkoutLockedRef.current || isTransactionBlocked()) return
     restoreDrawerFocusRef.current = true
     setIsCartPreviewOpen(true)
   }
 
   return (
     <>
+      {hasExternalConflict ? <div role="status" className="session-conflict">
+        Se detectó un cambio de carrito en otra pestaña. Conservamos esta copia sin importar productos externos.
+        <button type="button" onClick={session.resolveCartConflict} disabled={Boolean(session.transitionBlockReason)}>Revisar conflicto</button>
+        {session.transitionBlockReason ? <span> {session.transitionBlockReason}</span> : null}
+      </div> : null}
       <ProductListingPage
         active={view === 'catalog'}
         isCartPreviewOpen={isCartPreviewOpen}
@@ -146,15 +205,25 @@ function App() {
           onCheckoutRequested={() => navigate('checkout')}
           onPolicyNavigate={navigate}
           feedbackProductName={feedback?.source === 'catalog' ? feedback.productName : undefined}
-          navigationNotice={emptyCartNotice ? 'Agrega productos al carrito para continuar con la compra.' : undefined}
+          navigationNotice={navigation.checkoutNotice ?? (emptyCartNotice ? 'Agrega productos al carrito para continuar con la compra.' : undefined)}
         />
       ) : null}
       {view === 'checkout' && (items.length > 0 || checkoutLocked || checkoutHasOrder) ? (
         <CheckoutPage
           onNavigationLockChange={(busy) => { checkoutLockedRef.current = busy; setCheckoutLocked(busy) }}
           onOrderCreated={() => setCheckoutHasOrder(true)}
+          onTransactionStateChange={setTransactionState}
+          purchaseBlockedReason={session.purchaseBlockReason}
+          getPurchaseBlockReason={getPurchaseBlockReason}
           onBackToCart={() => navigate('cart')}
           onCatalogClick={(hash) => navigate('catalog', hash)}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'analytics' && canViewAnalytics ? (
+        <AnalyticsDashboardPage
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
           onCartClick={openCartPreview}
         />
       ) : null}
@@ -201,10 +270,12 @@ function App() {
           onClose={() => setIsCartPreviewOpen(false)}
           onViewCart={() => navigate('cart')}
           onContinueShopping={() => view === 'catalog' ? setIsCartPreviewOpen(false) : navigate('catalog')}
-          onCheckoutRequested={() => navigate('checkout')}
+          onCheckoutRequested={session.purchaseBlockReason ? undefined : () => navigate('checkout')}
+          checkoutNotice={session.purchaseBlockReason ?? undefined}
           shouldRestoreFocus={shouldRestoreDrawerFocus}
         />
       ) : null}
+      {session.dialog ? <LoginDialog key={session.dialog} /> : null}
     </>
   )
 }

@@ -1,6 +1,8 @@
 /** Resuelve configuración server-side y valida la presencia de credentials de Algolia sin exponer sus valores. */
 import 'dotenv/config'
 
+import { collidesWithProductIndex } from './algoliaIndexes.js'
+
 const DEFAULT_PORT = Number(process.env.PORT)
 const DEFAULT_CLIENT_ORIGIN = process.env.CLIENT_ORIGIN
 
@@ -43,4 +45,19 @@ export function getAlgoliaConfig() {
   }
 
   return { appId, apiKey, indexName }
+}
+
+/** Exige el índice users por separado para que su ausencia no afecte las consultas del catálogo. */
+export function getAlgoliaUsersConfig() {
+  const { indexName: productIndexName } = getAlgoliaConfig()
+  const indexName = process.env.ALGOLIA_USERS_INDEX_NAME?.trim()
+
+  if (!indexName) {
+    throw new ConfigurationError('Faltan variables de entorno del servidor: ALGOLIA_USERS_INDEX_NAME.')
+  }
+  if (collidesWithProductIndex(indexName, productIndexName)) {
+    throw new ConfigurationError('ALGOLIA_USERS_INDEX_NAME no puede apuntar al índice de productos ni a sus réplicas.')
+  }
+
+  return { indexName }
 }

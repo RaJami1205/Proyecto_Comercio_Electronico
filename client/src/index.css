@@ -73,3 +73,8 @@ a {
     scroll-margin-top: 8rem;
   }
 }
+/* Coordinación temporal de Session; no modifica el layout comercial de las páginas. */
+.session-conflict { padding: .8rem 1rem; color: #172b50; background: #e0edff; line-height: 1.6; overflow-wrap: anywhere; }
+.session-conflict button { min-height: 44px; margin-left: .75rem; padding: .4rem .7rem; border: 1px solid #1f5eff; border-radius: 8px; color: #172b50; background: white; cursor: pointer; }
+.session-conflict button:focus-visible { outline: 3px solid #1f5eff; outline-offset: 3px; }
+.retail-notice { max-width: var(--content-max-width); margin: 1rem auto; padding-inline: 1rem; color: var(--color-text-muted); font-size: .9rem; }
