@@ -17,6 +17,7 @@ interface AnalyticsDashboardPageProps {
   onCartClick: () => void
 }
 
+/** Envuelve los trazos de cada KPI en un icono que queda fuera del recorrido de foco. */
 const svg = (children: ReactNode) => <svg viewBox="0 0 24 24" focusable="false">{children}</svg>
 
 const metricDefinitions: ReadonlyArray<{ key: keyof DashboardMetrics; label: string; description: string; tone: MetricTone; icon: ReactNode }> = [
@@ -30,6 +31,7 @@ const metricDefinitions: ReadonlyArray<{ key: keyof DashboardMetrics; label: str
     icon: svg(<><path d="M5 8h14l-1 12H6L5 8Z" /><path d="M9 8V6a3 3 0 0 1 6 0v2" /><path d="m9.5 14 2 2 3.5-3.5" /></>) },
 ]
 
+/** Suscribe la vista autorizada a los cuatro KPIs y muestra las advertencias de cobertura junto a las cifras disponibles. */
 function AuthorizedAnalyticsDashboard({ onCatalogClick, onPolicyNavigate, onCartClick }: AnalyticsDashboardPageProps) {
   const session = useSession()
   const user = session.user

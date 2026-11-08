@@ -69,6 +69,7 @@ function App() {
     if (navigation.checkoutNotice) setNavigation({ ...navigation, checkoutNotice: undefined })
   }
   const policyDestination = policyDestinations.find(destination => destination.view === view)
+  /** La entrada a Checkout inicia el tracking una sola vez aunque React repita el efecto. */
   const previousView = useRef<AppView | null>(null)
 
   useEffect(() => {
@@ -99,6 +100,7 @@ function App() {
     }
     window.addEventListener('popstate', syncLocation)
     window.addEventListener('hashchange', syncLocation)
+    /** Solicita confirmación del navegador si recargar interrumpiría una transacción activa o incierta. */
     function protectReload(event: BeforeUnloadEvent) {
       if (isTransactionBlocked()) { event.preventDefault(); event.returnValue = '' }
     }
@@ -139,6 +141,7 @@ function App() {
 
   /** Publica un aviso temporal para el producto y origen indicados, sustituyendo el aviso anterior. */
   function showCartFeedback(product: Pick<Product, 'id' | 'name'>, source: CartFeedback['source']) {
+    /** Los controles de compra llaman a este handler tras aceptar la adición al Cart. */
     trackEvent({ type: 'CART_ITEM_ADDED', occurredAt: new Date().toISOString(), metadata: { productId: product.id, quantity: 1 } }, session.user?.id)
     if (feedbackTimeoutRef.current !== null) clearTimeout(feedbackTimeoutRef.current)
     setFeedback({ productId: product.id, productName: product.name, source })

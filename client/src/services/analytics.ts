@@ -12,6 +12,7 @@ const counterByType: Record<AnalyticsEvent['type'], keyof AnalyticsCounters> = {
   CART_ITEM_ADDED: 'cartAdds', CHECKOUT_STARTED: 'checkouts', PURCHASE_COMPLETED: 'purchases',
 }
 
+/** Snapshot de un scope. Los contadores y las referencias de compras sobreviven al truncamiento del log. */
 interface AnalyticsState {
   schemaVersion: 2
   userId: string | null
@@ -26,15 +27,23 @@ const pending = new Map<string, AnalyticsEvent[]>()
 const jobs = new Map<string, Promise<void>>()
 // Resultado de IO por scope; no forma parte del snapshot persistido ni del contrato de eventos.
 const writeOutcomes = new Map<string, 'persisted' | 'failed'>()
+/** Inicializa los seis acumulados independientes de un scope. */
 const emptyCounters = (): AnalyticsCounters => ({ sessions: 0, searches: 0, productViews: 0, cartAdds: 0, checkouts: 0, purchases: 0 })
+/** Crea colecciones propias para una identidad sin historial disponible. */
 const emptyState = (userId: string | null): AnalyticsState => ({ schemaVersion: SCHEMA_VERSION, userId,
   events: [], counters: emptyCounters(), recentProductIds: [], completedOrderIds: [] })
+/** Codifica el ID para que incluso un usuario llamado anonymous tenga su propia clave. */
 const scopeFor = (userId: string | null) => userId === null ? 'anonymous' : 'user:' + encodeURIComponent(userId)
+/** Exige texto no vacío y sin espacios exteriores en los identificadores. */
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.trim() === value
+/** Admite un ID válido o null para actividad anónima. */
 const owner = (value: unknown): value is string | null => value === null || text(value)
+/** Reconoce objetos con campos inspeccionables y excluye arrays. */
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+/** Exige exactamente los campos permitidos por el contrato recibido. */
 const keys = (value: Record<string, unknown>, expected: string[]) => Object.keys(value).length === expected.length && expected.every(key => Object.hasOwn(value, key))
 
+/** Verifica fechas UTC por conversión de ida y vuelta para detectar fechas normalizadas por Date. */
 function timestamp(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value) || !Number.isFinite(Date.parse(value))) return false
   const iso = new Date(value).toISOString()
@@ -62,6 +71,7 @@ function parseInput(value: unknown): AnalyticsEventInput | null {
   }
 }
 
+/** Valida el envelope v2 contra su owner o adapta un evento v1 con el ID estable de migración. */
 function parseEvent(value: unknown, userId: string | null, legacyId?: string): AnalyticsEvent | null {
   if (!record(value)) return null
   if (!legacyId && (!keys(value, ['eventId', 'type', 'occurredAt', 'userId', 'schemaVersion', 'metadata'])
@@ -70,10 +80,12 @@ function parseEvent(value: unknown, userId: string | null, legacyId?: string): A
   return input ? { ...input, schemaVersion: SCHEMA_VERSION, userId, eventId: legacyId ?? String(value.eventId) } : null
 }
 
+/** Valida listas de referencias únicas antes de restaurar historial o compras. */
 function idList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(text) && new Set(value).size === value.length
 }
 
+/** Hidrata v2 o adapta v1 en memoria. Contrasta el log retenido con los acumulados y las referencias de Orders. */
 function parseState(value: unknown, userId: string | null, legacy = false): AnalyticsState | null {
   if (!record(value) || !keys(value, legacy ? ['events', 'counters', 'recentProductIds', 'completedOrderIds']
     : ['schemaVersion', 'userId', 'events', 'counters', 'recentProductIds', 'completedOrderIds'])) return null
@@ -119,6 +131,7 @@ function storedState(userId: string | null): { state: AnalyticsState; writable: 
   } catch { return { state: fallback, writable: false, status: 'unavailable' } }
 }
 
+/** Hidrata el scope en su primera lectura y reutiliza la copia de esta pestaña. */
 function readState(userId: string | null): AnalyticsState {
   const scope = scopeFor(userId)
   const cached = memory.get(scope)
@@ -128,6 +141,7 @@ function readState(userId: string | null): AnalyticsState {
   return state
 }
 
+/** Aplica una acción al acumulado y limita el log a 500 eventos. Cada visita mueve el producto al inicio del historial y cada Order cuenta una sola vez por scope. */
 function applyEvent(state: AnalyticsState, event: AnalyticsEvent): AnalyticsState {
   if (state.events.some(saved => saved.eventId === event.eventId)
     || (event.type === 'PURCHASE_COMPLETED' && state.completedOrderIds.includes(event.metadata.orderId))) return state
@@ -141,6 +155,7 @@ function applyEvent(state: AnalyticsState, event: AnalyticsEvent): AnalyticsStat
     completedOrderIds: event.type === 'PURCHASE_COMPLETED' ? [...state.completedOrderIds, event.metadata.orderId] : state.completedOrderIds }
 }
 
+/** Avisa a los observadores de esta ventana tras cambios de actividad o persistencia. */
 function notify() {
   try { window.dispatchEvent(new Event(changedEvent)) } catch { /* Observadores opcionales. */ }
 }
@@ -202,14 +217,17 @@ export async function flushAnalytics(): Promise<void> {
   while (jobs.size) await Promise.allSettled([...jobs.values()])
 }
 
+/** Devuelve una copia de los acumulados individuales, incluidos los anteriores al log retenido. */
 export function getAnalyticsCounters(userId: string | null = null): AnalyticsCounters {
   try { return owner(userId) ? { ...readState(userId).counters } : emptyCounters() } catch { return emptyCounters() }
 }
 
+/** Entrega IDs únicos del scope, del producto visto más recientemente al más antiguo. */
 export function getRecentlyViewedProductIds(userId: string | null = null): string[] {
   try { return owner(userId) ? [...readState(userId).recentProductIds] : [] } catch { return [] }
 }
 
+/** Proyecta copias validadas de los eventos retenidos del scope solicitado. */
 export function getAnalyticsEvents(userId: string | null = null): AnalyticsEvent[] {
   try {
     if (!owner(userId)) return []
@@ -255,6 +273,7 @@ function ownerForScope(scope: string): string | null | undefined {
   } catch { return undefined }
 }
 
+/** Extrae el scope canónico de una clave v1 o v2 para identificar cambios de Analytics. */
 function scopeFromStorageKey(key: string): string | undefined {
   const prefix = [STORAGE_PREFIX, LEGACY_PREFIX].find(value => key.startsWith(value))
   if (!prefix) return undefined
@@ -262,6 +281,7 @@ function scopeFromStorageKey(key: string): string | undefined {
   return ownerForScope(scope) !== undefined ? scope : undefined
 }
 
+/** Indica si un StorageEvent corresponde a un scope reconocido del navegador. */
 export function isAnalyticsStorageKey(key: string): boolean {
   return scopeFromStorageKey(key) !== undefined
 }
@@ -286,6 +306,7 @@ export function getAggregateAnalyticsSnapshot(): AnalyticsAggregateSnapshot {
     } catch { persistence.unavailable = true; persistence.memoryOnly = true }
     persistence.excludedScopes = invalidKeys.size
     const counters = { productViews: 0, searches: 0, cartAdds: 0, purchases: 0 }
+    /** La unión de Order IDs evita contar dos veces una compra registrada en scopes distintos. */
     const completedOrders = new Set<string>()
     for (const scope of scopes) {
       const userId = ownerForScope(scope)

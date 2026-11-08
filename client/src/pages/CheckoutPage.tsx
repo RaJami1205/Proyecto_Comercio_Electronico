@@ -264,6 +264,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
       if (result.result === 'PAYMENT_APPROVED' && result.order.orderStatus === 'CONFIRMED'
         && result.order.paymentStatus === 'APPROVED' && result.order.id.trim()) {
+        /** El resultado aprobado y la Order confirmada habilitan el evento. El Core usa el Order ID para deduplicar Retry y Replay. */
         trackEvent({ type: 'PURCHASE_COMPLETED', occurredAt: result.processedAt, metadata: { orderId: result.order.id } }, user?.id)
       }
 

@@ -12,6 +12,7 @@ interface RecentlyViewedProductsProps {
 
 const priceFormatter = new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC', maximumFractionDigits: 0 })
 
+/** Asocia los productos resueltos con los IDs solicitados y su owner durante la carga. */
 interface HistorySnapshot {
   owner?: string
   ids: string[]
@@ -29,6 +30,7 @@ function RecentlyViewedProducts({ userId, onProductSelect }: RecentlyViewedProdu
     let requestVersion = 0
     let requestedIds: string[] | undefined
     let inFlight = false
+    /** Resuelve el historial cuando cambia el orden de IDs. Un refresh explícito también actualiza un historial idéntico, salvo que ya esté en curso. */
     const refresh = (force = false) => {
       if (cancelled) return
       const ids = getRecentlyViewedProductIds(userId)
@@ -60,12 +62,14 @@ function RecentlyViewedProducts({ userId, onProductSelect }: RecentlyViewedProdu
     requestRefresh.current = () => refresh(true)
     refresh()
     const scopeKey = analyticsStorage.keyPrefix + (userId === undefined ? 'anonymous' : `user:${encodeURIComponent(userId)}`)
+    /** Reconcilia el scope activo tras una escritura v2 en otra pestaña o un borrado del storage. */
     const handleStorage = (event: StorageEvent) => {
       if (event.key === null || event.key === scopeKey) {
         refreshAnalyticsState(userId)
         refresh()
       }
     }
+    /** Revisa los IDs ante actividad local para actualizar las tarjetas cuando cambie el historial. */
     const handleAnalytics = () => refresh()
     window.addEventListener(analyticsStorage.changedEvent, handleAnalytics)
     window.addEventListener('storage', handleStorage)
