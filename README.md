@@ -43,6 +43,8 @@ El proyecto fue desarrollado como parte del curso de **Comercio Electrónico** d
 
 La plataforma integra un catálogo conectado con **Algolia**, búsqueda predictiva, filtros, paginación, Product Quick View y un carrito de compras persistente, un Checkout de cuatro etapas, creación de Orders autoritativas, Payment Sandbox, resultados de pago, Purchase Confirmation y Safe Cart Cleanup.
 
+Integra Simulated Login, historial personalizado y Analytics en la misma aplicación. Las identidades B2C, B2B y ADMIN pueden explorar el catálogo. El Checkout está habilitado para B2C y el Dashboard de actividad local está reservado a ADMIN.
+
 Además cuenta con políticas comerciales, FAQ y aceptación obligatoria de Términos y Condiciones durante Checkout. 
 
 La arquitectura separa claramente el frontend y backend: el Server protege las credenciales de Algolia, valida disponibilidad y calcula los importes definitivos. El Payment Sandbox simula los pagos sin realizar transacciones bancarias reales.
@@ -58,6 +60,7 @@ La arquitectura separa claramente el frontend y backend: el Server protege las c
 - [Arquitectura](#-arquitectura)
 - [Arquitectura del carrito](#-arquitectura-del-carrito)
 - [Búsqueda y catálogo](#-búsqueda-y-catálogo)
+- [Analytics y personalización](#-analytics-y-personalización)
 - [Diseño responsive](#-diseño-responsive)
 - [Estructura del proyecto](#-estructura-del-proyecto)
 - [Requisitos](#-requisitos)
@@ -117,6 +120,14 @@ CiberNova incorpora las principales funcionalidades de un E-Commerce B2C, desarr
 - Especificaciones.
 - Acción directa para agregar al carrito.
 
+### Simulated Login
+
+El selector obtiene las identidades mediante `GET /api/users`. Al elegir una, `POST /api/session/resolve` devuelve el usuario validado por el Server desde el índice de usuarios de Algolia. `SessionContext` conserva la identidad en memoria hasta Logout, cambio de usuario o reload.
+
+### Analytics y experiencia personalizada
+
+Seis eventos registran interacciones del catálogo y del flujo de compra. El catálogo ofrece Recent Searches y Recently Viewed Products por identidad. ADMIN puede abrir **Analytics** para consultar cuatro métricas agregadas del navegador.
+
 ### Shopping Cart
 
 - Estado global compartido mediante React Context API.
@@ -165,6 +176,8 @@ CiberNova incorpora las principales funcionalidades de un E-Commerce B2C, desarr
 ---
 
 # 🛒 Experiencia de compra
+
+El catálogo admite visitantes. Para continuar desde el Cart a Checkout, selecciona una identidad B2C válida. B2B y ADMIN pueden consultar el catálogo a precios Retail.
 
 El flujo principal de usuario es:
 
@@ -294,6 +307,7 @@ No existen pagos bancarios reales ni procesamiento automatizado real de devoluci
 - Context API
 - `useReducer`
 - Local Storage
+- Web Locks API para coordinar las escrituras de Analytics entre pestañas
 - `Intl.NumberFormat`
 
 ## Backend
@@ -402,6 +416,18 @@ También está disponible `GET /api/orders/:orderId` para consultar una Order ex
 
 Esta separación evita que el frontend tenga acceso directo a credenciales privadas de Algolia o a controles autoritativos de la transacción.
 
+El flujo de identidad y Analytics tiene su propio recorrido. Los componentes observan resultados comerciales, mientras los servicios de Order y Payment conservan la autoridad sobre la transacción.
+
+```text
+Simulated Login → Express / UserService → Algolia (users)
+                         ↓ identidad resuelta
+SessionContext → componentes React → eventos → Analytics Core
+                                                   ↓
+                                    localStorage por userId o Anonymous
+                                                   ↓
+                                     métricas agregadas → Dashboard ADMIN
+```
+
 ## Responsabilidades del Client
 
 El directorio `client/` contiene:
@@ -410,6 +436,7 @@ El directorio `client/` contiene:
 - componentes;
 - navegación de interfaz;
 - estado del catálogo;
+- Session Management, Navigation Guards, Hybrid Storage, personalización y Dashboard ADMIN;
 - búsqueda;
 - filtros;
 - paginación;
@@ -435,6 +462,7 @@ El directorio `server/` contiene:
 - services;
 - mappers;
 - procesamiento de categorías;
+- resolución de identidad con UserService y recuperación de productos por ID para el historial;
 - validación de stock y cálculo de importes autoritativos;
 - creación, consulta e Idempotency de Orders;
 - Payment Sandbox, estados y guards de concurrencia;
@@ -448,6 +476,8 @@ El directorio `server/` contiene:
 # 🛍️ Arquitectura del carrito
 
 El Shopping Cart mantiene una única fuente de verdad para sus productos.
+
+El Cart persistido aún carece de ownership definitivo por usuario. Ante un cambio de identidad con productos, la interfaz pide confirmar su descarte para la revisión vigente del Cart. Checkout y los intentos de resultado incierto bloquean la transición.
 
 ```text
 React Components
@@ -565,6 +595,49 @@ No utilizan:
 
 Al recargar o cerrar la aplicación, el historial se reinicia.
 
+El cambio de identidad también reinicia el componente de búsqueda. Al seleccionar una consulta reciente, el catálogo reutiliza el flujo de búsqueda y Analytics registra únicamente su origen.
+
+---
+
+# 📊 Analytics y personalización
+
+## Eventos de Analytics
+
+| Evento | Interacción que lo produce |
+|---|---|
+| `SESSION_STARTED` | React aplica una transición a la identidad resuelta por Server. |
+| `SEARCH_PERFORMED` | El catálogo ejecuta una consulta nueva y no vacía. Cambiar de página o recibir sugerencias para el mismo texto no incrementa el contador. |
+| `PRODUCT_VIEWED` | Una interacción abre el detalle de un producto en Quick View. |
+| `CART_ITEM_ADDED` | El Cart acepta una adición. Cada acción cuenta una vez, independientemente de las unidades. |
+| `CHECKOUT_STARTED` | La navegación entra a Checkout. Los cambios de etapa pertenecen al mismo flujo. |
+| `PURCHASE_COMPLETED` | Payment devuelve `PAYMENT_APPROVED` con Order `CONFIRMED` y pago `APPROVED`. El Order ID permite reconocer la misma compra en Retry y Replay. Los intentos fallidos quedan fuera del contador. |
+
+## Hybrid Storage
+
+| Dato | Ubicación | Duración y alcance |
+|---|---|---|
+| Identidad simulada | React SessionContext | En memoria de la pestaña. Tras reload se debe seleccionar una identidad de nuevo. |
+| Recent Searches y Predictive Search | Estado de React | En memoria de la experiencia de búsqueda activa. |
+| Eventos, contadores y referencias de compras | `localStorage`, Schema v2 | Un snapshot por userId y otro para Anonymous. El log conserva los últimos 500 eventos por scope. Los acumulados y Order IDs permanecen al truncarse el log. |
+| Recently Viewed Products | En el snapshot del scope | Hasta diez Product IDs únicos en orden de recencia. |
+| Cart | Clave propia de `localStorage` | Se restaura independientemente de la sesión y de Analytics. |
+
+El snapshot separa Anonymous de cada usuario, incluso después del Login. Cada evento incluye ID, instante, scope, versión y metadata específica. Una búsqueda conserva su origen (`catalog` o `recent`). Los términos de búsqueda, los datos personales de Buyer/Delivery y los datos bancarios quedan fuera del evento.
+
+Con Web Locks, el Core relee el snapshot bajo un lock exclusivo por scope y aplica los eventos pendientes antes de escribir. Si falta Web Locks o falla la escritura, la actividad nueva puede quedar solo en memoria de esa pestaña. Esta política *fail-open* permite continuar la compra. Analytics se ejecuta en el Client, sin API de Analytics ni tablas PostgreSQL. Borrar el almacenamiento del sitio elimina su historial persistido.
+
+## Historial por identidad
+
+Abrir dos veces un producto suma dos Product Views y mueve una única entrada al inicio de **Recently Viewed**. El Client envía los IDs a `GET /api/products` con parámetros `ids` repetidos, conserva el orden y omite los productos desaparecidos. Los precios mostrados proceden del catálogo actual. Tras reload, seleccionar de nuevo la identidad recupera su historial persistido. **Recent Searches** conserva hasta cinco consultas únicas y empieza vacío al cambiar de identidad o recargar.
+
+## Dashboard ADMIN
+
+**El Dashboard agrega la actividad disponible en el mismo navegador y origen.** Su alcance comprende Anonymous y los usuarios B2C, B2B y ADMIN descubiertos dinámicamente. Las estadísticas de otros dispositivos quedan fuera de esta vista. Para visitantes, B2C y B2B, la navegación oculta el enlace, el acceso directo a `#analytics` vuelve al catálogo y los componentes de métricas permanecen desmontados.
+
+**Product Views**, **Searches** y **Cart Additions** suman los contadores de cada scope. **Completed Purchases** cuenta Order IDs distintos mediante una unión entre scopes. El selector prefiere v2 y consulta v1 cuando falta v2. Un v2 corrupto se señala como incompatible. Los eventos pendientes de esta pestaña se reconcilian una vez y el total agregado se calcula al leer.
+
+El Dashboard se actualiza ante eventos locales y cambios de storage de otras pestañas. Los avisos indican actividad solo en memoria, almacenamiento inaccesible o datos omitidos. La actividad pendiente de otra pestaña se incorpora cuando esta logra persistirla.
+
 ---
 
 # 📱 Diseño responsive
@@ -576,6 +649,8 @@ CiberNova fue diseñada para adaptarse a:
 - Mobile
 
 El catálogo utiliza distintas densidades dependiendo del viewport.
+
+Las tarjetas de métricas del Dashboard también reorganizan sus columnas para mobile, tablet y desktop.
 
 | Vista | Columnas | Productos por página |
 |---|---:|---:|
@@ -631,14 +706,17 @@ E_Commerce/
 │
 ├── .github/
 │   └── workflows/
-│       └── deployment.yml
+│       ├── client-ci.yml
+│       └── deploy-pages.yml
 │
 ├── client/
 │   ├── src/
-│   │   ├── assets/
 │   │   ├── components/
 │   │   │   ├── cart/
 │   │   │   ├── catalog/
+│   │   │   │   └── RecentlyViewedProducts.tsx
+│   │   │   ├── session/
+│   │   │   │   └── LoginDialog.tsx
 │   │   │   ├── checkout/
 │   │   │   │   └── TermsDialog.tsx
 │   │   │   ├── faq/
@@ -646,23 +724,31 @@ E_Commerce/
 │   │   │   └── policies/
 │   │   ├── content/
 │   │   ├── context/
+│   │   │   ├── SessionContext.ts
+│   │   │   └── SessionProvider.tsx
 │   │   ├── hooks/
+│   │   │   └── useAnalyticsMetrics.ts
 │   │   ├── pages/
+│   │   │   ├── AnalyticsDashboardPage.tsx
 │   │   │   ├── TermsPage.tsx
 │   │   │   ├── ReturnsPolicyPage.tsx
 │   │   │   ├── ShippingPolicyPage.tsx
 │   │   │   ├── PrivacyPolicyPage.tsx
 │   │   │   └── FaqPage.tsx
 │   │   ├── services/
+│   │   │   └── analytics.ts
 │   │   ├── styles/
 │   │   │   ├── policies/
 │   │   │   └── faq/
 │   │   ├── types/
+│   │   │   └── analytics.ts
 │   │   ├── utils/
 │   │   ├── App.tsx
 │   │   └── main.tsx
 │   │
 │   ├── tests/
+│   │   ├── analyticsAggregation.test.mjs
+│   │   └── personalizationSession.test.mjs
 │   ├── package.json
 │   └── vite.config.ts
 │
@@ -673,13 +759,20 @@ E_Commerce/
 │   ├── src/
 │   │   ├── config/
 │   │   ├── controllers/
+│   │   │   ├── productController.ts
+│   │   │   └── userController.ts
 │   │   ├── domain/
+│   │   │   ├── userValidation.ts
 │   │   │   ├── orderValidation.ts
 │   │   │   └── termsPolicy.ts
 │   │   ├── mappers/
 │   │   ├── routes/
+│   │   │   ├── users.ts
+│   │   │   └── session.ts
 │   │   ├── scripts/
+│   │   │   └── seedUsers.ts
 │   │   ├── services/
+│   │   │   ├── userService.ts
 │   │   │   └── orderService.ts
 │   │   ├── stores/
 │   │   ├── types/
@@ -802,7 +895,7 @@ server/.env
 El backend requiere las variables de configuración correspondientes a:
 
 - aplicación de Algolia;
-- índice de productos;
+- índice de productos (`ALGOLIA_INDEX_NAME`) e índice independiente de usuarios (`ALGOLIA_USERS_INDEX_NAME`);
 - credencial autorizada del servidor;
 - puerto de ejecución;
 - configuración permitida por el entorno.
@@ -829,6 +922,8 @@ npm run dev
 ```
 
 El backend utilizará el puerto configurado para el entorno local.
+
+Para probar Simulated Login, el Server necesita acceso de lectura al índice de usuarios configurado. Con ambos procesos activos, abre el selector de identidad en el Client y elige ADMIN para consultar Analytics.
 
 ## 2. Client
 
@@ -869,6 +964,7 @@ Express API
 | `npm run lint` | Ejecuta ESLint |
 | `npm run build` | Genera el build de producción |
 | `npm run preview` | Previsualiza localmente el build |
+| `node --test tests/*.test.mjs` | Ejecuta la suite completa del Client |
 
 ## Server
 
@@ -885,6 +981,8 @@ Express API
 # 🧠 Algolia y dataset
 
 El catálogo de CiberNova utiliza Algolia como motor de búsqueda y faceting.
+
+UserService consulta un índice independiente de identidades simuladas. El seed de usuarios (`npm run seed:users` desde `server/`) valida en dry-run por defecto. Iniciar el Server no carga ni modifica esos registros.
 
 El dataset mantenido por el proyecto se encuentra en:
 
@@ -927,6 +1025,14 @@ npm run lint
 npm run build
 ```
 
+Para comprobar de forma focalizada desde `client/`, las siguientes suites cubren Analytics Core, concurrencia, Session, personalización, agregación, acceso ADMIN y Payment Integrity.
+
+```bash
+node --test tests/analytics.test.mjs tests/analyticsConcurrency.test.mjs tests/session.test.mjs tests/personalizationSession.test.mjs tests/analyticsAggregation.test.mjs tests/analyticsDashboard.test.mjs tests/paymentIntegrity.test.mjs
+```
+
+El último baseline validado de la suite completa del Client para CN-75 fue de **332 tests aprobados**.
+
 Para ejecutar la suite de regresión del carrito, Checkout, Orders y Payment desde `client/`:
 
 ```bash
@@ -938,6 +1044,12 @@ node --test tests/cartCalculations.test.mjs tests/cartCleanup.test.mjs tests/ord
 ```bash
 cd server
 npm run build
+```
+
+Después del build, comprueba identidad, contratos de dominio y Product Resolution desde `server/` con fixtures aislados.
+
+```bash
+node --test tests/users.test.mjs tests/domainContracts.test.mjs tests/productController.test.mjs
 ```
 
 Para verificar las reglas de Order y stock con pruebas aisladas desde `server/`:
@@ -1023,7 +1135,7 @@ GitHub Pages
 El workflow se encuentra en:
 
 ```text
-.github/workflows/deployment.yml
+.github/workflows/deploy-pages.yml
 ```
 
 Se ejecuta automáticamente cuando existen nuevos cambios en:
@@ -1080,6 +1192,8 @@ El deployment del frontend o backend no ejecuta automáticamente el seed.
 ---
 
 # 🛡️ Seguridad
+
+Simulated Login valida la identidad seleccionada en Server. La guarda ADMIN del Client limita el acceso al Dashboard desde la interfaz. Cualquier persona con acceso al navegador puede inspeccionar su `localStorage` en DevTools. Esta simulación académica carece de autenticación de producción y de RBAC completo en Server.
 
 El proyecto sigue las siguientes prácticas:
 

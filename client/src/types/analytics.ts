@@ -14,6 +14,7 @@ export type AnalyticsEvent = AnalyticsEventInput & {
   schemaVersion: 2
 }
 
+/** Acumulados por scope. Cada adición al Cart cuenta como una acción independientemente de la cantidad. */
 export type AnalyticsCounters = {
   sessions: number
   searches: number
@@ -30,12 +31,14 @@ export type AnalyticsStorageStatus = 'persistent' | 'pending' | 'memory-only' | 
 
 /** Proyección administrativa derivada; nunca se guarda como otro acumulado. */
 export type AnalyticsAggregateCounters = Pick<AnalyticsCounters, 'productViews' | 'searches' | 'cartAdds' | 'purchases'>
+/** Señales independientes de cobertura y escritura. Un agregado puede incluir actividad en memoria y omitir datos ilegibles a la vez. */
 export interface AnalyticsAggregatePersistence {
   pending: boolean
   memoryOnly: boolean
   unavailable: boolean
   excludedScopes: number
 }
+/** Entrega cifras y su cobertura juntas, o un error cuando no se puede representar el agregado. */
 export type AnalyticsAggregateSnapshot =
   | { status: 'ready'; counters: AnalyticsAggregateCounters; persistence: AnalyticsAggregatePersistence }
   | { status: 'error' }

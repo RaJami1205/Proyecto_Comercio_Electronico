@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { AnalyticsAggregateCounters, AnalyticsAggregatePersistence } from '../types/analytics'
 import { analyticsStorage, getAggregateAnalyticsSnapshot, isAnalyticsStorageKey } from '../services/analytics'
 
+/** Cuatro KPIs locales que consume la vista ADMIN. */
 export interface DashboardMetrics {
   productViews: number
   searches: number
@@ -10,12 +11,14 @@ export interface DashboardMetrics {
   completedPurchases: number
 }
 
+/** Distingue el estado de la lectura de las advertencias de persistencia que acompañan a cifras disponibles. */
 export type AnalyticsMetricsState =
   | { status: 'no-session' }
   | { status: 'loading' }
   | { status: 'error' }
   | { status: 'ready'; metrics: DashboardMetrics; persistence: AnalyticsAggregatePersistence; isEmpty: boolean }
 
+/** Vincula el resultado agregado con la identidad que inició la lectura para descartar resultados tras un cambio de sesión. */
 type Snapshot =
   | { owner: string; status: 'ready'; metrics: DashboardMetrics; persistence: AnalyticsAggregatePersistence }
   | { owner: string; status: 'error' }
@@ -30,6 +33,7 @@ export function toDashboardMetrics(counters: AnalyticsAggregateCounters): Dashbo
   }
 }
 
+/** Comprueba que cada KPI se pueda mostrar como un entero exacto no negativo. */
 function isSafeCount(value: number) {
   return Number.isSafeInteger(value) && value >= 0
 }
@@ -56,16 +60,19 @@ export function useAnalyticsMetrics(userId: string | undefined): { state: Analyt
     if (userId === undefined) return
     let cancelled = false
     let queued = false
+    /** Publica una lectura nueva mientras siga vigente la suscripción. */
     const refresh = () => {
       if (cancelled) return
       setSnapshot(readSnapshot(userId))
     }
     refresh()
+    /** Agrupa notificaciones de una misma ráfaga en una microtask. */
     const scheduleRefresh = () => {
       if (queued || cancelled) return
       queued = true
       queueMicrotask(() => { queued = false; refresh() })
     }
+    /** Solicita una lectura tras un cambio del Core en esta pestaña. */
     const handleAnalytics = () => scheduleRefresh()
     // Incluye otros usuarios, Anonymous, migraciones, nuevos scopes y storage.clear().
     const handleStorage = (event: StorageEvent) => {
@@ -81,6 +88,7 @@ export function useAnalyticsMetrics(userId: string | undefined): { state: Analyt
     }
   }, [userId, attempt])
 
+  /** Reinicia la suscripción y su lectura inicial después de un error. */
   const retry = () => setAttempt(value => value + 1)
   if (userId === undefined) return { state: { status: 'no-session' }, retry }
   if (snapshot === null || snapshot.owner !== userId) return { state: { status: 'loading' }, retry }
