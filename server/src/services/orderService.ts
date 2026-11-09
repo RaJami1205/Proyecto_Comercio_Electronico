@@ -38,22 +38,24 @@ function requireCompatible(expected: string, received: string): void {
 }
 
 export class OrderService {
-  private readonly pending = new Map<string, { identity: string; task: Promise<Order> }>()
+  private readonly pending = new Map<string, { ownerId: string; identity: string; task: Promise<Order> }>()
   /** Recibe el store y la consulta de productos que usará el servicio para crear y recuperar Orders. */
   constructor(private readonly store: OrderStore = orderStore, private readonly lookup: ProductLookup = getProductById) {}
 
   /** Valida la solicitud, reutiliza una Order compatible o comparte la creación concurrente con la misma identidad. */
-  async create(value: unknown): Promise<Order> {
+  async create(value: unknown, ownerId: string): Promise<Order> {
     const request = validateCreateOrderRequest(value)
     const fingerprint = identity(request)
     const existing = this.store.findByIdempotencyKey(request.idempotencyKey)
     if (existing) {
+      this.findById(existing.id, ownerId)
       // El snapshot conserva Buyer/Delivery/items originales, incluso después del pago.
       requireCompatible(identity(existing), fingerprint)
       return existing
     }
     const pending = this.pending.get(request.idempotencyKey)
     if (pending) {
+      if (pending.ownerId !== ownerId) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
       requireCompatible(pending.identity, fingerprint)
       return structuredClone(await pending.task)
     }
@@ -65,21 +67,21 @@ export class OrderService {
       })
     }
     // Registra la identidad antes de iniciar incluso la primera consulta asíncrona.
-    const task = Promise.resolve().then(() => this.buildOrder(request))
-    this.pending.set(request.idempotencyKey, { identity: fingerprint, task })
+    const task = Promise.resolve().then(() => this.buildOrder(request, ownerId))
+    this.pending.set(request.idempotencyKey, { ownerId, identity: fingerprint, task })
     try { return structuredClone(await task) }
     finally { this.pending.delete(request.idempotencyKey) }
   }
 
   /** Devuelve la Order identificada o lanza ORDER_NOT_FOUND si no existe. */
-  findById(id: string): Order {
-    const order = this.store.findById(id)
+  findById(id: string, ownerId: string): Order {
+    const order = this.store.findByIdForOwner(id, ownerId)
     if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
     return order
   }
 
   /** Consulta productos y stock, calcula precios autoritativos y almacena la Order completa solo tras validar todas sus líneas. */
-  private async buildOrder(request: CreateOrderRequest): Promise<Order> {
+  private async buildOrder(request: CreateOrderRequest, ownerId: string): Promise<Order> {
     const products = new Map<string, ProductRecord>()
     for (const [productId, quantity] of quantities(request.items)) {
       const product = await this.lookup(productId)
@@ -106,7 +108,7 @@ export class OrderService {
       currency: 'CRC', orderStatus: 'PENDING', paymentStatus: 'PENDING',
       termsAcceptance: { accepted: true, version: request.termsAcceptance.version, acceptedAt: createdAt },
     }
-    return this.store.create(order, request.idempotencyKey)
+    return this.store.create(order, request.idempotencyKey, ownerId)
   }
 }
 

@@ -14,6 +14,7 @@ interface ReviewStepProps {
   busy?: boolean
   retryPending?: boolean
   invalid?: boolean
+  authorizationRejected?: boolean
   error?: string
   differences?: readonly string[]
   termsAccepted: boolean
@@ -28,7 +29,7 @@ interface ReviewStepProps {
 }
 
 /** Presenta comprador, entrega, productos y totales recibidos; expone las acciones permitidas por los callbacks y bloqueos. */
-function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retryPending = false, invalid = false, error, differences = [], termsAccepted, termsError, termsVersionRejected, termsInputRef, onTermsAcceptedChange, onOpenTerms, onAbandon, onEdit, onConfirm }: ReviewStepProps) {
+function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retryPending = false, invalid = false, authorizationRejected = false, error, differences = [], termsAccepted, termsError, termsVersionRejected, termsInputRef, onTermsAcceptedChange, onOpenTerms, onAbandon, onEdit, onConfirm }: ReviewStepProps) {
   const confirmed = order?.orderStatus === 'CONFIRMED' && order.paymentStatus === 'APPROVED'
   /** Formatea el importe recibido para presentación sin modificar el valor financiero original. */
   const money = (value: number) => new Intl.NumberFormat('es-CR', { style: 'currency', currency: order?.currency ?? 'CRC' }).format(value)
@@ -89,7 +90,7 @@ function ReviewStep({ buyer, delivery, items, totals, order, busy = false, retry
           <p id="checkout-terms-version">{termsVersionRejected ? 'Versión local rechazada por el servidor' : ''}</p>
           {termsError ? <p id="checkout-terms-error" role="alert" className={styles.error}>{termsError}</p> : null}
         </div> : null}
-        {onConfirm ? <div className={pageStyles.actions}><button type="button" className={pageStyles.continue} disabled={busy || invalid} onClick={onConfirm}>{busy ? 'Creando orden…' : differences.length > 0 ? 'Aceptar cambios y continuar al pago' : order ? 'Continuar al pago' : retryPending ? 'Reintentar la misma solicitud' : 'Confirmar y continuar al pago'}</button></div> : null}
+        {onConfirm ? <div className={pageStyles.actions}><button type="button" className={pageStyles.continue} disabled={busy || invalid || authorizationRejected} onClick={onConfirm}>{busy ? 'Creando orden…' : differences.length > 0 ? 'Aceptar cambios y continuar al pago' : order ? 'Continuar al pago' : retryPending ? 'Reintentar la misma solicitud' : 'Confirmar y continuar al pago'}</button></div> : null}
         {onAbandon && !busy ? <div className={styles.orderInfo}>
           <p id="checkout-exit-warning">{confirmed
             ? 'Al salir conservas los productos del carrito. Los datos temporales del Checkout se perderán; la orden confirmada no cambia ni se realiza otro pago.'

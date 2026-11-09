@@ -10,6 +10,7 @@ import sessionRouter from './routes/session.js'
 import { OrderError } from './domain/orderError.js'
 import { UserError } from './domain/userError.js'
 import type { ApiErrorResponse } from './types/apiError.js'
+import { authorizeRoles } from './middleware/authorization.js'
 
 const app = express()
 
@@ -17,12 +18,12 @@ app.use(
   cors({
     origin: serverConfig.clientOrigin,
     methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
+    allowedHeaders: ['Content-Type', 'X-CiberNova-User-Id'],
   }),
 )
 
 app.use('/api/products', productsRouter)
-app.use('/api/orders', express.json(), ordersRouter)
+app.use('/api/orders', authorizeRoles('B2C'), express.json(), ordersRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/session', express.json(), sessionRouter)
 
@@ -45,9 +46,10 @@ app.use(
     if (_request.path === '/api/orders' || _request.path.startsWith('/api/orders/')) {
       let status = 500
       let body: ApiErrorResponse = { error: { code: 'UNEXPECTED_ERROR', message: 'No se pudo completar la solicitud.' } }
-      if (error instanceof OrderError) {
+      if (error instanceof OrderError || error instanceof UserError) {
         status = error.status
-        body = { error: { code: error.code, message: error.message, ...(error.fieldErrors ? { fieldErrors: error.fieldErrors } : {}) } }
+        body = { error: { code: error.code, message: error.message,
+          ...(error instanceof OrderError && error.fieldErrors ? { fieldErrors: error.fieldErrors } : {}) } }
       } else if (error instanceof ConfigurationError) {
         status = 503
         body.error.message = 'El servicio de catálogo no está disponible.'

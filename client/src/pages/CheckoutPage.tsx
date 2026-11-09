@@ -1,5 +1,5 @@
 /** Coordina las etapas de Checkout, la creación de Order, los intentos de pago y el cierre de compra. */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import CheckoutStepper, { type CheckoutStep } from '../components/checkout/CheckoutStepper'
 import BuyerStep from '../components/checkout/BuyerStep'
 import DeliveryStep from '../components/checkout/DeliveryStep'
@@ -18,7 +18,7 @@ import { useCart } from '../hooks/useCart'
 import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalculations'
 import { normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
 import { orderApi, OrderApiError, orderErrorMessage } from '../services/orderApi'
-import { paymentApi, paymentErrorMessage } from '../services/paymentApi'
+import { paymentApi, PaymentApiError, paymentErrorMessage } from '../services/paymentApi'
 import { orderReviewDifferences } from '../utils/orderReviewDifferences'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
@@ -37,8 +37,8 @@ interface CheckoutPageProps {
   getPurchaseBlockReason?: () => string | null
 }
 /** Conserva payload, clave y productos revisados para repetir la misma intención tras una respuesta ambigua. */
-interface CreationAttempt { request: CreateOrderRequest; items: CartItem[] }
-type PaymentAttempt = Readonly<ProcessPaymentRequest & { orderId: string }>
+interface CreationAttempt { request: CreateOrderRequest; items: CartItem[]; userId: string }
+type PaymentAttempt = Readonly<ProcessPaymentRequest & { orderId: string; userId: string }>
 const stages: Record<CheckoutStep, { title: string; description: string }> = {
   buyer: { title: 'Comprador', description: 'Completa tus datos de contacto.' },
   delivery: { title: 'Entrega', description: 'Indica la dirección de entrega.' },
@@ -49,7 +49,14 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
 /** Mantiene Buyer, Delivery, consentimiento e intentos en memoria local; al desmontarse se pierde este contexto. */
 function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated, onTransactionStateChange, purchaseBlockedReason, getPurchaseBlockReason }: CheckoutPageProps) {
   const { items, cleanupPurchase } = useCart()
-  const { user } = useSession()
+  const { user, epoch } = useSession()
+  const currentSession = useRef({ userId: user?.id, epoch })
+  useLayoutEffect(() => { currentSession.current = { userId: user?.id, epoch } }, [user?.id, epoch])
+  const originalSession = useRef({ userId: user?.id, epoch })
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const [authorizationRejected, setAuthorizationRejected] = useState(false)
+  const authorizationRejectedRef = useRef(false)
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
@@ -90,6 +97,12 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const invalid = Object.keys(validateBuyer(data.buyer)).length > 0 || Object.keys(validateDelivery(data.delivery)).length > 0
     || reviewItems.length === 0 || reviewItems.some(item => !Number.isSafeInteger(item.quantity) || item.quantity <= 0)
 
+  /** Impide aplicar respuestas de otra Session o de una instancia de Checkout desmontada. */
+  function isCurrentSession() {
+    return mounted.current && currentSession.current.userId === originalSession.current.userId
+      && currentSession.current.epoch === originalSession.current.epoch
+  }
+
     //Revisa si hay carrito vacío (EMPTY_CART)
   useEffect(() => {
     if (items.length === 0 && !order && !confirmed) {
@@ -126,7 +139,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     if (next === 'payment' && !order) return
     if (attemptRef.current && next !== 'review' && next !== 'payment') return
     stageChangedRef.current = true
-    setError(undefined)
+    if (!authorizationRejectedRef.current) setError(undefined)
     setCurrentStep(next)
   }
 
@@ -136,6 +149,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
    * al aceptar diferencias financieras, sin crear otra ni modificar su consentimiento.
    */
   async function confirmOrder() {
+    if (!isCurrentSession() || authorizationRejectedRef.current || user?.role !== 'B2C') return
+    const retryingUncertain = Boolean(attemptRef.current)
     if (submittingRef.current || paymentSubmittingRef.current || confirmed || (!order && invalid)) return
     const blockedReason = getPurchaseBlockReason?.() ?? purchaseBlockedReason
     if (!order && !attemptRef.current && blockedReason) { setError(blockedReason); return }
@@ -162,6 +177,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     let receivedOrder = false
     try {
       const activeAttempt = attemptRef.current ?? {
+        userId: user.id,
         request: {
           buyer: normalizeBuyer(data.buyer), delivery: normalizeDelivery(data.delivery),
           items: items.map(({ productId, quantity }) => ({ productId, quantity })),
@@ -172,7 +188,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       }
       attemptRef.current = activeAttempt
       setAttempt(activeAttempt)
-      const created = await orderApi.createOrder(activeAttempt.request)
+      const created = await orderApi.createOrder(activeAttempt.request, activeAttempt.userId)
+      if (!isCurrentSession()) return
       receivedOrder = true
       const alreadyConfirmed = created.orderStatus === 'CONFIRMED' && created.paymentStatus === 'APPROVED'
       purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, items: activeAttempt.items }
@@ -193,8 +210,13 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       setFieldErrors({}) // Descarta errores de campo tras recibir la Order.
       setTermsError(undefined)
     } catch (failure) {
+      if (!isCurrentSession()) return
       if (failure instanceof OrderApiError) {
-        if (failure.conclusive) {
+        if (failure.authorizationDenied && !retryingUncertain) {
+          authorizationRejectedRef.current = true
+          setAuthorizationRejected(true)
+        }
+        if (failure.conclusive && !(retryingUncertain && failure.authorizationDenied)) {
           attemptRef.current = undefined
           setAttempt(undefined)
         }
@@ -218,12 +240,16 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
            setCurrentStep('buyer') 
         }
       }
-      setError(orderErrorMessage(failure))
+      setError(failure instanceof OrderApiError && failure.authorizationDenied && retryingUncertain
+        ? orderErrorMessage(failure) + ' El resultado anterior sigue incierto. Reintentar conserva la misma solicitud.'
+        : orderErrorMessage(failure))
     } finally {
-      submittingRef.current = false
-      setIsCreatingOrder(false)
-      onNavigationLockChange(Boolean(attemptRef.current) || requiresAcceptance)
-      onTransactionStateChange(attemptRef.current ? 'uncertain' : receivedOrder || order ? 'known' : 'idle')
+      if (isCurrentSession()) {
+        submittingRef.current = false
+        setIsCreatingOrder(false)
+        onNavigationLockChange(Boolean(attemptRef.current) || requiresAcceptance)
+        onTransactionStateChange(attemptRef.current ? 'uncertain' : receivedOrder || order ? 'known' : 'idle')
+      }
     }
   }
 
@@ -235,6 +261,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
   /** Procesa el escenario con una identidad estable; actualiza la Order y limpia unidades originales solo ante aprobación válida. */
   async function handleProcessPayment() {
+    if (!isCurrentSession() || authorizationRejectedRef.current || user?.role !== 'B2C') return
+    const retryingUncertain = Boolean(paymentAttemptRef.current)
     // Guarda de doble-submit / múltiples Retry concurrentes: el ref cubre clicks antes
     // del siguiente render; isProcessingPayment refleja el bloqueo en la UI.
     if (paymentSubmittingRef.current || submittingRef.current || paymentResultRef.current || confirmed || !order || !selectedPaymentScenario) return
@@ -247,11 +275,12 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
     try {
       const activeAttempt = paymentAttemptRef.current ?? Object.freeze({
-        orderId: order.id, scenario: selectedPaymentScenario, idempotencyKey: crypto.randomUUID(),
+        orderId: order.id, scenario: selectedPaymentScenario, idempotencyKey: crypto.randomUUID(), userId: user.id,
       })
       paymentAttemptRef.current = activeAttempt
       setHasPendingPayment(true)
-      const result = await paymentApi.processPayment(activeAttempt.orderId, activeAttempt)
+      const result = await paymentApi.processPayment(activeAttempt.orderId, activeAttempt, activeAttempt.userId)
+      if (!isCurrentSession()) return
       // Resultado concluyente (APPROVED/DECLINED/ERROR): el intento queda cerrado,
       // así que el próximo "Procesar pago"/Retry debe generar una idempotencyKey nueva.
       paymentAttemptRef.current = undefined
@@ -277,12 +306,24 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
         cleanupPurchase({ baseline: baseline.items, purchased: result.order.items })
       }
     } catch (failure) {
-      setPaymentError(paymentErrorMessage(failure))
+      if (!isCurrentSession()) return
+      if (failure instanceof PaymentApiError && failure.authorizationDenied && !retryingUncertain) {
+        paymentAttemptRef.current = undefined
+        setHasPendingPayment(false)
+        authorizationRejectedRef.current = true
+        setAuthorizationRejected(true)
+        setError(paymentErrorMessage(failure))
+      }
+      setPaymentError(failure instanceof PaymentApiError && failure.authorizationDenied && retryingUncertain
+        ? paymentErrorMessage(failure) + ' El resultado anterior sigue incierto. Reintentar conserva la misma solicitud.'
+        : paymentErrorMessage(failure))
     } finally {
-      paymentSubmittingRef.current = false
-      setIsProcessingPayment(false)
-      onNavigationLockChange(false)
-      onTransactionStateChange(paymentAttemptRef.current ? 'uncertain' : 'known')
+      if (isCurrentSession()) {
+        paymentSubmittingRef.current = false
+        setIsProcessingPayment(false)
+        onNavigationLockChange(false)
+        onTransactionStateChange(paymentAttemptRef.current ? 'uncertain' : 'known')
+      }
     }
   }
 
@@ -359,7 +400,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                     onScenarioChange={changePaymentScenario}
                     onProcessPayment={handleProcessPayment}
                     isProcessingPayment={isProcessingPayment}
-                    locked={confirmed}
+                    locked={confirmed || authorizationRejected}
                     scenarioLocked={hasPendingPayment}
                     error={paymentError}
                   />
@@ -372,7 +413,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
               <>
                 <ReviewStep buyer={order?.buyer ?? data.buyer} delivery={order?.delivery ?? data.delivery}
                   items={displayItems} totals={order?.totals ?? calculateCartTotals(reviewItems)} order={order}
-                  busy={isCreatingOrder} retryPending={Boolean(attempt)} invalid={!order && invalid} error={error}
+                  busy={isCreatingOrder} retryPending={Boolean(attempt)} invalid={!order && invalid} authorizationRejected={authorizationRejected} error={error}
                   differences={differences}
                   termsAccepted={attempt?.request.termsAcceptance.accepted ?? termsAccepted}
                   termsError={termsError} termsVersionRejected={termsVersionRejected} termsInputRef={termsInputRef}

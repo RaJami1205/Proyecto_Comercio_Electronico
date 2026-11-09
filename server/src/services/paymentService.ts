@@ -18,9 +18,9 @@ export class PaymentService {
   ) {}
 
   /** Valida el intento, recupera replay o bloquea la Order mientras procesa y guarda su resultado autoritativo. */
-  async process(orderId: string, value: unknown): Promise<PaymentResult> {
+  async process(orderId: string, value: unknown, ownerId: string): Promise<PaymentResult> {
     const request = validateProcessPaymentRequest(value)
-    const order = this.store.findById(orderId)
+    const order = this.store.findByIdForOwner(orderId, ownerId)
     if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
 
     // Un replay devuelve el snapshot histórico, incluso tras un Retry o una aprobación.

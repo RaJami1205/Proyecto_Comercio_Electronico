@@ -13,7 +13,10 @@ const runtimeUrl = dataUrl(`
   import { cartReducer } from '${reducerUrl}';
   let slots = [], cursor = 0;
   export let cart = []; export let cleanupCount = 0;
-  export function reset(items) { slots = []; cursor = 0; cart = items; cleanupCount = 0; }
+  export let session = {user:{id:"test-user",role:"B2C"},epoch:0};
+  export function useSession() { return session; }
+  export function setUser(user) { session = {user,epoch:session.epoch+1}; }
+  export function reset(items) { slots = []; cursor = 0; cart = items; cleanupCount = 0; session = {user:{id:"test-user",role:"B2C"},epoch:0}; }
   export function renderStart() { cursor = 0; }
   export function useState(initial) {
     const index = cursor++;
@@ -22,6 +25,7 @@ const runtimeUrl = dataUrl(`
   }
   export function useRef(initial) { const [value] = useState(() => ({current:initial})); return value; }
   export function useEffect() {}
+  export function useLayoutEffect(callback) { callback(); }
   export function useCart() { return {items:cart, cleanupPurchase: payload => { cleanupCount++; cart = cartReducer({items:cart}, {type:'CLEANUP_PURCHASE', payload}).items; }}; }
   export const Fragment = 'Fragment';
   export function jsx(type, props) { return {type, props}; }
@@ -32,7 +36,7 @@ const analyticsUrl = dataUrl('export function trackEvent() {}')
 const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
-  ['../hooks/useSession', dataUrl('export function useSession() {return {user:{id:"test-user"}}}')],
+  ['../hooks/useSession', runtimeUrl],
   ['../services/analytics', analyticsUrl],
 ])
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
@@ -57,6 +61,7 @@ modules.set('../utils/cartCalculations', calculationsUrl)
 modules.set('../utils/checkoutValidation', compile('utils/checkoutValidation.ts'))
 const differencesUrl = compile('utils/orderReviewDifferences.ts')
 modules.set('../utils/orderReviewDifferences', differencesUrl)
+modules.set('../utils/authorizationErrors', compile('utils/authorizationErrors.ts'))
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 const paymentApiUrl = compile('services/paymentApi.ts');
@@ -116,6 +121,7 @@ async function paymentFlow(t, scenario = 'PAYMENT_DECLINED', Page = CheckoutPage
   let respond = request => { const response = result(request.scenario); return Response.json({ ...response, order: { ...response.order, id: orderId } }) }
   globalThis.fetch = async (url, options) => {
     assert.equal(options.method, 'POST')
+    assert.equal(options.headers['X-CiberNova-User-Id'], 'test-user')
     const payload = JSON.parse(options.body)
     assert.equal(typeof payload.idempotencyKey, 'string')
     assert.ok(payload.idempotencyKey.length > 0)
@@ -139,6 +145,68 @@ async function trackedCheckout(t) {
   modules.set('../services/analytics', analyticsUrl)
   return { api, Page, ...storage }
 }
+
+for (const code of ['IDENTITY_REQUIRED', 'USER_DISABLED', 'FORBIDDEN', 'ORDER_NOT_FOUND']) {
+  test('RBAC rechazo inicial de Payment queda conocido y no habilita Retry comercial ' + code, async t => {
+    const flow = await paymentFlow(t)
+    flow.respond(() => Response.json({ error: { code } }, { status: code === 'IDENTITY_REQUIRED' ? 401 : code === 'ORDER_NOT_FOUND' ? 404 : 403 }))
+    await flow.payment().onProcessPayment(); flow.render()
+    assert.equal(flow.transactions.at(-1), 'known')
+    assert.equal(flow.payment().scenarioLocked, false)
+    assert.equal(flow.payment().locked, true)
+    assert.equal(flow.find('PaymentResultPanel'), undefined)
+    await flow.payment().onProcessPayment()
+    assert.equal(flow.requests.length, 2)
+    assert.equal(runtime.cleanupCount, 0)
+    flow.find('button').onClick(); flow.render()
+    assert.ok(flow.review().error)
+    assert.equal(flow.review().authorizationRejected, true)
+  })
+
+  test('RBAC rechazo de Replay incierto conserva el intento Payment ' + code, async t => {
+    const flow = await paymentFlow(t)
+    flow.respond(() => { throw new TypeError('Network failure') })
+    await flow.payment().onProcessPayment(); flow.render()
+    flow.respond(() => Response.json({ error: { code } }, { status: code === 'IDENTITY_REQUIRED' ? 401 : code === 'ORDER_NOT_FOUND' ? 404 : 403 }))
+    await flow.payment().onProcessPayment(); flow.render()
+    assert.equal(flow.transactions.at(-1), 'uncertain')
+    assert.equal(flow.payment().scenarioLocked, true)
+    assert.equal(runtime.cleanupCount, 0)
+    flow.respond(request => Response.json(result(request.scenario)))
+    await flow.payment().onProcessPayment(); flow.render()
+    assert.equal(flow.transactions.at(-1), 'known')
+    assert.deepEqual(flow.requests[1].payload, flow.requests[2].payload)
+    assert.deepEqual(flow.requests[1].payload, flow.requests[3].payload)
+  })
+}
+
+for (const nextUser of [null, { id: 'other', role: 'B2C' }]) test('RBAC Payment tardío de Session anterior no confirma ni limpia ' + nextUser?.id, async t => {
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+  let release
+  flow.respond(() => new Promise(resolve => { release = resolve }))
+  const pending = flow.payment().onProcessPayment()
+  runtime.setUser(nextUser); flow.render()
+  release(Response.json(result('PAYMENT_APPROVED')))
+  await pending; flow.render()
+  assert.equal(flow.find('OrderConfirmationPage'), undefined)
+  assert.equal(flow.find('PaymentResultPanel'), undefined)
+  assert.equal(runtime.cleanupCount, 0)
+  assert.equal(flow.transactions.at(-1), 'active')
+})
+
+for (const [status, code] of [[400, 'INVALID_USER_ID'], [401, 'IDENTITY_REQUIRED'], [403, 'FORBIDDEN'],
+  [404, 'USER_NOT_FOUND'], [503, 'USER_SERVICE_UNAVAILABLE']]) test('RBAC PaymentApi conserva el error ' + code, async t => {
+  t.mock.method(globalThis, 'fetch', async (_, options) => {
+    assert.equal(options.headers['X-CiberNova-User-Id'], 'effective-user')
+    return Response.json({ error: { code } }, { status })
+  })
+  await assert.rejects(paymentApi.processPayment('order-1', { scenario: 'PAYMENT_APPROVED', idempotencyKey: 'key' }, 'effective-user'), error => {
+    assert.equal(error.code, code)
+    assert.equal(error.conclusive, status !== 503)
+    assert.equal(error.authorizationDenied, status !== 503)
+    return true
+  })
+})
 
 test('Dos compras aprobadas B2C con Orders distintas producen dos compras agregadas para ADMIN', async t => {
   const { api, Page } = await trackedCheckout(t)
@@ -332,7 +400,7 @@ test('F4 rechaza todas las combinaciones contradictorias en el límite API', asy
       const valid = body.order.orderStatus === orderStatus && body.order.paymentStatus === paymentStatus
       body.order.orderStatus = orderStatus; body.order.paymentStatus = paymentStatus
       globalThis.fetch = async () => Response.json(body)
-      const call = paymentApi.processPayment('order-1', {scenario, idempotencyKey:'test'})
+      const call = paymentApi.processPayment('order-1', {scenario, idempotencyKey:'test'}, 'test-user')
       if (valid) assert.deepEqual(await call, body)
       else await assert.rejects(call, error => error instanceof PaymentApiError && !error.conclusive)
     }
@@ -348,7 +416,7 @@ test('API excluye campos de tarjeta demostrativos y otros extras del payload', a
     return Response.json(result('PAYMENT_APPROVED'))
   }
   await paymentApi.processPayment('order-1', {scenario:'PAYMENT_APPROVED', idempotencyKey:'test',
-    cardNumber:'1234567890123456', cardCvv:'000', cardName:'Demo', amount:1})
+    cardNumber:'1234567890123456', cardCvv:'000', cardName:'Demo', amount:1}, 'test-user')
 })
 
 const { default: PaymentStep } = await import(compile('components/checkout/PaymentStep.tsx'))
@@ -373,7 +441,7 @@ test('Sandbox conserva campos demo, validación, escenarios y payload sin datos 
   })
   const props = {order:order(), selectedScenario:null, isProcessingPayment:false,
     onScenarioChange: scenario => { props.selectedScenario = scenario },
-    onProcessPayment: () => paymentApi.processPayment('order-1', {scenario:props.selectedScenario, idempotencyKey:'demo-key'})}
+    onProcessPayment: () => paymentApi.processPayment('order-1', {scenario:props.selectedScenario, idempotencyKey:'demo-key'}, 'test-user')}
   let tree
   /** Actualiza el árbol simulado del formulario de pago con las propiedades actuales. */
   const render = () => { runtime.renderStart(); tree = PaymentStep(props) }
@@ -430,5 +498,5 @@ test('CN-47 PaymentApi conserva consentimiento histórico válido',async t=>{
   const historical=result('PAYMENT_APPROVED')
   historical.order.termsAcceptance.version='historical-test-version'
   t.mock.method(globalThis,'fetch',async()=>Response.json(historical))
-  assert.deepEqual(await paymentApi.processPayment('order-1',{scenario:'PAYMENT_APPROVED',idempotencyKey:'history'}),historical)
+  assert.deepEqual(await paymentApi.processPayment('order-1',{scenario:'PAYMENT_APPROVED',idempotencyKey:'history'}, 'test-user'),historical)
 })

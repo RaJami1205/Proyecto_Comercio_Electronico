@@ -1,5 +1,7 @@
 /** Define los códigos y la estructura pública de errores de la API. */
 export type ApiErrorCode =
+  | 'IDENTITY_REQUIRED'
+  | 'FORBIDDEN'
   | 'CHECKOUT_VALIDATION_ERROR'
   | 'EMPTY_CART'
   | 'PRODUCT_NOT_FOUND'
