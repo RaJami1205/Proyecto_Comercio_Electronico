@@ -22,6 +22,7 @@ const runtimeUrl = dataUrl(`
   }
   export function useRef(initial) { const [value] = useState(() => ({current:initial})); return value; }
   export function useEffect(effect) { effects.push(effect); }
+  export function useLayoutEffect(effect) { effect(); }
   export function runEffects() { const pending = effects; effects=[]; return pending.map(effect => effect()); }
   export function useCallback(callback) { return callback; }
   export function useReducer(reducer, initial, initialize) {
@@ -39,7 +40,7 @@ const analyticsUrl = dataUrl('export function trackEvent() {}')
 const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
-  ['../hooks/useSession', dataUrl('export function useSession() {return {user:{id:"test-user"}}}')],
+  ['../hooks/useSession', dataUrl('export function useSession() {return {user:{id:"test-user",role:"B2C"},epoch:0}}')],
   ['../services/analytics', analyticsUrl],
 ])
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
@@ -64,6 +65,7 @@ modules.set('../utils/cartCalculations', calculationsUrl)
 modules.set('../utils/checkoutValidation', compile('utils/checkoutValidation.ts'))
 const differencesUrl = compile('utils/orderReviewDifferences.ts')
 modules.set('../utils/orderReviewDifferences', differencesUrl)
+modules.set('../utils/authorizationErrors', compile('utils/authorizationErrors.ts'))
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 const paymentApiUrl = compile('services/paymentApi.ts');

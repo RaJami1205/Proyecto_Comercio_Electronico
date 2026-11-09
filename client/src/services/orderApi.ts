@@ -1,12 +1,14 @@
 /** Envía solicitudes de creación de Order y valida las respuestas y errores recibidos por HTTP. */
 import type { ApiErrorResponse } from '../types/apiError'
 import type { CreateOrderRequest, Order } from '../types/order'
+import { authorizationErrorMessage, identityErrorCodes, isAuthorizationRejection } from '../utils/authorizationErrors'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || '').replace(/\/+$/, '')
 
 export class OrderApiError extends Error {
   readonly code: ApiErrorResponse['error']['code']
   readonly conclusive: boolean
+  readonly authorizationDenied: boolean
   readonly fieldErrors?: Record<string, string>
 
   /** Conserva código, certeza del fallo y errores de campo para orientar la recuperación de Checkout. */
@@ -15,6 +17,7 @@ export class OrderApiError extends Error {
     this.name = 'OrderApiError'
     this.code = code
     this.conclusive = conclusive
+    this.authorizationDenied = conclusive && isAuthorizationRejection(code)
     this.fieldErrors = fieldErrors
   }
 }
@@ -50,7 +53,7 @@ function isOrder(value: unknown): value is Order {
 }
 
 /** Envía datos, referencias, clave y consentimiento sin timestamp; una respuesta inválida mantiene incierto el resultado de creación. */
-async function createOrder(request: CreateOrderRequest): Promise<Order> {
+async function createOrder(request: CreateOrderRequest, userId: string): Promise<Order> {
   const payload: CreateOrderRequest = {
     buyer: request.buyer, delivery: request.delivery,
     items: request.items.map(({ productId, quantity }) => ({ productId, quantity })),
@@ -58,7 +61,7 @@ async function createOrder(request: CreateOrderRequest): Promise<Order> {
     termsAcceptance: { accepted: request.termsAcceptance.accepted, version: request.termsAcceptance.version },
   }
   const response = await fetch(API_BASE_URL + '/api/orders', {
-    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CiberNova-User-Id': userId },
     body: JSON.stringify(payload), signal: AbortSignal.timeout(20000),
   })
   const body: unknown = await response.json().catch(() => null)
@@ -70,10 +73,10 @@ async function createOrder(request: CreateOrderRequest): Promise<Order> {
       ? body.error.fieldErrors as Record<string, string> 
       : undefined
 
-    const known = ['CHECKOUT_VALIDATION_ERROR', 'EMPTY_CART', 'PRODUCT_NOT_FOUND']
+    const known = ['CHECKOUT_VALIDATION_ERROR', 'EMPTY_CART', 'PRODUCT_NOT_FOUND', 'ORDER_NOT_FOUND', ...identityErrorCodes]
     throw new OrderApiError(
       known.includes(String(code)) ? code as ApiErrorResponse['error']['code'] : 'UNEXPECTED_ERROR', 
-      [400, 404, 413, 422].includes(response.status),
+      [400, 401, 403, 404, 413, 422].includes(response.status),
       fieldErrors
     )
   }
@@ -86,6 +89,9 @@ export const orderApi = { createOrder }
 /** Convierte un error de creación en un mensaje público sin exponer detalles internos. */
 export function orderErrorMessage(error: unknown): string {
   if (error instanceof OrderApiError) {
+    const identityMessage = authorizationErrorMessage(error.code)
+    if (identityMessage) return identityMessage
+    if (error.code === 'ORDER_NOT_FOUND') return 'No se puede verificar la propiedad de esta orden. Conserva el contexto si hubo una solicitud anterior sin respuesta.'
     if (error.code === 'PRODUCT_NOT_FOUND') return 'Uno de los productos ya no esta disponible. Revisa tu carrito antes de continuar.'
     if (error.code === 'EMPTY_CART') return 'Agrega productos al carrito para continuar.'
     if (error.code === 'CHECKOUT_VALIDATION_ERROR') return 'Revisa los datos del comprador y la entrega. Corrige los campos para continuar.'
