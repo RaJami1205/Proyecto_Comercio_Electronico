@@ -10,7 +10,7 @@ const sources = new Map()
 /** Codifica el código recibido como módulo importable en memoria. */
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 sources.set('services/productService', dataUrl('export async function getProductById() { throw new Error("Debe inyectarse el catálogo simulado") }'))
-for (const name of ['domain/termsPolicy', 'domain/orderError','domain/orderIdentity', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderStore', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
+for (const name of ['db/databaseError', 'domain/termsPolicy', 'domain/orderError','domain/orderIdentity', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderStore', 'stores/paymentStore', 'stores/commerceStores', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
   const source = readFileSync(new URL('../src/' + name + '.ts', import.meta.url), 'utf8')
   const compiled = stripTypeScriptTypes(source, { mode: 'transform' })
   const isolated = compiled.replace(/from ['"](\.[^'"]+)['"]/g, (_, path) => {

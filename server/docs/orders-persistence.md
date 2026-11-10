@@ -48,9 +48,9 @@ La indisponibilidad se presenta como HTTP 503 con el código V1 `UNEXPECTED_ERRO
 
 El mapper valida filas desde `unknown`: NUMERIC como strings decimales, JSONB con campos del DTO V1, timestamps válidos normalizados a ISO UTC y pares coherentes de estados. Escribe la representación completa de cada number, sin `toFixed`, redondeo ni recálculo de importes históricos. Preserva acceptedAt/versión y precios unitarios con más de dos decimales. Los contratos de fila futuros desconocidos fallan de forma controlada.
 
-PaymentService espera las lecturas/escrituras async. Comprueba ownership antes de Replay/errores de concurrencia y vuelve a leer la Order dentro del lock local para no pagar desde una lectura PENDING obsoleta. La actualización persistente escribe únicamente estados y updated_at, filtrando por id y propietario; no sustituye snapshots.
+PaymentService espera las operaciones async y utiliza la abstracción de [Payment Persistence de CN-59](payments-persistence.md). El mecanismo In-Memory mantiene locks locales; la alternativa PostgreSQL revalida la Order con FOR UPDATE NOWAIT y registra el Attempt junto con los estados en una transacción. Ambas comprueban ownership antes de Replay y conservan el histórico aunque cambie el estado actual.
 
-Payment Attempts y sus resultados/locks siguen en memoria. CN-58 no entrega exclusión distribuida, Payment Replay durable ni recuperación de CN-59. Una actualización incierta no se cachea como Payment exitoso. Esa limitación impide activar esta combinación en Production.
+La actualización persistente escribe únicamente estados y updated_at, filtrando por id y propietario; no sustituye snapshots. Las operaciones internas `readForPayment` y `updateWithClient` reutilizan el PoolClient del caller sin abrir una segunda transacción. `createCommerceStores` permite seleccionar Orders y Payments juntos; PaymentService rechaza una mezcla incompatible. El flujo activo sigue In-Memory y la activación productiva exige validación integral y autorización independiente.
 
 ## Validación y estado
 

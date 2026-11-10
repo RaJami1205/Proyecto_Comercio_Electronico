@@ -47,6 +47,6 @@ test('fallo de escritura no cachea el resultado; una Order ya confirmada impide 
   await assert.rejects(service.process(order.id, attempt, 'other'), { status: 404 })
   await assert.rejects(service.process(order.id, attempt, user.id), { code: 'ORDER_ALREADY_CONFIRMED' })
   assert.equal(calls, 1)
-  assert.equal(service.results.size, 0)
-  assert.equal(service.paymentLocks.size, 0)
+  assert.equal(service.persistence.results.size, 0)
+  assert.equal(service.persistence.paymentLocks.size, 0)
 })

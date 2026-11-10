@@ -1,0 +1,80 @@
+name: Server PostgreSQL CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: cibernova_test
+          POSTGRES_USER: cn_test_admin
+          # Credencial descartable del contenedor de CI; nunca una credencial de Supabase.
+          POSTGRES_PASSWORD: ci-admin-ephemeral-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cn_test_admin -d cibernova_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: server
+    env:
+      DOTENV_CONFIG_PATH: .env.database.example
+      CLIENT_ORIGIN: http://localhost:5173
+      DATABASE_SSL_MODE: disable
+      DATABASE_TEST_SSL_MODE: disable
+      RUN_DATABASE_INTEGRATION_TESTS: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Instalar Client para las suites de contratos compartidos
+        working-directory: client
+        run: npm ci
+      - run: npm run build
+      - name: Unit Tests sin integraciones ni servicios externos
+        shell: bash
+        run: |
+          files=()
+          for file in tests/*.test.mjs; do
+            [[ "$file" == *.integration.test.mjs ]] || files+=("$file")
+          done
+          node --test "${files[@]}"
+      - name: Preparar exclusivamente PostgreSQL efímero del Runner
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGDATABASE: cibernova_test
+          PGUSER: cn_test_admin
+          PGPASSWORD: ci-admin-ephemeral-only
+          CN59_RUNTIME_PASSWORD: ci-runtime-ephemeral-only
+        shell: bash
+        run: |
+          test "$PGHOST" = '127.0.0.1'
+          test "$PGDATABASE" = 'cibernova_test'
+          psql --no-psqlrc --set ON_ERROR_STOP=1 --single-transaction \
+            --file supabase/migrations/20261109000100_commerce_foundation.sql \
+            --file supabase/migrations/20261110025043_cibernova_runtime_login.sql
+          psql --no-psqlrc --set ON_ERROR_STOP=1 --set "runtime_password=$CN59_RUNTIME_PASSWORD" <<'SQL'
+          ALTER ROLE cibernova_app PASSWORD :'runtime_password';
+          SQL
+      - name: Integration Tests CN-57 / CN-58 / CN-59 con Runtime separado
+        env:
+          RUN_DATABASE_INTEGRATION_TESTS: '1'
+          DATABASE_TEST_URL: postgresql://cn_test_admin:ci-admin-ephemeral-only@127.0.0.1:5432/cibernova_test
+          DATABASE_RUNTIME_TEST_URL: postgresql://cibernova_app:ci-runtime-ephemeral-only@127.0.0.1:5432/cibernova_test
+        run: node --test tests/database.integration.test.mjs tests/commerce.integration.test.mjs

@@ -4,7 +4,8 @@ import { OrderError } from '../domain/orderError.js'
 import { validateCreateOrderRequest } from '../domain/orderValidation.js'
 import { isCurrentTermsVersion } from '../domain/termsPolicy.js'
 import { orderIdentity, orderQuantities, requireCompatible, requireOrderOwner } from '../domain/orderIdentity.js'
-import { orderStore, type OrderStore } from '../stores/orderStore.js'
+import type { OrderStore } from '../stores/orderStore.js'
+import { commerceStores } from '../stores/commerceStores.js'
 import type { CreateOrderRequest, Order, OrderItem } from '../types/order.js'
 import type { ResolvedUser } from '../types/user.js'
 import type { ProductRecord } from '../types/product.js'
@@ -14,7 +15,7 @@ type ProductLookup = (id: string) => Promise<ProductRecord | undefined>
 
 export class OrderService {
   private readonly pending = new Map<string, { ownerId: string; identity: string; task: Promise<Order> }>()
-  constructor(private readonly store: OrderStore = orderStore, private readonly lookup: ProductLookup = getProductById) {}
+  constructor(private readonly store: OrderStore = commerceStores.orders, private readonly lookup: ProductLookup = getProductById) {}
 
   /** La identidad procede de CN-54, no del body. Promise Sharing no sustituye la unicidad del store. */
   async create(value: unknown, user: ResolvedUser): Promise<Order> {

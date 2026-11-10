@@ -7,6 +7,7 @@ import { orderService } from '../dist/services/orderService.js'
 import { paymentService } from '../dist/services/paymentService.js'
 import { userService } from '../dist/services/userService.js'
 import { InMemoryOrderStore } from '../dist/stores/orderStore.js'
+import { InMemoryPaymentStore } from '../dist/stores/paymentStore.js'
 import { mockUserDirectory } from './helpers/identity.mjs'
 
 const allowedOrigin = 'https://rajami1205.github.io'
@@ -25,10 +26,12 @@ async function environment(t) {
     ...(id === 'business' ? { company: { id: 'co', name: 'Empresa ficticia' } } : {}) }))
   mockUserDirectory(t, records)
   const originalOrderStore = orderService.store, originalPaymentStore = paymentService.store
+  const originalPersistence = paymentService.persistence
   const store = new InMemoryOrderStore()
   orderService.store = store
   paymentService.store = store
-  t.after(() => { orderService.store = originalOrderStore; paymentService.store = originalPaymentStore })
+  paymentService.persistence = new InMemoryPaymentStore(store)
+  t.after(() => { orderService.store = originalOrderStore; paymentService.store = originalPaymentStore; paymentService.persistence = originalPersistence })
   const lookup = t.mock.method(orderService, 'lookup', async id => ({ objectID: id, title: 'Producto', price: 10000, in_stock: true, stock_quantity: 10 }))
   const sandbox = t.mock.method(paymentService.sandbox, 'process', async request => ({ result: request.scenario }))
   const resolve = t.mock.method(userService, 'resolve')
