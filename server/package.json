@@ -8,18 +8,24 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "seed:algolia": "tsx src/scripts/seedAlgolia.ts",
-    "seed:users": "tsx src/scripts/seedUsers.ts"
+    "seed:users": "tsx src/scripts/seedUsers.ts",
+    "db:cli": "supabase",
+    "db:smoke": "tsx src/scripts/databaseSmokeTest.ts",
+    "test:database": "node --test tests/database.test.mjs tests/database.integration.test.mjs"
   },
   "dependencies": {
     "algoliasearch": "^5.57.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.4.1",
+    "@types/pg": "^8.23.1",
+    "supabase": "^3.1.0",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   }
