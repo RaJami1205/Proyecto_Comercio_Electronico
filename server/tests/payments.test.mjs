@@ -21,9 +21,9 @@ const fixture = (id = 'order-1') => ({
 /** Construye una solicitud de pago con escenario y clave de idempotencia de prueba. */
 const request = (scenario = 'PAYMENT_APPROVED', idempotencyKey = 'attempt-1') => ({scenario, idempotencyKey})
 /** Crea un store independiente y un servicio de pago con el Sandbox recibido. */
-const setup = (sandbox = new PaymentSandboxService()) => {
+const setup = async (sandbox = new PaymentSandboxService()) => {
   const store = new InMemoryOrderStore()
-  store.create(fixture(), 'creation-1', 'test-user')
+  await store.create(fixture(), 'creation-1', 'test-user')
   return { store, service: new PaymentService(store, sandbox) }
 }
 
@@ -33,13 +33,13 @@ for (const [scenario, paymentStatus, orderStatus] of [
   ['PAYMENT_ERROR', 'ERROR', 'PENDING'],
 ]) {
   test('Sandbox determinista y transición: ' + scenario, async () => {
-    const {store, service} = setup()
+    const {store, service} = (await setup())
     const result = await service.process('order-1', request(scenario), 'test-user')
     assert.equal(result.result, scenario)
     assert.equal(result.order.paymentStatus, paymentStatus)
     assert.equal(result.order.orderStatus, orderStatus)
     assert.ok(Number.isFinite(Date.parse(result.processedAt)))
-    assert.deepEqual(store.findById('order-1'), result.order)
+    assert.deepEqual((await store.findById('order-1')), result.order)
     assert.deepEqual(result.order.totals, fixture().totals)
     assert.deepEqual(result.order.items, fixture().items)
     assert.deepEqual(result.order.termsAcceptance, fixture().termsAcceptance)
@@ -48,7 +48,7 @@ for (const [scenario, paymentStatus, orderStatus] of [
 
 test('amount, currency e identidad proceden del store; replay aprobado y nuevo pago bloqueado', async () => {
   const calls = []
-  const {store, service} = setup({ process: async input => { calls.push(input); return {result: input.scenario} } })
+  const {store, service} = (await setup({ process: async input => { calls.push(input); return {result: input.scenario} } }))
   const payment = await service.process('order-1', { ...request(), amount: 1, currency: 'USD', orderId: 'attacker', orderStatus: 'PENDING', paymentStatus: 'ERROR' }, 'test-user')
   assert.deepEqual(calls, [{orderId:'order-1', amount:26100, currency:'CRC', scenario:'PAYMENT_APPROVED'}])
   const replay = await service.process('order-1', request('PAYMENT_DECLINED'), 'test-user')
@@ -56,7 +56,7 @@ test('amount, currency e identidad proceden del store; replay aprobado y nuevo p
   assert.equal(calls.length, 1)
   replay.order.totals.total = 1
   assert.equal((await service.process('order-1', request(), 'test-user')).order.totals.total, 26100)
-  assert.equal(store.findById('order-1').totals.total, 26100)
+  assert.equal((await store.findById('order-1')).totals.total, 26100)
   await assert.rejects(service.process('order-1', request('PAYMENT_APPROVED', 'new-key'), 'test-user'), error => error.status === 409 && error.code === 'ORDER_ALREADY_CONFIRMED')
   assert.equal(calls.length, 1)
 })
@@ -64,14 +64,14 @@ test('amount, currency e identidad proceden del store; replay aprobado y nuevo p
 for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR']) {
   test('Retry sobre la misma Order y replay histórico después de ' + scenario, async () => {
     let calls = 0
-    const {store, service} = setup({process: async input => { calls++; return {result: input.scenario} }})
+    const {store, service} = (await setup({process: async input => { calls++; return {result: input.scenario} }}))
     const first = await service.process('order-1', request(scenario), 'test-user')
     assert.deepEqual(await service.process('order-1', request(scenario), 'test-user'), first)
     const approved = await service.process('order-1', request('PAYMENT_APPROVED', 'retry-key'), 'test-user')
     assert.equal(approved.order.id, first.order.id)
     assert.deepEqual(approved.order.termsAcceptance, first.order.termsAcceptance)
     assert.equal(approved.order.paymentStatus, 'APPROVED')
-    assert.equal(store.findById('order-1').orderStatus, 'CONFIRMED')
+    assert.equal((await store.findById('order-1')).orderStatus, 'CONFIRMED')
     assert.deepEqual(await service.process('order-1', request(scenario), 'test-user'), first)
     assert.equal(calls, 2)
   })
@@ -82,11 +82,11 @@ test('dos solicitudes concurrentes: misma o distinta clave solo inicia un Sandbo
     let release
     let calls = 0
     const completion = new Promise(resolve => { release = resolve })
-    const {store, service} = setup({process: async input => { calls++; await completion; return {result:input.scenario} }})
+    const {store, service} = (await setup({process: async input => { calls++; await completion; return {result:input.scenario} }}))
     const first = service.process('order-1', request('PAYMENT_DECLINED'), 'test-user')
     await assert.rejects(service.process('order-1', request('PAYMENT_APPROVED', secondKey), 'test-user'), error => error.status === 409 && error.code === 'PAYMENT_IN_PROGRESS')
     assert.equal(calls, 1)
-    assert.equal(store.findById('order-1').paymentStatus, 'PENDING')
+    assert.equal((await store.findById('order-1')).paymentStatus, 'PENDING')
     release()
     const result = await first
     assert.equal(result.order.paymentStatus, 'DECLINED')
@@ -99,8 +99,8 @@ test('dos solicitudes concurrentes: misma o distinta clave solo inicia un Sandbo
 test('locks y claves de idempotencia se aíslan por orden', async () => {
   let release
   const completion = new Promise(resolve => { release = resolve })
-  const {store, service} = setup({process: async input => { await completion; return {result:input.scenario} }})
-  store.create(fixture('order-2'), 'creation-2', 'test-user')
+  const {store, service} = (await setup({process: async input => { await completion; return {result:input.scenario} }}))
+  await store.create(fixture('order-2'), 'creation-2', 'test-user')
   const first = service.process('order-1', request('PAYMENT_DECLINED'), 'test-user')
   const second = service.process('order-2', request('PAYMENT_APPROVED'), 'test-user')
   release()
@@ -111,18 +111,18 @@ test('locks y claves de idempotencia se aíslan por orden', async () => {
 
 test('fallos reales liberan lock y no cachean resultados ni cambian la Order', async () => {
   let fail = true
-  const {store, service} = setup({process: async input => {
+  const {store, service} = (await setup({process: async input => {
     if (fail) throw new Error('SECRET_INTERNAL_DETAIL')
     return {result:input.scenario}
-  }})
+  }}))
   await assert.rejects(service.process('order-1', request(), 'test-user'))
-  assert.deepEqual(store.findById('order-1'), fixture())
+  assert.deepEqual((await store.findById('order-1')), fixture())
   fail = false
   assert.equal((await service.process('order-1', request(), 'test-user')).order.paymentStatus, 'APPROVED')
-  const broken = setup({process:async () => ({result:'UNSUPPORTED'})})
+  const broken = (await setup({process:async () => ({result:'UNSUPPORTED'})}))
   await assert.rejects(broken.service.process('order-1', request(), 'test-user'))
-  assert.deepEqual(broken.store.findById('order-1'), fixture())
-  const failedUpdate = setup({process:async input => ({result:input.scenario})})
+  assert.deepEqual((await broken.store.findById('order-1')), fixture())
+  const failedUpdate = (await setup({process:async input => ({result:input.scenario})}))
   const update = failedUpdate.store.update.bind(failedUpdate.store)
   failedUpdate.store.update = () => { throw new Error('update failure') }
   await assert.rejects(failedUpdate.service.process('order-1', request(), 'test-user'))
@@ -131,12 +131,12 @@ test('fallos reales liberan lock y no cachean resultados ni cambian la Order', a
 })
 
 test('valida request y orden sin ejecutar el Sandbox; APPROVED siempre impide nuevo pago', async () => {
-  const {store, service} = setup({process:async () => assert.fail('No debe procesar')})
+  const {store, service} = (await setup({process:async () => assert.fail('No debe procesar')}))
   for (const body of [undefined, null, [], {}, request('INVALID'), request(1), request('PAYMENT_APPROVED', ''), request('PAYMENT_APPROVED', '   '), request('PAYMENT_APPROVED', 1)]) {
     await assert.rejects(service.process('order-1', body, 'test-user'), error => error.status === 400)
   }
   await assert.rejects(service.process('missing', request(), 'test-user'), error => error.status === 404 && error.code === 'ORDER_NOT_FOUND')
-  store.update({...fixture(), paymentStatus:'APPROVED'})
+  await store.update({...fixture(), paymentStatus:'APPROVED'})
   await assert.rejects(service.process('order-1', request(), 'test-user'), error => error.code === 'ORDER_ALREADY_CONFIRMED')
 })
 

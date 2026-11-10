@@ -8,6 +8,7 @@ import ordersRouter from './routes/orders.js'
 import usersRouter from './routes/users.js'
 import sessionRouter from './routes/session.js'
 import { OrderError } from './domain/orderError.js'
+import { OrderPersistenceError } from './domain/orderPersistenceError.js'
 import { UserError } from './domain/userError.js'
 import type { ApiErrorResponse } from './types/apiError.js'
 import { authorizeRoles } from './middleware/authorization.js'
@@ -49,7 +50,8 @@ app.use(
       if (error instanceof OrderError || error instanceof UserError) {
         status = error.status
         body = { error: { code: error.code, message: error.message,
-          ...(error instanceof OrderError && error.fieldErrors ? { fieldErrors: error.fieldErrors } : {}) } }
+          ...(error instanceof OrderError && error.fieldErrors ? { fieldErrors: error.fieldErrors } : {}),
+          ...(error instanceof OrderPersistenceError && error.outcome === 'unknown' ? { outcome: 'unknown' as const } : {}) } }
       } else if (error instanceof ConfigurationError) {
         status = 503
         body.error.message = 'El servicio de catálogo no está disponible.'

@@ -1,3 +1,4 @@
+const testUser = { id: 'test-user', displayName: 'Usuario Test', role: 'B2C' }
 /** Verifica stock, identidad de creación y cálculos con módulos aislados, sin importar configuración ni contactar Algolia. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,7 +10,7 @@ const sources = new Map()
 /** Codifica el código recibido como módulo importable en memoria. */
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 sources.set('services/productService', dataUrl('export async function getProductById() { throw new Error("Debe inyectarse el catálogo simulado") }'))
-for (const name of ['domain/termsPolicy', 'domain/orderError', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderStore', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
+for (const name of ['domain/termsPolicy', 'domain/orderError','domain/orderIdentity', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderStore', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
   const source = readFileSync(new URL('../src/' + name + '.ts', import.meta.url), 'utf8')
   const compiled = stripTypeScriptTypes(source, { mode: 'transform' })
   const isolated = compiled.replace(/from ['"](\.[^'"]+)['"]/g, (_, path) => {
@@ -53,8 +54,8 @@ for (const [name, overrides, quantity] of [
     const { store, service } = setup(async () => ({ ...product, ...overrides }))
     const input = request()
     input.items[0] = { productId: 'p', quantity, in_stock: true, stock_quantity: 100 }
-    await assert.rejects(service.create(input, 'test-user'), invalid)
-    assert.equal(store.findByIdempotencyKey(input.idempotencyKey), undefined)
+    await assert.rejects(service.create(input, testUser), invalid)
+    assert.equal((await store.findByIdempotencyKey(input.idempotencyKey)), undefined)
   })
 }
 test('F1 acepta disponibilidad suficiente y exacta; agrega líneas repetidas', async () => {
@@ -62,24 +63,24 @@ test('F1 acepta disponibilidad suficiente y exacta; agrega líneas repetidas', a
     const { service } = setup()
     const input = request()
     input.items = quantities.map(quantity => ({ productId: 'p', quantity }))
-    assert.equal((await service.create(input, 'test-user')).items.reduce((sum, item) => sum + item.quantity, 0), quantities.reduce((sum, value) => sum + value, 0))
+    assert.equal((await service.create(input, testUser)).items.reduce((sum, item) => sum + item.quantity, 0), quantities.reduce((sum, value) => sum + value, 0))
   }
   const { store, service } = setup()
   const input = request()
   input.items = [{ productId: 'p', quantity: 2 }, { productId: 'p', quantity: 2 }]
-  await assert.rejects(service.create(input, 'test-user'), invalid)
-  assert.equal(store.findByIdempotencyKey(input.idempotencyKey), undefined)
+  await assert.rejects(service.create(input, testUser), invalid)
+  assert.equal((await store.findByIdempotencyKey(input.idempotencyKey)), undefined)
 })
 test('F1 no almacena orden parcial si falla un producto posterior', async () => {
   const { store, service } = setup(async id => ({ ...product, objectID: id, in_stock: id === 'p' }))
   const input = request()
   input.items.push({ productId: 'q', quantity: 1 })
-  await assert.rejects(service.create(input, 'test-user'), invalid)
-  assert.equal(store.findByIdempotencyKey(input.idempotencyKey), undefined)
+  await assert.rejects(service.create(input, testUser), invalid)
+  assert.equal((await store.findByIdempotencyKey(input.idempotencyKey)), undefined)
 })
 test('F1 rechaza desbordamiento de cantidades agregadas antes del catálogo', async () => {
   const { service } = setup(async () => assert.fail('No consultar'))
-  await assert.rejects(service.create({ ...request(), items: [{ productId: 'p', quantity: Number.MAX_SAFE_INTEGER }, { productId: 'p', quantity: 1 }] }, 'test-user'), invalid)
+  await assert.rejects(service.create({ ...request(), items: [{ productId: 'p', quantity: Number.MAX_SAFE_INTEGER }, { productId: 'p', quantity: 1 }] }, testUser), invalid)
 })
 
 test('F2 replay normalizado conserva una sola orden y tolera orden de propiedades/líneas', async () => {
@@ -87,13 +88,13 @@ test('F2 replay normalizado conserva una sola orden y tolera orden de propiedade
   const { service, store } = setup(async id => { calls++; return { ...product, objectID: id } })
   const input = request()
   input.items.push({ productId: 'q', quantity: 1 })
-  const first = await service.create(input, 'test-user')
+  const first = await service.create(input, testUser)
   const equivalent = { ...input, buyer: { phone: '88888888 ', email: ' user@example.com ', fullName: 'Usuario' }, delivery: { address: 'Dirección ', canton: 'Central', province: 'San José', additionalInfo: ' ' }, items: [...input.items].reverse() }
-  assert.deepEqual(await service.create(equivalent, 'test-user'), first)
+  assert.deepEqual(await service.create(equivalent, testUser), first)
   assert.equal(calls, 2)
   // La identidad sobrevive a otra instancia del servicio y cambios de estado en el Store.
-  store.update({ ...first, orderStatus: 'CONFIRMED', paymentStatus: 'APPROVED' })
-  const replay = await new OrderService(store, async () => assert.fail('No consultar')).create(equivalent, 'test-user')
+  await store.update({ ...first, orderStatus: 'CONFIRMED', paymentStatus: 'APPROVED' })
+  const replay = await new OrderService(store, async () => assert.fail('No consultar')).create(equivalent, testUser)
   assert.equal(replay.id, first.id)
   assert.equal(replay.orderStatus, 'CONFIRMED')
 })
@@ -108,14 +109,14 @@ for (const [name, change] of [
     let calls = 0
     const { service, store } = setup(async () => { calls++; await gate; return product })
     const original = request()
-    const first = service.create(original, 'test-user')
+    const first = service.create(original, testUser)
     const changed = request()
     change(changed)
-    try { await assert.rejects(service.create(changed, 'test-user'), conflict) }
+    try { await assert.rejects(service.create(changed, testUser), conflict) }
     finally { release() }
     const order = await first
-    await assert.rejects(service.create(changed, 'test-user'), conflict)
-    assert.deepEqual(store.findById(order.id), order)
+    await assert.rejects(service.create(changed, testUser), conflict)
+    assert.deepEqual((await store.findById(order.id)), order)
     assert.equal(calls, 1)
   })
 }
@@ -123,18 +124,18 @@ test('F2 comparte concurrentes compatibles y libera pending tras fallo', async (
   let calls = 0
   let fail = true
   const { store, service } = setup(async () => { calls++; if (fail) throw new Error('fixture failure'); return product })
-  const failed = await Promise.allSettled([service.create(request(), 'test-user'), service.create(request(), 'test-user')])
+  const failed = await Promise.allSettled([service.create(request(), testUser), service.create(request(), testUser)])
   assert.ok(failed.every(result => result.status === 'rejected'))
   assert.equal(calls, 1)
-  assert.equal(store.findByIdempotencyKey('creation'), undefined)
+  assert.equal((await store.findByIdempotencyKey('creation')), undefined)
   fail = false
   const changed = request()
   changed.items[0].quantity = 2
-  const orders = await Promise.all(Array.from({ length: 10 }, () => service.create(changed, 'test-user')))
+  const orders = await Promise.all(Array.from({ length: 10 }, () => service.create(changed, testUser)))
   assert.equal(new Set(orders.map(order => order.id)).size, 1)
   assert.equal(calls, 2)
-  assert.equal((await service.create(changed, 'test-user')).id, orders[0].id)
-  assert.notEqual((await service.create({ ...changed, idempotencyKey: 'new' }, 'test-user')).id, orders[0].id)
+  assert.equal((await service.create(changed, testUser)).id, orders[0].id)
+  assert.notEqual((await service.create({ ...changed, idempotencyKey: 'new' }, testUser)).id, orders[0].id)
 })
 
 for (const [prices, shipping] of [
@@ -147,7 +148,7 @@ for (const [prices, shipping] of [
   test('F3 precios sin normalizar ' + prices.join(' + '), async () => {
     const { service } = setup(async id => ({ ...product, objectID: id, price: prices[Number(id)] }))
     const input = { ...request(), items: prices.map((_, index) => ({ productId: String(index), quantity: 1 })) }
-    const order = await service.create(input, 'test-user')
+    const order = await service.create(input, testUser)
     assert.deepEqual(order.items.map(item => item.unitPrice), prices)
     assert.deepEqual(order.items.map(item => item.lineSubtotal), prices)
     assert.equal(order.totals.subtotal, prices.reduce((sum, price) => sum + price, 0))
@@ -160,7 +161,7 @@ test('F3 preserva precisión antes de multiplicar y rechaza importes inválidos'
   const { service } = setup(async () => ({ ...product, price: 49999.9975 }))
   const input = request()
   input.items[0].quantity = 2
-  const order = await service.create(input, 'test-user')
+  const order = await service.create(input, testUser)
   assert.equal(order.items[0].lineSubtotal, 99999.995)
   assert.equal(order.items[0].unitPrice, 49999.9975)
   assert.equal(order.totals.subtotal, 99999.995)
@@ -173,7 +174,7 @@ test('F3 preserva precisión antes de multiplicar y rechaza importes inválidos'
 
 test('CN-30 mantiene estados, replay, autoridad y bloqueo con órdenes corregidas', async () => {
   const { service, store } = setup()
-  const order = await service.create(request(), 'test-user')
+  const order = await service.create(request(), testUser)
   const payments = new PaymentService(store)
   for (const [scenario, status] of [['PAYMENT_ERROR', 'ERROR'], ['PAYMENT_DECLINED', 'DECLINED'], ['PAYMENT_APPROVED', 'APPROVED']]) {
     const input = { scenario, idempotencyKey: scenario, amount: 1, currency: 'USD' }
@@ -183,9 +184,9 @@ test('CN-30 mantiene estados, replay, autoridad y bloqueo con órdenes corregida
     assert.equal(result.order.paymentStatus, status)
     assert.equal(result.order.orderStatus, status === 'APPROVED' ? 'CONFIRMED' : 'PENDING')
     assert.deepEqual(result.order.totals, order.totals)
-    assert.deepEqual(service.findById(order.id, 'test-user'), result.order)
+    assert.deepEqual((await service.findById(order.id, 'test-user')), result.order)
     assert.deepEqual(await payments.process(order.id, input, 'test-user'), result)
   }
   await assert.rejects(payments.process(order.id, { scenario: 'PAYMENT_APPROVED', idempotencyKey: 'new' }, 'test-user'), error => error.code === 'ORDER_ALREADY_CONFIRMED')
-  assert.equal((await service.create(request(), 'test-user')).orderStatus, 'CONFIRMED')
+  assert.equal((await service.create(request(), testUser)).orderStatus, 'CONFIRMED')
 })

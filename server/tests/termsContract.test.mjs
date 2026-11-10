@@ -7,6 +7,7 @@ import {createRequire} from 'node:module'
 import app from '../dist/app.js'
 import {orderService} from '../dist/services/orderService.js'
 import {CURRENT_TERMS_VERSION} from '../dist/domain/termsPolicy.js'
+import {OrderPersistenceError} from '../dist/domain/orderPersistenceError.js'
 const requireClient=createRequire(new URL('../../client/package.json',import.meta.url))
 const ts=requireClient('typescript')
 /** Transpila el servicio Client real con la URL local del test, sin modificar fuentes ni configuración de Vite. */
@@ -71,5 +72,26 @@ test('CN-47 Client/Server: errores, POST, GET, Payment Retry y confirmed replay 
   } finally {
     orderService.lookup=original
     await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()))
+  }
+})
+test('CN-58 HTTP 503 y outcome unknown conservan el intento en el Client V1 sin exponer errores internos',async t=>{
+  mockUserDirectory(t)
+  const server=app.listen(0,'127.0.0.1')
+  await new Promise(resolve=>server.once('listening',resolve))
+  t.after(()=>new Promise(resolve=>server.close(resolve)))
+  const base='http://127.0.0.1:'+server.address().port
+  const {orderApi,OrderApiError}=await clientService('orderApi',base)
+  const input={buyer:{fullName:'Test',email:'test@example.com',phone:'88888888'},delivery:{province:'San José',canton:'Central',address:'Prueba'},
+    items:[{productId:'p',quantity:1}],idempotencyKey:'same-key',termsAcceptance:{accepted:true,version:CURRENT_TERMS_VERSION}}
+  for(const outcome of ['not-committed','unknown']){
+    const mock=t.mock.method(orderService,'create',async()=>{throw new OrderPersistenceError(outcome)})
+    const response=await fetch(base+'/api/orders',{method:'POST',headers:{...testIdentityHeaders,'Content-Type':'application/json'},body:JSON.stringify(input)})
+    assert.equal(response.status,503)
+    const body=await response.json()
+    assert.equal(body.error.code,'UNEXPECTED_ERROR')
+    assert.equal(body.error.outcome,outcome==='unknown'?'unknown':undefined)
+    assert.doesNotMatch(JSON.stringify(body),/password|certificate|postgres:\/\//i)
+    await assert.rejects(orderApi.createOrder(input,'test-user'),error=>error instanceof OrderApiError&&!error.conclusive&&error.code==='UNEXPECTED_ERROR')
+    mock.mock.restore()
   }
 })
