@@ -2,7 +2,7 @@
 import { Pool, type PoolClient, type PoolConfig, type QueryResult } from 'pg'
 import { getDatabaseConfig } from '../config/database.js'
 import { DatabaseError, databaseError } from './databaseError.js'
-import { withTransaction } from './transaction.js'
+import { withTransaction, type TransactionOptions } from './transaction.js'
 
 export class Database {
   private pool?: Pool
@@ -36,8 +36,8 @@ export class Database {
   }
 
   /** Comparte un único client entre todas las sentencias del callback transaccional. */
-  async transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
-    try { return await withTransaction(this.getPool(), operation) }
+  async transaction<T>(operation: (client: PoolClient) => Promise<T>, options?: TransactionOptions): Promise<T> {
+    try { return await withTransaction(this.getPool(), operation, options) }
     catch (error) { throw databaseError(error) }
   }
 

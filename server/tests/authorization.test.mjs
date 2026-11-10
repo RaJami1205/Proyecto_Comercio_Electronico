@@ -65,7 +65,7 @@ test('todas las operaciones rechazan identidad/rol inválidos antes de efectos c
   }
   assert.equal(h.lookup.mock.calls.length, 0)
   assert.equal(h.sandbox.mock.calls.length, 0)
-  assert.equal(h.store.findByIdempotencyKey('denied'), undefined)
+  assert.equal((await h.store.findByIdempotencyKey('denied')), undefined)
 })
 
 test('rechaza headers duplicados incluso con el mismo valor y distinto casing', async t => {
@@ -145,7 +145,7 @@ test('concurrencia comparte solo owner/key compatibles y libera la key tras un f
   assert.deepEqual(await (await h.request('/api/orders', 'a', input('parallel'))).json(), order)
   h.lookup.mock.mockImplementation(async () => { throw new Error('Controlled failure') })
   await error(await h.request('/api/orders', 'a', input('failed')), 500, 'UNEXPECTED_ERROR')
-  assert.equal(h.store.findByIdempotencyKey('failed'), undefined)
+  assert.equal((await h.store.findByIdempotencyKey('failed')), undefined)
   h.lookup.mock.mockImplementation(async id => ({ objectID: id, title: 'Producto', price: 10000, in_stock: true, stock_quantity: 10 }))
   const recovered = await h.request('/api/orders', 'b', input('failed'))
   assert.equal(recovered.status, 201)
@@ -174,13 +174,13 @@ test('Payment y Replay comprueban owner antes del Sandbox y de devolver resultad
   assert.equal(h.sandbox.mock.calls.length, 3)
   assert.equal((await (await h.request('/api/orders/' + order.id)).json()).orderStatus, 'CONFIRMED')
   const legacy = { ...order, id: 'legacy' }
-  h.store.create(legacy, 'legacy-key')
+  await h.store.create(legacy, 'legacy-key')
   await error(await h.request('/api/orders/legacy'), 404, 'ORDER_NOT_FOUND')
   await error(await h.request('/api/orders/legacy/payment', 'a', payment()), 404, 'ORDER_NOT_FOUND')
   await error(await h.request('/api/orders', 'a', input('legacy-key')), 404, 'ORDER_NOT_FOUND')
-  assert.equal(h.store.findByIdForOwner('legacy', 'a'), undefined)
+  assert.equal((await h.store.findByIdForOwner('legacy', 'a')), undefined)
   assert.equal(h.sandbox.mock.calls.length, 3)
-  assert.throws(() => h.store.create(order, 'payments', 'b'), { code: 'ORDER_NOT_FOUND' })
+  await assert.rejects(async () => (await h.store.create(order, 'payments', 'b')), { code: 'ORDER_NOT_FOUND' })
 })
 
 test('OPTIONS admite el header de identidad solo para el origen configurado y precede a RBAC', async t => {

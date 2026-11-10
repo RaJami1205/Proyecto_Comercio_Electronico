@@ -20,23 +20,25 @@ export class PaymentService {
   /** Valida el intento, recupera replay o bloquea la Order mientras procesa y guarda su resultado autoritativo. */
   async process(orderId: string, value: unknown, ownerId: string): Promise<PaymentResult> {
     const request = validateProcessPaymentRequest(value)
-    const order = this.store.findByIdForOwner(orderId, ownerId)
-    if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
+    const owned = await this.store.findByIdForOwner(orderId, ownerId)
+    if (!owned) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
 
     // Un replay devuelve el snapshot histórico, incluso tras un Retry o una aprobación.
     const existing = this.results.get(orderId)?.get(request.idempotencyKey)
     if (existing) return structuredClone(existing)
 
-    if (order.orderStatus === 'CONFIRMED' || order.paymentStatus === 'APPROVED') {
-      throw new OrderError(409, 'ORDER_ALREADY_CONFIRMED', 'La orden ya fue confirmada y no admite otro pago.')
-    }
     if (this.paymentLocks.has(orderId)) {
       throw new OrderError(409, 'PAYMENT_IN_PROGRESS', 'Ya hay un pago en proceso para esta orden.')
     }
 
-    // La adquisición es síncrona y sucede antes del primer await.
+    // No hay await entre comprobar y adquirir el lock. La lectura previa puede haberse vuelto obsoleta.
     this.paymentLocks.add(orderId)
     try {
+      const order = await this.store.findByIdForOwner(orderId, ownerId)
+      if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
+      if (order.orderStatus === 'CONFIRMED' || order.paymentStatus === 'APPROVED') {
+        throw new OrderError(409, 'ORDER_ALREADY_CONFIRMED', 'La orden ya fue confirmada y no admite otro pago.')
+      }
       const result = await this.sandbox.process({
         orderId: order.id, amount: order.totals.total, currency: order.currency, scenario: request.scenario,
       })
@@ -45,11 +47,11 @@ export class PaymentService {
         PAYMENT_APPROVED: 'APPROVED', PAYMENT_DECLINED: 'DECLINED', PAYMENT_ERROR: 'ERROR',
       }
       // Solo cambian estados: el snapshot conserva datos, importes y Terms Acceptance originales.
-      const updated = this.store.update({
+      const updated = await this.store.update({
         ...order,
         paymentStatus: statuses[result.result],
         orderStatus: result.result === 'PAYMENT_APPROVED' ? 'CONFIRMED' : 'PENDING',
-      })
+      }, ownerId)
       if (!updated) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
       const payment: PaymentResult = { result: result.result, processedAt: new Date().toISOString(), order: updated }
       let orderResults = this.results.get(orderId)

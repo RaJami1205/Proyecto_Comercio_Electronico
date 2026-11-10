@@ -23,5 +23,6 @@ export interface ApiErrorResponse {
     code: ApiErrorCode
     message: string
     fieldErrors?: Record<string, string>
+    outcome?: 'unknown'
   }
 }

@@ -1,56 +1,96 @@
-/** Almacena copias de Orders y sus claves de creación en memoria; los datos se pierden al reiniciar el proceso. */
+/** Contrato async de Orders. La composición comercial permanece explícitamente In-Memory hasta CN-59. */
+import { randomUUID } from 'node:crypto'
 import type { Order } from '../types/order.js'
-import { OrderError } from '../domain/orderError.js'
+import type { B2CUser } from '../types/user.js'
+import { orderIdentity, requireCompatible, requireOrderOwner } from '../domain/orderIdentity.js'
 
-export interface OrderStore {
-  create(order: Order, idempotencyKey: string, ownerId?: string): Order
-  findById(id: string): Order | undefined
-  findByIdForOwner(id: string, ownerId: string): Order | undefined
-  findByIdempotencyKey(key: string): Order | undefined
-  update(order: Order): Order | undefined
+export interface OrderCreationContext {
+  idempotencyKey: string
+  canonicalPayload: string
+  canonicalVersion: 1
+  user: B2CUser
 }
 
-/** Los snapshots se copian para que consumidores no muten el estado almacenado. */
-export class InMemoryOrderStore implements OrderStore {
-  // Asociación temporal no durable. El owner queda fuera del DTO y se conserva en cada update.
-  private readonly orders = new Map<string, { snapshot: Order; ownerId?: string }>()
-  private readonly keys = new Map<string, string>()
+export type OrderBuilder = (id: string, signal?: AbortSignal) => Promise<Order>
 
-  /** Asocia snapshot y propietario en una operación síncrona. La ausencia de ownerId representa una Order legacy. */
-  create(order: Order, idempotencyKey: string, ownerId?: string): Order {
-    const existing = this.findByIdempotencyKey(idempotencyKey)
+export interface OrderStore {
+  createOrReplay(context: OrderCreationContext, build: OrderBuilder): Promise<Order>
+  findById(id: string): Promise<Order | undefined>
+  findByIdForOwner(id: string, ownerId: string): Promise<Order | undefined>
+  findByIdempotencyKey(key: string, ownerId: string): Promise<Order | undefined>
+  update(order: Order, ownerId: string): Promise<Order | undefined>
+}
+
+/** Conserva copias defensivas y fixtures legacy sin propietario; nunca asigna estos últimos a otro usuario. */
+export class InMemoryOrderStore implements OrderStore {
+  private readonly orders = new Map<string, { snapshot: Order; ownerId?: string; canonicalPayload?: string; user?: B2CUser }>()
+  private readonly keys = new Map<string, string>()
+  private readonly pending = new Map<string, { context: OrderCreationContext; task: Promise<Order> }>()
+
+  async createOrReplay(context: OrderCreationContext, build: OrderBuilder): Promise<Order> {
+    const id = this.keys.get(context.idempotencyKey)
+    const existing = id ? this.orders.get(id) : undefined
     if (existing) {
-      if (this.orders.get(existing.id)?.ownerId !== ownerId) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
-      return existing
+      requireOrderOwner(existing.ownerId, context.user.id)
+      requireCompatible(existing.canonicalPayload ?? orderIdentity(existing.snapshot), context.canonicalPayload)
+      return structuredClone(existing.snapshot)
+    }
+    const pending = this.pending.get(context.idempotencyKey)
+    if (pending) {
+      requireOrderOwner(pending.context.user.id, context.user.id)
+      requireCompatible(pending.context.canonicalPayload, context.canonicalPayload)
+      return structuredClone(await pending.task)
+    }
+    const task = Promise.resolve().then(async () => {
+      const order = await build(randomUUID())
+      const result = await this.create(order, context.idempotencyKey, context.user.id)
+      const entry = this.orders.get(result.id)!
+      entry.canonicalPayload = context.canonicalPayload
+      entry.user = structuredClone(context.user)
+      return result
+    })
+    this.pending.set(context.idempotencyKey, { context: structuredClone(context), task })
+    try { return structuredClone(await task) }
+    finally { this.pending.delete(context.idempotencyKey) }
+  }
+
+  /** Utilidad async de fixtures/compatibilidad In-Memory; la creación comercial usa createOrReplay. */
+  async create(order: Order, idempotencyKey: string, ownerId?: string): Promise<Order> {
+    const existingId = this.keys.get(idempotencyKey)
+    const existing = existingId ? this.orders.get(existingId) : undefined
+    if (existing) {
+      if (existing.ownerId !== ownerId) requireOrderOwner(existing.ownerId, ownerId ?? '')
+      return structuredClone(existing.snapshot)
     }
     if (this.orders.has(order.id)) throw new Error('Identificador duplicado de orden.')
     this.orders.set(order.id, { snapshot: structuredClone(order), ownerId })
     this.keys.set(idempotencyKey, order.id)
     return structuredClone(order)
   }
-  /** Devuelve una copia de la Order identificada o undefined si no está almacenada. */
-  findById(id: string): Order | undefined {
+
+  async findById(id: string): Promise<Order | undefined> {
     const order = this.orders.get(id)
     return order ? structuredClone(order.snapshot) : undefined
   }
-  /** Solo entrega snapshots con propietario verificable, incluidas las consultas de Replay. */
-  findByIdForOwner(id: string, ownerId: string): Order | undefined {
+
+  async findByIdForOwner(id: string, ownerId: string): Promise<Order | undefined> {
     const entry = this.orders.get(id)
     return ownerId && entry?.ownerId === ownerId ? structuredClone(entry.snapshot) : undefined
   }
-  /** Resuelve la clave de creación y devuelve una copia de su Order, si existe. */
-  findByIdempotencyKey(key: string): Order | undefined {
+
+  async findByIdempotencyKey(key: string, ownerId?: string): Promise<Order | undefined> {
     const id = this.keys.get(key)
+    if (id && ownerId !== undefined) requireOrderOwner(this.orders.get(id)?.ownerId, ownerId)
     return id ? this.findById(id) : undefined
   }
-  /** Reemplaza una Order existente por una copia del snapshot recibido; devuelve undefined si no existe. */
-  update(order: Order): Order | undefined {
+
+  async update(order: Order, ownerId?: string): Promise<Order | undefined> {
     const entry = this.orders.get(order.id)
-    if (!entry) return undefined
+    if (!entry || (ownerId !== undefined && entry.ownerId !== ownerId)) return undefined
     this.orders.set(order.id, { ...entry, snapshot: structuredClone(order) })
     return structuredClone(order)
   }
 }
 
-/** Instancia compartida por creación, consulta y procesamiento de pagos. */
+/** No depende de DATABASE_URL ni importa la implementación PostgreSQL. */
 export const orderStore = new InMemoryOrderStore()

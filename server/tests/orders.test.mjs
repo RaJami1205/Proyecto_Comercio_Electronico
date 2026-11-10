@@ -1,3 +1,4 @@
+const testUser = { id: 'test-user', displayName: 'Usuario Test', role: 'B2C' }
 /** Verifica creación, validación e idempotencia de Orders mediante servicios y endpoints locales. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -23,7 +24,7 @@ test('snapshot autoritativo, consulta, estados y aislamiento del store', async (
   input.items[0].unitPrice = 1
   input.totals = { total: 1 }
   input.termsAcceptance.acceptedAt = 'forged'
-  const order = await service.create(input, 'test-user')
+  const order = await service.create(input, testUser)
   assert.deepEqual(order.totals, { subtotal: 20000, tax: 2600, shipping: 3500, total: 26100 })
   assert.deepEqual(order.items[0], { productId: 'product-1', name: 'Producto real', image: '/image.jpg', unitPrice: 10000, quantity: 2, lineSubtotal: 20000 })
   assert.deepEqual(order.termsAcceptance, {accepted:true,version:input.termsAcceptance.version,acceptedAt:order.createdAt})
@@ -32,16 +33,16 @@ test('snapshot autoritativo, consulta, estados y aislamiento del store', async (
   assert.equal(order.paymentStatus, 'PENDING')
   assert.equal(order.buyer.fullName, 'Usuario Prueba')
   assert.ok(order.id && order.orderNumber.startsWith('CN-') && Number.isFinite(Date.parse(order.createdAt)))
-  assert.deepEqual(service.findById(order.id, 'test-user'), order)
-  assert.deepEqual(await service.create(request(), 'test-user'), order)
+  assert.deepEqual((await service.findById(order.id, 'test-user')), order)
+  assert.deepEqual(await service.create(request(), testUser), order)
   order.items[0].name = 'Mutación'
-  assert.equal(service.findById(order.id, 'test-user').items[0].name, 'Producto real')
-  const updated = service.findById(order.id, 'test-user')
+  assert.equal((await service.findById(order.id, 'test-user')).items[0].name, 'Producto real')
+  const updated = (await service.findById(order.id, 'test-user'))
   updated.paymentStatus = 'APPROVED'
-  store.update(updated)
-  assert.equal(service.findById(order.id, 'test-user').paymentStatus, 'APPROVED')
-  assert.equal(service.findById(order.id, 'test-user').orderStatus, 'PENDING')
-  assert.equal(store.update({ ...updated, id: 'missing' }), undefined)
+  await store.update(updated)
+  assert.equal((await service.findById(order.id, 'test-user')).paymentStatus, 'APPROVED')
+  assert.equal((await service.findById(order.id, 'test-user')).orderStatus, 'PENDING')
+  assert.equal((await store.update({ ...updated, id: 'missing' })), undefined)
 })
 
 test('idempotencia simultánea y recuperación después de un fallo', async () => {
@@ -53,15 +54,15 @@ test('idempotencia simultánea y recuperación después de un fallo', async () =
     if (fail) throw new Error('catalog unavailable')
     return product
   })
-  const failed = await Promise.allSettled([service.create(request(), 'test-user'), service.create(request(), 'test-user')])
+  const failed = await Promise.allSettled([service.create(request(), testUser), service.create(request(), testUser)])
   assert.ok(failed.every(result => result.status === 'rejected'))
   assert.equal(calls, 1)
   fail = false
-  const orders = await Promise.all(Array.from({ length: 10 }, () => service.create(request(), 'test-user')))
+  const orders = await Promise.all(Array.from({ length: 10 }, () => service.create(request(), testUser)))
   assert.equal(new Set(orders.map(order => order.id)).size, 1)
   assert.equal(calls, 2)
-  assert.equal((await service.create(request(), 'test-user')).id, orders[0].id)
-  assert.notEqual((await service.create(request('another-key'), 'test-user')).id, orders[0].id)
+  assert.equal((await service.create(request(), testUser)).id, orders[0].id)
+  assert.notEqual((await service.create(request('another-key'), testUser)).id, orders[0].id)
 })
 
 test('shipping en cero y alrededor del umbral; IVA y centavos', () => {
@@ -77,16 +78,16 @@ test('shipping en cero y alrededor del umbral; IVA y centavos', () => {
 test('validaciones impiden consultar catálogo y admiten solamente cantidades enteras positivas', async () => {
   const service = new OrderService(new InMemoryOrderStore(), async () => { assert.fail('No debe consultar catálogo') })
   const cases = [undefined, null, [], {}, { ...request(), buyer: null }, { ...request(), buyer: { ...request().buyer, email: 'invalid' } }, { ...request(), buyer: { ...request().buyer, phone: 'abcd' } }, { ...request(), delivery: { ...request().delivery, address: '' } }, { ...request(), delivery: { ...request().delivery, additionalInfo: 1 } }, { ...request(), idempotencyKey: '' }, { ...request(), items: null }, { ...request(), items: [] }, ...[0, -1, 1.5, '2', NaN, Infinity, Number.MAX_SAFE_INTEGER + 1].map(quantity => ({ ...request(), items: [{ productId: 'product-1', quantity }] })), { ...request(), items: [null] }]
-  for (const value of cases) await assert.rejects(service.create(value, 'test-user'), error => error.status === 400)
+  for (const value of cases) await assert.rejects(service.create(value, testUser), error => error.status === 400)
 })
 
 test('producto inexistente, precio inválido y orden inexistente producen errores controlados', async () => {
   const service = new OrderService(new InMemoryOrderStore(), async () => undefined)
-  await assert.rejects(service.create(request(), 'test-user'), error => error.code === 'PRODUCT_NOT_FOUND' && error.status === 404)
-  assert.throws(() => service.findById('missing', 'test-user'), error => error.code === 'ORDER_NOT_FOUND')
+  await assert.rejects(service.create(request(), testUser), error => error.code === 'PRODUCT_NOT_FOUND' && error.status === 404)
+  await assert.rejects(async () => (await service.findById('missing', 'test-user')), error => error.code === 'ORDER_NOT_FOUND')
   for (const price of [undefined, -1, NaN, Infinity]) {
     const invalid = new OrderService(new InMemoryOrderStore(), async () => ({ ...product, price }))
-    await assert.rejects(invalid.create(request(), 'test-user'), error => error.code === 'UNEXPECTED_ERROR' && error.status === 503)
+    await assert.rejects(invalid.create(request(), testUser), error => error.code === 'UNEXPECTED_ERROR' && error.status === 503)
   }
 })
 

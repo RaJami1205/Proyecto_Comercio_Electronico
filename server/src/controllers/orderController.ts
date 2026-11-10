@@ -5,12 +5,12 @@ import { orderService } from '../services/orderService.js'
 
 /** Crea la Order desde el cuerpo HTTP, responde con su snapshot y delega los errores a Express. */
 export async function createOrder(request: Request, response: AuthorizedResponse, next: NextFunction): Promise<void> {
-  try { response.status(201).json(await orderService.create(request.body, response.locals.user.id)) }
+  try { response.status(201).json(await orderService.create(request.body, response.locals.user)) }
   catch (error) { next(error) }
 }
 
 /** Busca la Order por el identificador de la ruta, responde con su snapshot y propaga errores a Express. */
-export function getOrder(request: Request, response: AuthorizedResponse, next: NextFunction): void {
-  try { response.status(200).json(orderService.findById(String(request.params.orderId), response.locals.user.id)) }
+export async function getOrder(request: Request, response: AuthorizedResponse, next: NextFunction): Promise<void> {
+  try { response.status(200).json(await orderService.findById(String(request.params.orderId), response.locals.user.id)) }
   catch (error) { next(error) }
 }

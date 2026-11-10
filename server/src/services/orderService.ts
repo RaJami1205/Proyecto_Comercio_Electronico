@@ -1,90 +1,62 @@
-/** Crea Orders con precios y stock del catálogo; coordina replay y solicitudes concurrentes por clave de idempotencia. */
-import { randomUUID } from 'node:crypto'
+/** Crea snapshots comerciales; delega la atomicidad Create-or-Replay al store async seleccionado. */
 import { calculateLineSubtotal, calculateOrderTotals } from '../domain/orderCalculations.js'
 import { OrderError } from '../domain/orderError.js'
 import { validateCreateOrderRequest } from '../domain/orderValidation.js'
 import { isCurrentTermsVersion } from '../domain/termsPolicy.js'
+import { orderIdentity, orderQuantities, requireCompatible, requireOrderOwner } from '../domain/orderIdentity.js'
 import { orderStore, type OrderStore } from '../stores/orderStore.js'
 import type { CreateOrderRequest, Order, OrderItem } from '../types/order.js'
+import type { ResolvedUser } from '../types/user.js'
 import type { ProductRecord } from '../types/product.js'
 import { getProductById } from './productService.js'
 
 type ProductLookup = (id: string) => Promise<ProductRecord | undefined>
 
-/** Agrupa cantidades por producto y rechaza sumas que exceden el rango de enteros seguros. */
-function quantities(items: CreateOrderRequest['items']): Map<string, number> {
-  const result = new Map<string, number>()
-  for (const { productId, quantity } of items) {
-    const total = (result.get(productId) ?? 0) + quantity
-    if (!Number.isSafeInteger(total)) throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'La cantidad total de un producto excede el límite permitido.')
-    result.set(productId, total)
-  }
-  return result
-}
-
-/** Incluye aceptación y versión junto a Buyer/Delivery/items normalizados; excluye precios, estados y acceptedAt generado por Server. */
-function identity({ buyer, delivery, items, termsAcceptance }: Pick<CreateOrderRequest, 'buyer' | 'delivery' | 'items' | 'termsAcceptance'>): string {
-  return JSON.stringify([
-    termsAcceptance.accepted, termsAcceptance.version,
-    buyer.fullName, buyer.email, buyer.phone,
-    delivery.province, delivery.canton, delivery.address, delivery.additionalInfo ?? '',
-    [...quantities(items)].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),
-  ])
-}
-
-/** Rechaza una clave reutilizada cuando las identidades de compra esperada y recibida difieren. */
-function requireCompatible(expected: string, received: string): void {
-  if (expected !== received) throw new OrderError(409, 'CHECKOUT_VALIDATION_ERROR', 'La clave de idempotencia ya está asociada a una solicitud diferente.', { idempotencyKey: 'Utiliza la misma clave únicamente para repetir la misma compra.' })
-}
-
 export class OrderService {
   private readonly pending = new Map<string, { ownerId: string; identity: string; task: Promise<Order> }>()
-  /** Recibe el store y la consulta de productos que usará el servicio para crear y recuperar Orders. */
   constructor(private readonly store: OrderStore = orderStore, private readonly lookup: ProductLookup = getProductById) {}
 
-  /** Valida la solicitud, reutiliza una Order compatible o comparte la creación concurrente con la misma identidad. */
-  async create(value: unknown, ownerId: string): Promise<Order> {
+  /** La identidad procede de CN-54, no del body. Promise Sharing no sustituye la unicidad del store. */
+  async create(value: unknown, user: ResolvedUser): Promise<Order> {
+    if (user.role !== 'B2C') throw new OrderError(403, 'FORBIDDEN', 'Esta identidad no tiene permiso para realizar la operación.')
     const request = validateCreateOrderRequest(value)
-    const fingerprint = identity(request)
-    const existing = this.store.findByIdempotencyKey(request.idempotencyKey)
-    if (existing) {
-      this.findById(existing.id, ownerId)
-      // El snapshot conserva Buyer/Delivery/items originales, incluso después del pago.
-      requireCompatible(identity(existing), fingerprint)
-      return existing
-    }
+    const fingerprint = orderIdentity(request)
+    // Captura la política al recibir la solicitud, igual que V1; se exige solo si el store gana una creación nueva.
+    const currentTermsAccepted = isCurrentTermsVersion(request.termsAcceptance.version)
+    const ownerId = user.id
     const pending = this.pending.get(request.idempotencyKey)
     if (pending) {
-      if (pending.ownerId !== ownerId) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
+      requireOrderOwner(pending.ownerId, ownerId)
       requireCompatible(pending.identity, fingerprint)
       return structuredClone(await pending.task)
     }
-    // Comprobar vigencia después de ambos lookups permite replay de versiones históricas
-    // reconocidas. Solo una creación realmente nueva exige la versión actual.
-    if (!isCurrentTermsVersion(request.termsAcceptance.version)) {
-      throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'Debes aceptar la versión vigente de los términos.', {
-        'termsAcceptance.version': 'Esta versión ya no está vigente para una nueva orden.',
-      })
-    }
-    // Registra la identidad antes de iniciar incluso la primera consulta asíncrona.
-    const task = Promise.resolve().then(() => this.buildOrder(request, ownerId))
+    const context = { idempotencyKey: request.idempotencyKey, canonicalPayload: fingerprint, canonicalVersion: 1 as const,
+      user: { id: user.id, displayName: user.displayName, role: 'B2C' as const } }
+    const task = Promise.resolve().then(() => this.store.createOrReplay(context, (id, signal) => this.buildOrder(request, id, currentTermsAccepted, signal)))
     this.pending.set(request.idempotencyKey, { ownerId, identity: fingerprint, task })
     try { return structuredClone(await task) }
     finally { this.pending.delete(request.idempotencyKey) }
   }
 
-  /** Devuelve la Order identificada o lanza ORDER_NOT_FOUND si no existe. */
-  findById(id: string, ownerId: string): Order {
-    const order = this.store.findByIdForOwner(id, ownerId)
+  async findById(id: string, ownerId: string): Promise<Order> {
+    const order = await this.store.findByIdForOwner(id, ownerId)
     if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
     return order
   }
 
-  /** Consulta productos y stock, calcula precios autoritativos y almacena la Order completa solo tras validar todas sus líneas. */
-  private async buildOrder(request: CreateOrderRequest, ownerId: string): Promise<Order> {
+  /** Sin IO de persistencia: un resultado tardío del catálogo nunca puede insertar una Order. */
+  private async buildOrder(request: CreateOrderRequest, id: string, currentTermsAccepted: boolean, signal?: AbortSignal): Promise<Order> {
+    signal?.throwIfAborted()
+    if (!currentTermsAccepted) {
+      throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'Debes aceptar la versión vigente de los términos.', {
+        'termsAcceptance.version': 'Esta versión ya no está vigente para una nueva orden.',
+      })
+    }
     const products = new Map<string, ProductRecord>()
-    for (const [productId, quantity] of quantities(request.items)) {
+    for (const [productId, quantity] of orderQuantities(request.items)) {
+      signal?.throwIfAborted()
       const product = await this.lookup(productId)
+      signal?.throwIfAborted()
       if (!product) throw new OrderError(404, 'PRODUCT_NOT_FOUND', 'Un producto solicitado no existe.')
       if (product.objectID !== productId || typeof product.price !== 'number' || !Number.isFinite(product.price) || product.price < 0 || !product.title?.trim()) {
         throw new OrderError(503, 'UNEXPECTED_ERROR', 'Un producto no está disponible para crear la orden.')
@@ -99,16 +71,13 @@ export class OrderService {
       const unitPrice = product.price!
       return { productId, name: product.title, image: product.image_url ?? '', unitPrice, quantity, lineSubtotal: calculateLineSubtotal(unitPrice, quantity) }
     })
-    const id = randomUUID()
-    // Un único instante por snapshot: GET, replay y Payment conservan este acceptedAt.
     const createdAt = new Date().toISOString()
-    const order: Order = {
+    return {
       id, orderNumber: 'CN-' + createdAt.slice(0, 4) + '-' + id.toUpperCase(), createdAt,
       buyer: request.buyer, delivery: request.delivery, items, totals: calculateOrderTotals(items),
       currency: 'CRC', orderStatus: 'PENDING', paymentStatus: 'PENDING',
       termsAcceptance: { accepted: true, version: request.termsAcceptance.version, acceptedAt: createdAt },
     }
-    return this.store.create(order, request.idempotencyKey, ownerId)
   }
 }
 

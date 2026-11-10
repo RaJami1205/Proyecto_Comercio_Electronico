@@ -2,6 +2,8 @@
 
 La infraestructura PostgreSQL de CN-57 y su procedimiento manual se documentan en [PostgreSQL Foundation](docs/postgresql.md). El comando opt-in `npm run db:smoke` comprueba conectividad READ-ONLY con el runtime `cibernova_app`; requiere configuración privada y autorización previa de la conexión real. No se ejecuta en builds ni al iniciar Express. Los Integration Tests realizan escrituras y no deben ejecutarse contra Production. Orders y Payment continúan utilizando almacenamiento In-Memory hasta CN-58/CN-59.
 
+La alternativa PostgreSQL de Orders/Idempotency CN-58, su selección explícita y las limitaciones de validación se documentan en [Orders Persistence](docs/orders-persistence.md). El flujo comercial activo permanece In-Memory hasta validar CN-59.
+
 El seed valida y permite cargar el catálogo canonical desde `data/productos.json`.
 El dataset contiene 306 records en un array JSON UTF-8, normalizados desde la
 exportación NDJSON UTF-16 LE sin cambiar campos, valores ni objectID.
