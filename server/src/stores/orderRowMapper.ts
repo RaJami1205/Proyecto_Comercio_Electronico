@@ -78,6 +78,30 @@ export const ORDER_COLUMNS = ['id', 'order_number', 'owner_user_id', 'user_snaps
   'buyer_snapshot', 'delivery_snapshot', 'items_snapshot', 'currency', 'subtotal', 'tax', 'shipping', 'total',
   'terms_accepted', 'terms_version', 'terms_accepted_at', 'order_status', 'payment_status', 'created_at', 'updated_at'] as const
 
+/** Valida el DTO JSONB histórico de Payment sin completar campos desde la Order actual. */
+export function mapOrderSnapshot(value: unknown): Order {
+  const snapshot = rowRecord(value), totals = rowRecord(snapshot.totals), terms = rowRecord(snapshot.termsAcceptance)
+  const buyer = rowRecord(snapshot.buyer), delivery = rowRecord(snapshot.delivery)
+  if (snapshot.currency !== 'CRC' || terms.accepted !== true || typeof snapshot.createdAt !== 'string' || typeof terms.acceptedAt !== 'string'
+    || !Array.isArray(snapshot.items) || !snapshot.items.length
+    || (delivery.additionalInfo !== undefined && typeof delivery.additionalInfo !== 'string')) return invalid()
+  if (!((snapshot.orderStatus === 'CONFIRMED' && snapshot.paymentStatus === 'APPROVED')
+    || (snapshot.orderStatus === 'PENDING' && typeof snapshot.paymentStatus === 'string' && ['PENDING', 'DECLINED', 'ERROR'].includes(snapshot.paymentStatus)))) return invalid()
+  for (const key of ['subtotal', 'tax', 'shipping', 'total']) if (typeof totals[key] !== 'number') return invalid()
+  return {
+    id: text(snapshot.id), orderNumber: text(snapshot.orderNumber), createdAt: timestamp(snapshot.createdAt),
+    buyer: { fullName: text(buyer.fullName), email: text(buyer.email), phone: text(buyer.phone) },
+    delivery: { province: text(delivery.province), canton: text(delivery.canton), address: text(delivery.address),
+      ...(delivery.additionalInfo !== undefined ? { additionalInfo: delivery.additionalInfo } : {}) },
+    items: snapshot.items.map(item),
+    totals: { subtotal: money(totals.subtotal), tax: money(totals.tax), shipping: money(totals.shipping), total: money(totals.total) },
+    currency: 'CRC', orderStatus: snapshot.orderStatus as Order['orderStatus'], paymentStatus: snapshot.paymentStatus as Order['paymentStatus'],
+    termsAcceptance: { accepted: true, version: text(terms.version), acceptedAt: timestamp(terms.acceptedAt) },
+  }
+}
+
+export { timestamp as orderTimestamp }
+
 /** Conserva NUMERIC como strings y JSONB como snapshots, con validación del round-trip antes de escribir. */
 export function orderToRow(order: Order, user: B2CUser): Record<(typeof ORDER_COLUMNS)[number], unknown> {
   const row = {

@@ -27,6 +27,27 @@ export class PostgreSQLOrderStore implements OrderStore {
     if (Object.values(this.limits).some(value => !Number.isSafeInteger(value) || value <= 0 || value > 2147483647)) throw new DatabaseError('configuration')
   }
 
+  /** La composición de Payment debe usar exactamente la misma Database. No abre conexiones. */
+  usesDatabase(db: Connection): boolean { return this.db === db }
+
+  /** Operación interna de CN-59: el caller posee la transacción y el client. */
+  async readForPayment(client: PoolClient, id: string, ownerId: string, timeoutMs: number, lock = false): Promise<Order | undefined> {
+    const statement = { text: 'SELECT * FROM commerce.orders WHERE id = $1 AND owner_user_id = $2' + (lock ? ' FOR UPDATE NOWAIT' : ''),
+      values: [id, ownerId], query_timeout: timeoutMs }
+    const rows = (await client.query(statement)).rows
+    if (!rows.length || rowRecord(rows[0]).owner_user_id !== ownerId) return undefined
+    return mapOrderRow(rows[0])
+  }
+
+  /** Actualiza únicamente estados con el client prestado; nunca inicia otra transacción. */
+  async updateWithClient(client: PoolClient, order: Order, ownerId: string, timeoutMs: number): Promise<Order | undefined> {
+    const statement = { text: `UPDATE commerce.orders SET order_status = $1, payment_status = $2, updated_at = $3
+      WHERE id = $4 AND owner_user_id = $5 RETURNING *`,
+      values: [order.orderStatus, order.paymentStatus, new Date().toISOString(), order.id, ownerId], query_timeout: timeoutMs }
+    const rows = (await client.query(statement)).rows
+    return rows.length ? mapOrderRow(rows[0]) : undefined
+  }
+
   private remaining(deadline: number): number {
     const value = deadline - Date.now()
     if (value <= 0) throw new OrderPersistenceError()
@@ -163,11 +184,7 @@ export class PostgreSQLOrderStore implements OrderStore {
   /** Solo estados y updated_at. Attempts/locks/recovery de Payment pertenecen a CN-59. */
   async update(order: Order, ownerId: string): Promise<Order | undefined> {
     try {
-      return await this.db.transaction(async client => {
-        const result = await this.query(client, `UPDATE commerce.orders SET order_status = $1, payment_status = $2, updated_at = $3
-          WHERE id = $4 AND owner_user_id = $5 RETURNING *`, [order.orderStatus, order.paymentStatus, new Date().toISOString(), order.id, ownerId], Date.now() + this.limits.sqlMs)
-        return result.rows.length ? mapOrderRow(result.rows[0]) : undefined
-      }, { queryTimeoutMs: this.limits.sqlMs })
+      return await this.db.transaction(client => this.updateWithClient(client, order, ownerId, this.limits.sqlMs), { queryTimeoutMs: this.limits.sqlMs })
     } catch (error) { throw new OrderPersistenceError(error instanceof DatabaseError && error.outcome === 'unknown' ? 'unknown' : 'not-committed') }
   }
 }

@@ -4,6 +4,8 @@ CN-57 incorpora infraestructura Node.js/pg y un chequeo manual de conectividad R
 
 CN-58 añade una alternativa async revisable, todavía sin activación productiva: [Orders Persistence & Idempotency](orders-persistence.md). El store predeterminado permanece In-Memory hasta validar CN-59, incluso cuando existe DATABASE_URL.
 
+CN-59 incorpora [Payment Persistence & Recovery](payments-persistence.md) y prepara el workflow `Server PostgreSQL CI` con un servicio PostgreSQL 17 efímero, sin usar Supabase. Las pruebas reales siguen pendientes de ejecución en Actions. La composición productiva continúa In-Memory; no ejecutar Integration Tests sobre Production.
+
 Estado confirmado por el usuario: Supabase PostgreSQL 17.11, un único proyecto remoto Production, schema privado `commerce` y tres tablas. Las migrations `20261109000100_commerce_foundation.sql` y `20261110025043_cibernova_runtime_login.sql` están aplicadas y sincronizadas. El login `cibernova_app` hereda permisos mínimos de `commerce_runtime` y posee contraseña privada propia.
 
 Autenticación mediante Session Pooler en puerto 5432 y TLS 1.3 con CA de Supabase y `sslmode=verify-full` fueron validados con psql 18.6 desde Windows 11/PowerShell. Esto no sustituye la validación con pg. El Smoke Test de Node.js permanece pendiente de ejecución manual autorizada. Este equipo no dispone de Docker, WSL2 ni PostgreSQL local.

@@ -1,10 +1,11 @@
 /** Clasifica fallos de PostgreSQL sin conservar SQL, parámetros, credenciales ni mensajes del driver. */
-export type DatabaseErrorKind = 'configuration' | 'unavailable' | 'constraint' | 'transaction' | 'uncertain-commit' | 'closed'
+export type DatabaseErrorKind = 'configuration' | 'unavailable' | 'timeout' | 'constraint' | 'transaction' | 'uncertain-commit' | 'closed'
 export type TransactionOutcome = 'not-committed' | 'rolled-back' | 'unknown'
 
 const messages: Record<DatabaseErrorKind, string> = {
   configuration: 'La configuración de PostgreSQL no es válida.',
   unavailable: 'PostgreSQL no está disponible para completar la operación.',
+  timeout: 'PostgreSQL no respondió dentro del tiempo permitido.',
   constraint: 'La operación incumple una restricción de PostgreSQL.',
   transaction: 'No se pudo completar la transacción de PostgreSQL.',
   'uncertain-commit': 'No se pudo confirmar el resultado de COMMIT.',
@@ -34,10 +35,16 @@ export function isConnectionFailure(error: unknown): boolean {
     || (typeof nativeCode === 'string' && ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND'].includes(nativeCode))
 }
 
+/** pg genera este Error exacto sin código para query_timeout; no aceptar coincidencias parciales ni SQLSTATE ajenos. */
+export function isDriverQueryTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === 'Error' && error.message === 'Query read timeout'
+    && (!('code' in error) || error.code === undefined)
+}
+
 /** Mantiene errores propios y proyecta los del driver a categorías internas sanitizadas. */
 export function databaseError(error: unknown, outcome: TransactionOutcome = 'not-committed', fallback: 'transaction' | 'unavailable' = 'transaction'): DatabaseError {
   if (error instanceof DatabaseError) return error
   const code = sqlStateOf(error)
-  const kind = code?.startsWith('23') ? 'constraint' : isConnectionFailure(error) ? 'unavailable' : code ? 'transaction' : fallback
+  const kind = isDriverQueryTimeout(error) ? 'timeout' : code?.startsWith('23') ? 'constraint' : isConnectionFailure(error) ? 'unavailable' : code ? 'transaction' : fallback
   return new DatabaseError(kind, outcome, code)
 }

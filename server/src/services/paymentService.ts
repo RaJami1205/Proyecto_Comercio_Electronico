@@ -1,41 +1,32 @@
-/** Coordina pagos simulados, estados de Order, replay de resultados y exclusión de pagos concurrentes en este proceso. */
+/** Valida Payment Sandbox; delega exclusión, Replay y commit conjunto en la persistencia seleccionada. */
+import { DatabaseError } from '../db/databaseError.js'
 import { OrderError } from '../domain/orderError.js'
 import { isPaymentScenario, validateProcessPaymentRequest } from '../domain/paymentValidation.js'
-import { orderStore, type OrderStore } from '../stores/orderStore.js'
+import type { OrderStore } from '../stores/orderStore.js'
+import { commerceStores } from '../stores/commerceStores.js'
+import { InMemoryPaymentStore, type PaymentStore } from '../stores/paymentStore.js'
 import type { PaymentResult } from '../types/payment.js'
 import type { PaymentStatus } from '../types/order.js'
 import { PaymentSandboxService, type PaymentSandbox } from './paymentSandboxService.js'
 
 export class PaymentService {
-  private readonly paymentLocks = new Set<string>()
-  // Las claves se aíslan por Order: nunca se devuelve el pago de otra compra.
-  private readonly results = new Map<string, Map<string, PaymentResult>>()
+  private readonly persistence: PaymentStore
 
   /** Recibe el store de Orders y el Sandbox que resolverá los intentos de pago. */
   constructor(
-    private readonly store: OrderStore = orderStore,
+    private readonly store: OrderStore = commerceStores.orders,
     private readonly sandbox: PaymentSandbox = new PaymentSandboxService(),
-  ) {}
+    persistence?: PaymentStore,
+  ) {
+    this.persistence = persistence ?? (store === commerceStores.orders ? commerceStores.payments : new InMemoryPaymentStore(store))
+    if (!this.persistence.isFor(store)) throw new DatabaseError('configuration')
+  }
 
   /** Valida el intento, recupera replay o bloquea la Order mientras procesa y guarda su resultado autoritativo. */
   async process(orderId: string, value: unknown, ownerId: string): Promise<PaymentResult> {
     const request = validateProcessPaymentRequest(value)
-    const owned = await this.store.findByIdForOwner(orderId, ownerId)
-    if (!owned) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
-
-    // Un replay devuelve el snapshot histórico, incluso tras un Retry o una aprobación.
-    const existing = this.results.get(orderId)?.get(request.idempotencyKey)
-    if (existing) return structuredClone(existing)
-
-    if (this.paymentLocks.has(orderId)) {
-      throw new OrderError(409, 'PAYMENT_IN_PROGRESS', 'Ya hay un pago en proceso para esta orden.')
-    }
-
-    // No hay await entre comprobar y adquirir el lock. La lectura previa puede haberse vuelto obsoleta.
-    this.paymentLocks.add(orderId)
-    try {
-      const order = await this.store.findByIdForOwner(orderId, ownerId)
-      if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
+    if (!this.persistence.isFor(this.store)) throw new DatabaseError('configuration')
+    return this.persistence.processOrReplay({ ...request, orderId, ownerId }, async order => {
       if (order.orderStatus === 'CONFIRMED' || order.paymentStatus === 'APPROVED') {
         throw new OrderError(409, 'ORDER_ALREADY_CONFIRMED', 'La orden ya fue confirmada y no admite otro pago.')
       }
@@ -47,23 +38,12 @@ export class PaymentService {
         PAYMENT_APPROVED: 'APPROVED', PAYMENT_DECLINED: 'DECLINED', PAYMENT_ERROR: 'ERROR',
       }
       // Solo cambian estados: el snapshot conserva datos, importes y Terms Acceptance originales.
-      const updated = await this.store.update({
+      return { result: result.result, processedAt: new Date().toISOString(), order: {
         ...order,
         paymentStatus: statuses[result.result],
         orderStatus: result.result === 'PAYMENT_APPROVED' ? 'CONFIRMED' : 'PENDING',
-      }, ownerId)
-      if (!updated) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
-      const payment: PaymentResult = { result: result.result, processedAt: new Date().toISOString(), order: updated }
-      let orderResults = this.results.get(orderId)
-      if (!orderResults) {
-        orderResults = new Map<string, PaymentResult>()
-        this.results.set(orderId, orderResults)
-      }
-      orderResults.set(request.idempotencyKey, structuredClone(payment))
-      return structuredClone(payment)
-    } finally {
-      this.paymentLocks.delete(orderId)
-    }
+      } }
+    })
   }
 }
 

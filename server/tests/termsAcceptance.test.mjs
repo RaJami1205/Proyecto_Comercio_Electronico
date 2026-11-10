@@ -8,7 +8,7 @@ const dataUrl=source=>'data:text/javascript;base64,'+Buffer.from(source).toStrin
 /** Carga fuentes en memoria y bloquea el catálogo real; rotation altera solo el módulo de política de esta prueba. */
 async function domain(rotation=false){
   const sources=new Map([['services/productService',dataUrl('export async function getProductById(){throw new Error("Catálogo real prohibido")}')]])
-  for(const name of ['domain/termsPolicy','domain/orderError','domain/orderIdentity','domain/orderValidation','domain/orderCalculations','stores/orderStore','domain/paymentValidation','services/paymentSandboxService','services/paymentService','services/orderService']){
+  for(const name of ['db/databaseError','domain/termsPolicy','domain/orderError','domain/orderIdentity','domain/orderValidation','domain/orderCalculations','stores/orderStore','stores/paymentStore','stores/commerceStores','domain/paymentValidation','services/paymentSandboxService','services/paymentService','services/orderService']){
     let source=readFileSync(new URL('../src/'+name+'.ts',import.meta.url),'utf8')
     // Solo este módulo en memoria admite rotación; producción mantiene una única versión real.
     if(rotation && name==='domain/termsPolicy') source=source.replace('export const CURRENT_TERMS_VERSION', 'export let CURRENT_TERMS_VERSION').replace('Object.freeze([CURRENT_TERMS_VERSION])', "Object.freeze([CURRENT_TERMS_VERSION, 'test-v2'])")+"\nexport function rotateForTest(){CURRENT_TERMS_VERSION='test-v2'}"
