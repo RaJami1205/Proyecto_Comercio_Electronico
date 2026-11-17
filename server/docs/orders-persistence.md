@@ -1,10 +1,40 @@
 # Orders Persistence & Idempotency · CN-58
 
-CN-58 implementa `PostgreSQLOrderStore` como alternativa async reutilizando la infraestructura de CN-57. **El singleton comercial `orderStore` sigue siendo `new InMemoryOrderStore()` hasta completar y validar CN-59.** Tener `DATABASE_URL` no cambia esa selección. No se añade un selector por entorno ni se hace fallback cuando falla PostgreSQL.
+## Estado vigente y selección coordinada
 
-`createOrderStore()` selecciona memoria por defecto; `createOrderStore('postgresql', database)` permite composición explícita exclusivamente en Server/tests controlados. Esa alternativa no se conecta automáticamente a Express. No activar PostgreSQL en Production con Payment Attempts todavía en memoria.
+`PostgreSQLOrderStore` (CN-58) y `PostgreSQLPaymentStore` (CN-59) están implementados sobre la [infraestructura PostgreSQL de CN-57](postgresql.md). Los servicios predeterminados de Express consumen una única pareja `commerceStores`; Orders y Payments se seleccionan conjuntamente, sin combinar almacenamiento PostgreSQL con In-Memory.
+
+La configuración exclusiva de Server `COMMERCE_STORE_MODE` selecciona la pareja al iniciar el proceso:
+
+| Valor | Orders | Payments |
+|---|---|---|
+| `memory` (default) | `InMemoryOrderStore` | `InMemoryPaymentStore` |
+| `postgresql` | `PostgreSQLOrderStore` | `PostgreSQLPaymentStore`, compartiendo la misma `Database` |
+
+El valor ausente o vacío conserva `memory`; un valor no reconocido impide el arranque. Tener `DATABASE_URL` por sí sola no activa PostgreSQL. Si se selecciona PostgreSQL, los errores de configuración o persistencia no provocan fallback silencioso a memoria.
+
+La selección se implementa en [serverConfig](../src/config/env.ts), [commerceStores](../src/stores/commerceStores.ts) y [createCommerceStores](../src/stores/commerceStoreFactory.ts). La factoría permite también composición explícita en Server/tests controlados. PaymentService rechaza una pareja incompatible; el contrato transaccional se detalla en [Payment Persistence de CN-59](payments-persistence.md).
+
+**La activación comercial PostgreSQL en Render Production sigue pendiente de QA, evidencia de integración y autorización explícita.** Disponer de infraestructura PostgreSQL o de migrations aplicadas no equivale a seleccionar esos repositorios para las rutas comerciales ni autoriza una activación. La composición predeterminada continúa In-Memory.
+
+> Contexto histórico de CN-58: esa entrega conservó el singleton `orderStore = new InMemoryOrderStore()` y no conectó la alternativa PostgreSQL a Express. La composición vigente descrita arriba incorpora también Payment Persistence y la selección coordinada por configuración.
 
 ## Contratos V1 y async
+
+### Transición HTTP V1/V2 · CN-61, corrección F1.1
+
+`ORDER_CREATION_MODE` es configuración exclusiva de Server, independiente de `COMMERCE_STORE_MODE` y de `DATABASE_URL`. Solo admite `v1-compatible` (default) o `v2-only`; un valor no reconocido impide el arranque. El Client no selecciona este modo mediante el body ni headers.
+
+| Modo | POST /api/orders (V1, solo B2C) | POST /api/v2/orders |
+|---|---|---|
+| `v1-compatible` | Creación y Replay históricos para el Checkout vigente | Creación/Replay B2C y B2B con Pricing/MOQ/Branch autoritativos |
+| `v2-only` | Solo Replay compatible existente; una key nueva devuelve 410 ORDER_CONTRACT_DEPRECATED | Conserva las validaciones V2 |
+
+B2B y ADMIN no pueden crear ni reproducir compras mediante V1. ADMIN tampoco puede comprar mediante V2. GET y Payment conservan las guardas de identidad/ownership existentes para Orders B2C/B2B.
+
+En `v2-only` se reutiliza Create-or-Replay: el store verifica owner y payload antes de invocar el builder. Un Replay válido no consulta catálogo ni recalcula precios, inventario o Terms. Una key ajena conserva 404 y una solicitud incompatible del mismo owner conserva 409. El builder de una key nueva devuelve 410 antes de consultar productos; PostgreSQL revierte su claim transaccional sin guardar una Order ni una Creation Request. No se implementa otra ruta de recuperación ni se reintentan operaciones comerciales automáticamente.
+
+Mantener `v1-compatible` mientras el Client utilice Checkout V1. Esa compatibilidad conserva las reglas históricas B2C, sin prometer validación de sucursal V2. El corte integral requiere integrar/validar CN-62 y configurar explícitamente `v2-only` al reiniciar Server, para impedir nuevas compras legacy que omitan las reglas V2. Cambiar el modo no migra Orders ni activa PostgreSQL; no se modifica ninguna configuración productiva con este fix.
 
 - `OrderStore` expone Create-or-Replay, búsquedas y actualización de estados mediante Promises. La creación persistente no ofrece un INSERT de Order separado de Idempotency. `InMemoryOrderStore.create` permanece como utilidad async de fixtures/compatibilidad legacy.
 - `OrderService.create` recibe el `ResolvedUser` ya validado por CN-54; conserva B2C-only. Copia id/displayName/role desde ese contexto, nunca del body. No consulta nuevamente Algolia Users.
@@ -50,7 +80,7 @@ El mapper valida filas desde `unknown`: NUMERIC como strings decimales, JSONB co
 
 PaymentService espera las operaciones async y utiliza la abstracción de [Payment Persistence de CN-59](payments-persistence.md). El mecanismo In-Memory mantiene locks locales; la alternativa PostgreSQL revalida la Order con FOR UPDATE NOWAIT y registra el Attempt junto con los estados en una transacción. Ambas comprueban ownership antes de Replay y conservan el histórico aunque cambie el estado actual.
 
-La actualización persistente escribe únicamente estados y updated_at, filtrando por id y propietario; no sustituye snapshots. Las operaciones internas `readForPayment` y `updateWithClient` reutilizan el PoolClient del caller sin abrir una segunda transacción. `createCommerceStores` permite seleccionar Orders y Payments juntos; PaymentService rechaza una mezcla incompatible. El flujo activo sigue In-Memory y la activación productiva exige validación integral y autorización independiente.
+La actualización persistente escribe únicamente estados y updated_at, filtrando por id y propietario; no sustituye snapshots. Las operaciones internas `readForPayment` y `updateWithClient` reutilizan el PoolClient del caller sin abrir una segunda transacción. `createCommerceStores` permite seleccionar Orders y Payments juntos; PaymentService rechaza una mezcla incompatible. La composición predeterminada sigue In-Memory y la activación productiva exige validación integral y autorización independiente.
 
 ## Validación y estado
 

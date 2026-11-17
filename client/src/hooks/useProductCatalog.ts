@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Product } from '../types/product'
 import { getCatalogPage, type CatalogFilters } from '../services/productApi'
 import { trackEvent } from '../services/analytics'
+import type { BranchId } from '../types/branch'
 
 interface UseProductCatalogResult {
   products: Product[]
@@ -23,6 +24,8 @@ interface ProductCatalogState {
   loadedPageSize: number | null
   loadedQuery: string | null
   loadedFilters: string | null
+  loadedUserId: string | null
+  loadedBranchId: BranchId | null
   error: string | null
 }
 
@@ -34,6 +37,7 @@ export function useProductCatalog(
   query = '',
   userId?: string | null,
   searchSource: 'catalog' | 'recent' = 'catalog',
+  branchId: BranchId | null = null,
 ): UseProductCatalogResult {
   const executedQuery = useRef(query)
   const [state, setState] = useState<ProductCatalogState>({
@@ -45,6 +49,8 @@ export function useProductCatalog(
     loadedPageSize: null,
     loadedQuery: null,
     loadedFilters: null,
+    loadedUserId: null,
+    loadedBranchId: null,
     error: null,
   })
   const filtersKey = JSON.stringify(filters) ?? ''
@@ -52,7 +58,7 @@ export function useProductCatalog(
   useEffect(() => {
     let cancelled = false
 
-    const request = getCatalogPage(page, pageSize, filters, query)
+    const request = getCatalogPage(page, pageSize, filters, query, userId ?? undefined, branchId)
     // La consulta ya se ejecutó. El ref separa cambios de query de filtros, páginas y replay de Effects.
     if (query.trim() && executedQuery.current !== query) {
       trackEvent({ type: 'SEARCH_PERFORMED', occurredAt: new Date().toISOString(), metadata: { source: searchSource } }, userId)
@@ -70,6 +76,8 @@ export function useProductCatalog(
           loadedPageSize: pageSize,
           loadedQuery: query,
           loadedFilters: filtersKey,
+          loadedUserId: userId ?? null,
+          loadedBranchId: branchId,
           error: null,
         })
       })
@@ -82,6 +90,8 @@ export function useProductCatalog(
           loadedPageSize: pageSize,
           loadedQuery: query,
           loadedFilters: filtersKey,
+          loadedUserId: userId ?? null,
+          loadedBranchId: branchId,
           error: 'No se pudieron cargar los productos del catálogo.',
         }))
       })
@@ -90,10 +100,11 @@ export function useProductCatalog(
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, filtersKey, query])
+  }, [page, pageSize, filtersKey, query, userId, branchId])
 
   const isLoading = state.loadedPage !== page || state.loadedPageSize !== pageSize
     || state.loadedQuery !== query || state.loadedFilters !== filtersKey
+    || state.loadedUserId !== (userId ?? null) || state.loadedBranchId !== branchId
 
   return {
     products: state.products,

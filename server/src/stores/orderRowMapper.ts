@@ -1,7 +1,8 @@
-/** Frontera PostgreSQL/DTO V1. No recalcula importes ni consulta contratos comerciales actuales. */
+/** Frontera PostgreSQL/DTO V1/V2. No recalcula importes ni consulta contratos comerciales actuales. */
 import { DatabaseError } from '../db/databaseError.js'
 import type { Order, OrderItem } from '../types/order.js'
-import type { B2CUser } from '../types/user.js'
+import type { Company, ResolvedUser } from '../types/user.js'
+import type { BranchId } from '../types/branch.js'
 
 function invalid(): never { throw new DatabaseError('transaction') }
 export function rowRecord(value: unknown): Record<string, unknown> {
@@ -9,6 +10,11 @@ export function rowRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 function text(value: unknown): string { return typeof value === 'string' && value.trim() ? value : invalid() }
+/** Copia solo el contrato público de Company, conservando literalmente los textos históricos. */
+function companySnapshot(value: unknown): Company {
+  const company = rowRecord(value)
+  return { id: text(company.id), name: text(company.name) }
+}
 function money(value: unknown): number {
   if (typeof value !== 'number' && (typeof value !== 'string' || !/^[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?$/i.test(value))) return invalid()
   const amount = Number(value)
@@ -48,15 +54,32 @@ function item(value: unknown): OrderItem {
   const row = rowRecord(value)
   if (typeof row.image !== 'string' || typeof row.quantity !== 'number' || !Number.isSafeInteger(row.quantity) || row.quantity <= 0
     || typeof row.unitPrice !== 'number' || typeof row.lineSubtotal !== 'number') return invalid()
+  if (row.minOrderQuantity !== undefined && (!Number.isSafeInteger(row.minOrderQuantity) || Number(row.minOrderQuantity) < 1)) return invalid()
   return { productId: text(row.productId), name: text(row.name), image: row.image, quantity: row.quantity,
-    unitPrice: money(row.unitPrice), lineSubtotal: money(row.lineSubtotal) }
+    unitPrice: money(row.unitPrice), lineSubtotal: money(row.lineSubtotal),
+    ...(row.minOrderQuantity !== undefined ? { minOrderQuantity: Number(row.minOrderQuantity) } : {}) }
 }
 
 export function mapOrderRow(value: unknown): Order {
   const row = rowRecord(value)
   validateUser(row.user_snapshot, text(row.owner_user_id))
-  if (row.contract_version !== 1 || row.currency !== 'CRC' || row.terms_accepted !== true
+  if ((row.contract_version !== 1 && row.contract_version !== 2) || row.currency !== 'CRC' || row.terms_accepted !== true
     || (row.branch_id !== null && (typeof row.branch_id !== 'string' || !['san_jose', 'alajuela', 'cartago', 'heredia'].includes(row.branch_id)))) return invalid()
+  const contractVersion = row.contract_version as 1 | 2
+  let commercial: Order['commercial']
+  if (contractVersion === 2) {
+    const user = rowRecord(row.user_snapshot)
+    if (typeof row.branch_id !== 'string' || (row.pricing_type !== 'RETAIL' && row.pricing_type !== 'WHOLESALE')
+      || typeof row.commercial_policy_version !== 'string' || !row.commercial_policy_version.trim()
+      || (user.role !== 'B2C' && user.role !== 'B2B')
+      || (user.role === 'B2B' && !('company' in user))
+      || (user.role === 'B2C' && row.pricing_type !== 'RETAIL')
+      || (user.role === 'B2B' && row.pricing_type !== 'WHOLESALE')) return invalid()
+    commercial = { userId: text(row.owner_user_id), customerRole: user.role,
+      ...(user.role === 'B2B' ? { company: companySnapshot(user.company) } : {}),
+      branchId: row.branch_id as BranchId, pricingType: row.pricing_type,
+      policyVersion: row.commercial_policy_version }
+  } else if (row.pricing_type !== null || row.commercial_policy_version !== null) return invalid()
   if (!((row.order_status === 'CONFIRMED' && row.payment_status === 'APPROVED')
     || (row.order_status === 'PENDING' && typeof row.payment_status === 'string' && ['PENDING', 'DECLINED', 'ERROR'].includes(row.payment_status)))) return invalid()
   if (!Array.isArray(row.items_snapshot) || !row.items_snapshot.length) return invalid()
@@ -71,10 +94,12 @@ export function mapOrderRow(value: unknown): Order {
     items: row.items_snapshot.map(item), totals: { subtotal: money(row.subtotal), tax: money(row.tax), shipping: money(row.shipping), total: money(row.total) },
     currency: 'CRC', orderStatus: row.order_status as Order['orderStatus'], paymentStatus: row.payment_status as Order['paymentStatus'],
     termsAcceptance: { accepted: true, version: text(row.terms_version), acceptedAt: timestamp(row.terms_accepted_at) },
+    ...(contractVersion === 2 ? { contractVersion, commercial } : {}),
   }
 }
 
 export const ORDER_COLUMNS = ['id', 'order_number', 'owner_user_id', 'user_snapshot', 'contract_version', 'branch_id',
+  'pricing_type', 'commercial_policy_version',
   'buyer_snapshot', 'delivery_snapshot', 'items_snapshot', 'currency', 'subtotal', 'tax', 'shipping', 'total',
   'terms_accepted', 'terms_version', 'terms_accepted_at', 'order_status', 'payment_status', 'created_at', 'updated_at'] as const
 
@@ -88,6 +113,27 @@ export function mapOrderSnapshot(value: unknown): Order {
   if (!((snapshot.orderStatus === 'CONFIRMED' && snapshot.paymentStatus === 'APPROVED')
     || (snapshot.orderStatus === 'PENDING' && typeof snapshot.paymentStatus === 'string' && ['PENDING', 'DECLINED', 'ERROR'].includes(snapshot.paymentStatus)))) return invalid()
   for (const key of ['subtotal', 'tax', 'shipping', 'total']) if (typeof totals[key] !== 'number') return invalid()
+  let commercial: Order['commercial']
+  let contractVersion: Order['contractVersion']
+  // V1 histórico no llevaba versión ni contexto comercial; nunca degradar una versión desconocida a V1.
+  if (snapshot.contractVersion !== undefined && snapshot.contractVersion !== 1 && snapshot.contractVersion !== 2) return invalid()
+  if (snapshot.contractVersion !== 2 && snapshot.commercial !== undefined && snapshot.commercial !== null) return invalid()
+  if (snapshot.contractVersion === 2) {
+    const snapshotCommercial = rowRecord(snapshot.commercial)
+    const customerRole = snapshotCommercial.customerRole, pricingType = snapshotCommercial.pricingType
+    if ((customerRole !== 'B2C' && customerRole !== 'B2B')
+      || typeof snapshotCommercial.userId !== 'string' || typeof snapshotCommercial.branchId !== 'string'
+      || !['san_jose', 'alajuela', 'cartago', 'heredia'].includes(snapshotCommercial.branchId)
+      || (pricingType !== 'RETAIL' && pricingType !== 'WHOLESALE')
+      || typeof snapshotCommercial.policyVersion !== 'string' || !snapshotCommercial.policyVersion.trim()
+      || (customerRole === 'B2C' && pricingType !== 'RETAIL')
+      || (customerRole === 'B2B' && pricingType !== 'WHOLESALE')) return invalid()
+    commercial = { userId: text(snapshotCommercial.userId), customerRole,
+      ...(customerRole === 'B2B' ? { company: companySnapshot(snapshotCommercial.company) } : {}),
+      branchId: snapshotCommercial.branchId as BranchId,
+      pricingType, policyVersion: text(snapshotCommercial.policyVersion) }
+    contractVersion = 2
+  }
   return {
     id: text(snapshot.id), orderNumber: text(snapshot.orderNumber), createdAt: timestamp(snapshot.createdAt),
     buyer: { fullName: text(buyer.fullName), email: text(buyer.email), phone: text(buyer.phone) },
@@ -97,16 +143,21 @@ export function mapOrderSnapshot(value: unknown): Order {
     totals: { subtotal: money(totals.subtotal), tax: money(totals.tax), shipping: money(totals.shipping), total: money(totals.total) },
     currency: 'CRC', orderStatus: snapshot.orderStatus as Order['orderStatus'], paymentStatus: snapshot.paymentStatus as Order['paymentStatus'],
     termsAcceptance: { accepted: true, version: text(terms.version), acceptedAt: timestamp(terms.acceptedAt) },
+    ...(contractVersion === 2 ? { contractVersion, commercial } : {}),
   }
 }
 
 export { timestamp as orderTimestamp }
 
 /** Conserva NUMERIC como strings y JSONB como snapshots, con validación del round-trip antes de escribir. */
-export function orderToRow(order: Order, user: B2CUser): Record<(typeof ORDER_COLUMNS)[number], unknown> {
+export function orderToRow(order: Order, user: ResolvedUser): Record<(typeof ORDER_COLUMNS)[number], unknown> {
+  const contractVersion = order.contractVersion ?? 1
   const row = {
     id: order.id, order_number: order.orderNumber, owner_user_id: user.id,
-    user_snapshot: { id: user.id, displayName: user.displayName, role: user.role }, contract_version: 1, branch_id: null,
+    user_snapshot: { id: user.id, displayName: user.displayName, role: user.role, ...(user.role === 'B2B' ? { company: user.company } : {}) },
+    contract_version: contractVersion, branch_id: order.commercial?.branchId ?? null,
+    pricing_type: order.commercial?.pricingType ?? null,
+    commercial_policy_version: order.commercial?.policyVersion ?? null,
     buyer_snapshot: order.buyer, delivery_snapshot: order.delivery, items_snapshot: order.items, currency: order.currency,
     subtotal: String(order.totals.subtotal), tax: String(order.totals.tax), shipping: String(order.totals.shipping), total: String(order.totals.total),
     terms_accepted: order.termsAcceptance.accepted, terms_version: order.termsAcceptance.version,

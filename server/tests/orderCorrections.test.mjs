@@ -3,16 +3,17 @@ const testUser = { id: 'test-user', displayName: 'Usuario Test', role: 'B2C' }
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { stripTypeScriptTypes } from 'node:module'
+import ts from '../../client/node_modules/typescript/lib/typescript.js'
 
 // Compila únicamente estos módulos puros en memoria. Nunca importa app, env o Algolia.
 const sources = new Map()
 /** Codifica el código recibido como módulo importable en memoria. */
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 sources.set('services/productService', dataUrl('export async function getProductById() { throw new Error("Debe inyectarse el catálogo simulado") }'))
-for (const name of ['db/databaseError', 'domain/termsPolicy', 'domain/orderError','domain/orderIdentity', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderStore', 'stores/paymentStore', 'stores/commerceStores', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
+sources.set('config/env', dataUrl('export const serverConfig={commerceStoreMode:undefined}'))
+for (const name of ['db/databaseError', 'domain/termsPolicy', 'domain/orderError', 'domain/catalogError', 'services/branchService', 'domain/pricing', 'domain/inventory', 'domain/orderIdentity', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderRowMapper', 'stores/orderStore', 'stores/paymentStore', 'stores/commerceStores', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
   const source = readFileSync(new URL('../src/' + name + '.ts', import.meta.url), 'utf8')
-  const compiled = stripTypeScriptTypes(source, { mode: 'transform' })
+  const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText
   const isolated = compiled.replace(/from ['"](\.[^'"]+)['"]/g, (_, path) => {
     const resolved = new URL(path, 'https://local/' + name + '.js').pathname.slice(1).replace(/\.js$/, '')
     assert.ok(sources.has(resolved), 'Dependencia no autorizada: ' + resolved)
@@ -189,4 +190,73 @@ test('CN-30 mantiene estados, replay, autoridad y bloqueo con órdenes corregida
   }
   await assert.rejects(payments.process(order.id, { scenario: 'PAYMENT_APPROVED', idempotencyKey: 'new' }, 'test-user'), error => error.code === 'ORDER_ALREADY_CONFIRMED')
   assert.equal((await service.create(request(), testUser)).orderStatus, 'CONFIRMED')
+})
+
+const b2bUser = { id: 'b2b-user', displayName: 'Comprador B2B', role: 'B2B', company: { id: 'company-1', name: 'Empresa Uno' } }
+const v2Product = { ...product, b2b: { available: true, wholesale_price: 800, min_order_quantity: 3 }, stock_by_branch: { san_jose: 5, alajuela: 0, cartago: 2, heredia: 1 } }
+function v2Request(overrides = {}) {
+  return { ...request(), idempotencyKey: 'v2-create', branchId: 'san_jose', items: [{ productId: 'p', quantity: 3 }], ...overrides }
+}
+test('V2 crea B2C Retail y guarda sucursal, rol y política comercial', async () => {
+  const store = new InMemoryOrderStore()
+  const service = new OrderService(store, async () => v2Product)
+  const order = await service.createV2(v2Request(), { ...testUser, role: 'B2C' })
+  assert.equal(order.items[0].unitPrice, 10000)
+  assert.deepEqual(order.commercial, { userId: testUser.id, customerRole: 'B2C', branchId: 'san_jose', pricingType: 'RETAIL', policyVersion: 'CIBERNOVA-COMMERCIAL-V1' })
+  assert.equal(order.contractVersion, 2)
+})
+test('V2 crea B2B Wholesale con MOQ y Company Snapshot; agrupa productos repetidos', async () => {
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  const order = await service.createV2(v2Request({ items: [{ productId: 'p', quantity: 1 }, { productId: 'p', quantity: 2 }] }), b2bUser)
+  assert.equal(order.items.length, 1)
+  assert.equal(order.items[0].quantity, 3)
+  assert.equal(order.items[0].unitPrice, 800)
+  assert.deepEqual(order.commercial.company, b2bUser.company)
+})
+test('V2 rechaza ADMIN, MOQ incumplido, stock insuficiente y Branch inválida', async () => {
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  await assert.rejects(service.createV2(v2Request(), { id: 'admin', displayName: 'Admin', role: 'ADMIN' }), error => error.status === 403)
+  await assert.rejects(service.createV2(v2Request({ items: [{ productId: 'p', quantity: 2 }] }), b2bUser), error => error.code === 'INVALID_MOQ')
+  await assert.rejects(service.createV2(v2Request({ items: [{ productId: 'p', quantity: 6 }] }), b2bUser), error => error.code === 'INSUFFICIENT_INVENTORY')
+  await assert.rejects(service.createV2(v2Request({ branchId: 'alajuela' }), b2bUser), error => error.code === 'INSUFFICIENT_INVENTORY')
+})
+test('V2 rechaza expectativas financieras desactualizadas y conserva cálculos del Server', async () => {
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  await assert.rejects(service.createV2(v2Request({ financialExpectation: { subtotal: 2500 } }), b2bUser), error => error.status === 409 && Boolean(error.fieldErrors['financialExpectation.subtotal']))
+  const expected = calculateOrderTotals([{ unitPrice: 800, quantity: 3, lineSubtotal: 2400 }])
+  const valid = await service.createV2(v2Request({ idempotencyKey: 'v2-valid', financialExpectation: expected }), b2bUser)
+  assert.deepEqual(valid.totals, calculateOrderTotals(valid.items))
+})
+test('V2 replay devuelve Snapshot histórico sin volver a consultar catálogo', async () => {
+  let calls = 0
+  const store = new InMemoryOrderStore()
+  const service = new OrderService(store, async () => { calls++; return v2Product })
+  const input = v2Request()
+  const created = await service.createV2(input, b2bUser)
+  const replay = await new OrderService(store, async () => assert.fail('Replay no consulta catálogo')).createV2(input, b2bUser)
+  assert.deepEqual(replay, created)
+  assert.equal(calls, 1)
+})
+test('V2 exige sucursal e idempotencia comparte creación concurrente', async () => {
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  await assert.rejects(service.createV2(v2Request({ branchId: undefined }), b2bUser), error => error.fieldErrors?.branchId !== undefined)
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  let calls = 0
+  const concurrentService = new OrderService(new InMemoryOrderStore(), async () => { calls++; await gate; return v2Product })
+  const input = v2Request({ idempotencyKey: 'v2-concurrent' })
+  const first = concurrentService.createV2(input, b2bUser)
+  const second = concurrentService.createV2(input, b2bUser)
+  release()
+  const [one, two] = await Promise.all([first, second])
+  assert.equal(one.id, two.id)
+  assert.equal(calls, 1)
+})
+test('V2 Order y Payment snapshots hacen roundtrip por la frontera PostgreSQL', async () => {
+  const { orderToRow, mapOrderRow, mapOrderSnapshot } = await import(sources.get('stores/orderRowMapper'))
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  const order = await service.createV2(v2Request(), b2bUser)
+  const row = orderToRow(order, b2bUser)
+  assert.deepEqual(mapOrderRow(row), order)
+  assert.deepEqual(mapOrderSnapshot(order), order)
 })

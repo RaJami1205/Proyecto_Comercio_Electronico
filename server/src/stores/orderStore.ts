@@ -1,14 +1,14 @@
 /** Contrato async de Orders. La composición comercial permanece explícitamente In-Memory hasta CN-59. */
 import { randomUUID } from 'node:crypto'
 import type { Order } from '../types/order.js'
-import type { B2CUser } from '../types/user.js'
+import type { ResolvedUser } from '../types/user.js'
 import { orderIdentity, requireCompatible, requireOrderOwner } from '../domain/orderIdentity.js'
 
 export interface OrderCreationContext {
   idempotencyKey: string
   canonicalPayload: string
-  canonicalVersion: 1
-  user: B2CUser
+  canonicalVersion: 1 | 2
+  user: ResolvedUser
 }
 
 export type OrderBuilder = (id: string, signal?: AbortSignal) => Promise<Order>
@@ -23,7 +23,7 @@ export interface OrderStore {
 
 /** Conserva copias defensivas y fixtures legacy sin propietario; nunca asigna estos últimos a otro usuario. */
 export class InMemoryOrderStore implements OrderStore {
-  private readonly orders = new Map<string, { snapshot: Order; ownerId?: string; canonicalPayload?: string; user?: B2CUser }>()
+  private readonly orders = new Map<string, { snapshot: Order; ownerId?: string; canonicalPayload?: string; user?: ResolvedUser }>()
   private readonly keys = new Map<string, string>()
   private readonly pending = new Map<string, { context: OrderCreationContext; task: Promise<Order> }>()
 

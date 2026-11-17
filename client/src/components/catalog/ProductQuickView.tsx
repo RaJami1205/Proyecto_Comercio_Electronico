@@ -1,5 +1,5 @@
 /** Encapsula el detalle modal del Product y su integración con useCart. */
-import { useEffect, useRef, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 
 import CartFeedbackToast from './CartFeedbackToast'
 import { useCart } from '../../hooks/useCart'
@@ -12,6 +12,7 @@ interface ProductQuickViewProps {
   addedProductId?: string
   onClose: () => void
   feedbackProductName?: string
+  showAddToCart?: boolean
 }
 
 const priceFormatter = new Intl.NumberFormat('es-CR', {
@@ -41,8 +42,9 @@ function CartIcon() {
 }
 
 /** Gestiona el dialog, el foco y el bloqueo de scroll mientras muestra el detalle. */
-function ProductQuickView({ product, onClose, onProductAdded, addedProductId, feedbackProductName }: ProductQuickViewProps) {
-  const { addItem } = useCart()
+function ProductQuickView({ product, onClose, onProductAdded, addedProductId, feedbackProductName, showAddToCart = true }: ProductQuickViewProps) {
+  const { addItem, isActive } = useCart()
+  const [addError, setAddError] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
@@ -53,12 +55,23 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
 
   /** Agrega el snapshot del Product y notifica a la página para mostrar feedback temporal. */
   function handleAddToCart() {
-    addItem({
+    if (!isActive || !product.canAddToCart || product.price === null) return
+    const result = addItem({
       productId: product.id,
       name: product.name,
       price: product.price,
       image: product.image,
+      retailPrice: product.retailPrice,
+      pricingType: product.pricing.type,
+      minimumOrderQuantity: product.pricing.minOrderQuantity ?? 1,
+      branchId: product.inventory.branchId,
+      availableQuantity: product.inventory.quantity,
+      inventoryStatus: product.inventory.status,
+      commercialEligible: product.pricing.eligible,
+      initialQuantity: product.pricing.minOrderQuantity ?? 1,
     })
+    if (!result.accepted) { setAddError(result.message); return }
+    setAddError(null)
     onProductAdded({ id: product.id, name: product.name })
   }
 
@@ -147,7 +160,7 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
         onClose()
       }}
     >
-      {feedbackProductName ? <CartFeedbackToast productName={feedbackProductName} /> : null}
+      {feedbackProductName && !addError ? <CartFeedbackToast productName={feedbackProductName} /> : null}
       <article className={styles.surface}>
         <button
           ref={closeButtonRef}
@@ -169,7 +182,7 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
           <h2 id={titleId}>{product.name}</h2>
 
           <div className={styles.commercialSummary}>
-            <p className={styles.price}>{priceFormatter.format(product.price)}</p>
+            <p className={styles.price}>{product.price === null ? 'Precio no disponible' : priceFormatter.format(product.price)}</p>
             <p
               className={`${styles.stock} ${
                 product.inStock ? styles.inStock : styles.outOfStock
@@ -179,6 +192,10 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
               {availabilityLabel}
             </p>
           </div>
+          <p>{product.pricing.type === 'WHOLESALE' ? `Precio B2B · mínimo ${product.pricing.minOrderQuantity ?? 'no disponible'}` : 'Precio público'}</p>
+          {product.pricing.message ? <p role="status">{product.pricing.message}</p> : null}
+          <p role="status">{product.inventory.message}</p>
+          {addError ? <p role="alert">{addError}</p> : null}
 
           <p className={styles.description} id={descriptionId}>
             {product.description}
@@ -196,25 +213,19 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
             </dl>
           </section>
 
-            <div className={styles.actions}>
+            {showAddToCart ? <div className={styles.actions}>
               <button
-                className={`${styles.cartButton} ${
-                  addedProductId === product.id ? styles.cartButtonAdded : ''
-                }`}
+                className={`${styles.cartButton} ${addedProductId === product.id && !addError ? styles.cartButtonAdded : ''}`}
                 type="button"
-                disabled={!product.inStock}
-                aria-label={
-                  product.inStock
-                    ? `Agregar ${product.name} al carrito`
-                    : `${product.name} está agotado`
-                }
-                title={product.inStock ? `Agregar ${product.name} al carrito` : 'Producto agotado'}
+                disabled={!isActive || !product.canAddToCart}
+                aria-label={product.canAddToCart && isActive ? `Agregar ${product.name} al carrito` : !isActive ? 'Selecciona la identidad propietaria del carrito.' : product.inventory.message}
+                title={product.canAddToCart ? `Agregar ${product.name} al carrito` : product.inventory.message}
                 onClick={handleAddToCart}
               >
                 <CartIcon />
-                {product.inStock ? 'Agregar al carrito' : 'Agotado'}
+                {product.canAddToCart ? 'Agregar al carrito' : 'No disponible para agregar'}
               </button>
-            </div>
+            </div> : null}
         </div>
       </article>
     </dialog>

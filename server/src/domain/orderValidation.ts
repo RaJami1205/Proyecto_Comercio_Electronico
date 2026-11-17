@@ -2,6 +2,7 @@
 import type { CreateOrderRequest } from '../types/order.js'
 import { OrderError } from './orderError.js'
 import { isRecognizedTermsVersion } from './termsPolicy.js'
+import { isBranchId } from '../services/branchService.js'
 
 /** Devuelve el objeto recibido o un objeto vacío cuando la entrada no tiene forma de registro. */
 function record(value: unknown): Record<string, unknown> {
@@ -47,6 +48,29 @@ export function validateCreateOrderRequest(value: unknown): CreateOrderRequest {
     else additionalInfo = delivery.additionalInfo.trim()
   }
   const idempotencyKey = text(body, 'idempotencyKey', 'idempotencyKey')
+  let branchId: CreateOrderRequest['branchId']
+  if (body.branchId !== undefined) {
+    if (isBranchId(body.branchId)) branchId = body.branchId
+    else errors.branchId = 'Selecciona una sucursal válida.'
+  }
+  let financialExpectation: CreateOrderRequest['financialExpectation']
+  if (body.financialExpectation !== undefined) {
+    const expectation = record(body.financialExpectation)
+    const acceptedKeys = ['subtotal', 'tax', 'shipping', 'total']
+    if (Object.keys(expectation).some(key => !acceptedKeys.includes(key)) || Object.keys(expectation).length === 0) {
+      errors.financialExpectation = 'Las expectativas financieras no son válidas.'
+    } else {
+      const normalized: NonNullable<CreateOrderRequest['financialExpectation']> = {}
+      for (const key of acceptedKeys) {
+        const amount = expectation[key]
+        if (amount === undefined) continue
+        if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) {
+          errors['financialExpectation.' + key] = 'El importe debe ser un número finito no negativo.'
+        } else normalized[key as keyof typeof normalized] = amount
+      }
+      financialExpectation = normalized
+    }
+  }
   const items: CreateOrderRequest['items'] = []
   if (!Array.isArray(body.items)) errors.items = 'Debe ser una lista de productos.'
   else {
@@ -64,5 +88,12 @@ export function validateCreateOrderRequest(value: unknown): CreateOrderRequest {
     const empty = Array.isArray(body.items) && body.items.length === 0
     throw new OrderError(400, empty ? 'EMPTY_CART' : 'CHECKOUT_VALIDATION_ERROR', 'La información de la orden no es válida.', errors)
   }
-  return { buyer: { fullName, email, phone }, delivery: { province, canton, address, ...(additionalInfo !== undefined ? { additionalInfo } : {}) }, items, idempotencyKey, termsAcceptance: { accepted: true, version } }
+  return { buyer: { fullName, email, phone }, delivery: { province, canton, address, ...(additionalInfo !== undefined ? { additionalInfo } : {}) }, items, idempotencyKey, termsAcceptance: { accepted: true, version }, ...(branchId ? { branchId } : {}), ...(financialExpectation ? { financialExpectation } : {}) }
+}
+
+/** Contrato V2 requiere una sucursal explícita; no acepta inventario global como fallback. */
+export function validateCreateOrderV2Request(value: unknown): CreateOrderRequest & { branchId: NonNullable<CreateOrderRequest['branchId']> } {
+  const request = validateCreateOrderRequest(value)
+  if (!request.branchId) throw new OrderError(400, 'CHECKOUT_VALIDATION_ERROR', 'Selecciona una sucursal para crear la orden.', { branchId: 'La sucursal es obligatoria para Orders V2.' })
+  return request as CreateOrderRequest & { branchId: NonNullable<CreateOrderRequest['branchId']> }
 }

@@ -40,8 +40,15 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
           ? state.items.map((item) => item.productId === action.payload.productId
             ? { ...item, quantity: item.quantity + 1 }
             : item)
-          : [...state.items, { ...action.payload, quantity: 1 }],
+          : [...state.items, { ...action.payload, quantity: action.payload.initialQuantity ?? 1 }],
       }
+    }
+    case 'UPDATE_PRODUCT_CONTEXT': {
+      const existing = state.items.find(item => item.productId === action.payload.productId)
+      if (!existing) return state
+      const next = { ...existing, ...action.payload }
+      if (Object.keys(action.payload).every(key => Object.is(existing[key as keyof typeof existing], action.payload[key as keyof typeof action.payload]))) return state
+      return { items: state.items.map(item => item.productId === existing.productId ? next : item) }
     }
     case 'INCREMENT_ITEM': {
       // Solo se incrementan líneas existentes; un productId desconocido no crea una línea.
@@ -55,7 +62,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     case 'DECREMENT_ITEM': {
       const existing = state.items.find((item) => item.productId === action.payload.productId)
       // quantity nunca baja de 1: DECREMENT_ITEM no elimina; REMOVE_ITEM es la eliminación explícita.
-      if (!existing || existing.quantity <= 1) return state
+      if (!existing || existing.quantity <= Math.max(1, existing.minimumOrderQuantity ?? 1)) return state
       return {
         items: state.items.map((item) => item.productId === action.payload.productId
           ? { ...item, quantity: item.quantity - 1,

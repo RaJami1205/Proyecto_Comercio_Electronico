@@ -1,10 +1,10 @@
 # PostgreSQL Foundation · CN-57
 
-CN-57 incorpora infraestructura Node.js/pg y un chequeo manual de conectividad READ-ONLY. Orders y Payment continúan usando sus Stores In-Memory. La persistencia comercial se conectará en CN-58 y CN-59.
+**Contexto histórico de CN-57:** esa entrega incorporó infraestructura Node.js/pg y un chequeo manual de conectividad READ-ONLY. Orders y Payment conservaron entonces sus Stores In-Memory; la persistencia comercial correspondía a CN-58 y CN-59.
 
-CN-58 añade una alternativa async revisable, todavía sin activación productiva: [Orders Persistence & Idempotency](orders-persistence.md). El store predeterminado permanece In-Memory hasta validar CN-59, incluso cuando existe DATABASE_URL.
+**Estado vigente:** los repositorios PostgreSQL de Orders y Payments están implementados y se seleccionan conjuntamente mediante `COMMERCE_STORE_MODE`, con `memory` por defecto y `postgresql` como elección explícita. `DATABASE_URL` por sí sola no los activa y no existe fallback silencioso. La composición y la transición HTTP independiente `ORDER_CREATION_MODE` se documentan en [Orders Persistence & Idempotency](orders-persistence.md#estado-vigente-y-selección-coordinada).
 
-CN-59 incorpora [Payment Persistence & Recovery](payments-persistence.md) y prepara el workflow `Server PostgreSQL CI` con un servicio PostgreSQL 17 efímero, sin usar Supabase. Las pruebas reales siguen pendientes de ejecución en Actions. La composición productiva continúa In-Memory; no ejecutar Integration Tests sobre Production.
+CN-59 incorpora [Payment Persistence & Recovery](payments-persistence.md) y prepara el workflow `Server PostgreSQL CI` con un servicio PostgreSQL 17 efímero, sin usar Supabase. Las pruebas reales siguen pendientes de ejecución en Actions. La activación comercial PostgreSQL en Render Production requiere QA y autorización explícita; la infraestructura y las migrations aplicadas no equivalen a esa activación. No ejecutar Integration Tests sobre Production.
 
 Estado confirmado por el usuario: Supabase PostgreSQL 17.11, un único proyecto remoto Production, schema privado `commerce` y tres tablas. Las migrations `20261109000100_commerce_foundation.sql` y `20261110025043_cibernova_runtime_login.sql` están aplicadas y sincronizadas. El login `cibernova_app` hereda permisos mínimos de `commerce_runtime` y posee contraseña privada propia.
 
@@ -74,7 +74,7 @@ Usar SQL interno parametrizado y nombres de tabla cualificados con `commerce`. E
 
 Los errores se proyectan a `DatabaseError` con categoría, resultado transaccional y SQLSTATE cuando existe. No conservan mensajes, causas, SQL ni parámetros del driver. Un ROLLBACK fallido provoca descarte del client. Una pérdida de respuesta durante COMMIT conserva `outcome = unknown`, incluso si un ROLLBACK posterior responde. CN-58/CN-59 deberán reconciliar mediante la misma key. El helper tampoco acepta un command tag ROLLBACK como confirmación de COMMIT.
 
-SIGINT/SIGTERM detienen la admisión HTTP y cierran el Pool si se utilizó. La configuración PostgreSQL no afecta las rutas comerciales actuales.
+SIGINT/SIGTERM detienen la admisión HTTP y cierran el Pool si se utilizó. Con la composición predeterminada In-Memory, las rutas comerciales no dependen de la disponibilidad de PostgreSQL.
 
 ## Smoke Test manual READ-ONLY
 

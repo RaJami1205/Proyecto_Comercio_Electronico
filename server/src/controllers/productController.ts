@@ -7,6 +7,9 @@ import {
   mapSearchProductRecord,
 } from '../mappers/productMapper.js'
 import { getCatalogPage, getProductById, searchProducts } from '../services/productService.js'
+import { requireBranchId } from '../services/branchService.js'
+import type { OptionalIdentityResponse } from '../middleware/authorization.js'
+import type { BranchId } from '../types/branch.js'
 
 const DEFAULT_PRODUCTS_PER_PAGE = 20
 const MAX_PRODUCTS_PER_PAGE = 100
@@ -54,10 +57,13 @@ function parseNonNegativeNumber(value: unknown): number | undefined {
 /** Normaliza filtros y paginación antes de devolver productos mapeados y facets. */
 export async function getProducts(
   request: Request,
-  response: Response,
+  response: OptionalIdentityResponse,
   next: NextFunction,
 ): Promise<void> {
   try {
+    const user = response.locals?.user ?? null
+    const branchId: BranchId | null = Object.hasOwn(request.query, 'branchId')
+      ? requireBranchId(request.query.branchId) : null
     if (Object.hasOwn(request.query, 'ids')) {
       const rawIds: unknown = request.query.ids
       const requestedIds: unknown[] = typeof rawIds === 'string' ? [rawIds] : Array.isArray(rawIds) ? rawIds : []
@@ -73,7 +79,7 @@ export async function getProducts(
       const ids = [...new Set(requestedIds.map(id => id.trim()))]
       const records = await Promise.all(ids.map((id) => getProductById(id)))
       const products = records.filter((record): record is NonNullable<typeof record> => record !== undefined)
-      response.json({ products: products.map(mapProductRecord), page: 1, totalPages: 1, totalProducts: products.length, facets: {} })
+      response.json({ products: products.map(record => mapProductRecord(record, user, branchId)), page: 1, totalPages: 1, totalProducts: products.length, facets: {} })
       return
     }
 
@@ -103,11 +109,12 @@ export async function getProducts(
         sort,
       },
       query,
+      user?.role ?? null,
     )
 
     // El service devuelve result.page en base uno para el cliente.
     response.json({
-      products: result.hits.map(mapProductRecord),
+      products: result.hits.map(record => mapProductRecord(record, user, branchId)),
       page: result.page,
       totalPages: Math.max(result.totalPages, 1),
       totalProducts: result.totalProducts,
@@ -122,10 +129,13 @@ export async function getProducts(
 /** Rechaza queries vacíos y devuelve sugerencias con highlights del mapper. */
 export async function searchProductCatalog(
   request: Request,
-  response: Response,
+  response: OptionalIdentityResponse,
   next: NextFunction,
 ): Promise<void> {
   try {
+    const user = response.locals?.user ?? null
+    const branchId: BranchId | null = Object.hasOwn(request.query, 'branchId')
+      ? requireBranchId(request.query.branchId) : null
     const query = typeof request.query.q === 'string' ? request.query.q.trim() : ''
 
     if (!query) {
@@ -136,7 +146,7 @@ export async function searchProductCatalog(
     }
 
     const hits = await searchProducts(query)
-    response.json({ products: hits.map(mapSearchProductRecord) })
+    response.json({ products: hits.map(record => mapSearchProductRecord(record, user, branchId)) })
   } catch (error) {
     console.error('Error procesando búsqueda en searchProductCatalog:', error)
     next(error)

@@ -4,7 +4,10 @@ import assert from 'node:assert/strict'
 import { analyticsEnvironment, loadAnalytics, event, dataUrl } from './helpers/analyticsHarness.mjs'
 import { reactHarness, nodes, label } from './helpers/reactHarness.mjs'
 
-const product = id => ({id,name:'Producto '+id,image:'/ssd.png',price:10000.125,category:'Almacenamiento',
+const product = id => ({id,name:'Producto '+id,image:'/ssd.png',price:10000.125,retailPrice:10000.125,
+  pricing:{type:'RETAIL',eligible:true,minOrderQuantity:1,message:null},
+  inventory:{branchId:null,quantity:null,status:'unselected',canFulfillMinimum:null,message:'Selecciona una sucursal.'},canAddToCart:false,
+  category:'Almacenamiento',
   inStock:true,description:'Actual',specifications:[{label:'Capacidad',value:'2 TB'}]})
 const deferred = () => {let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return {promise,resolve,reject}}
 const tick = () => new Promise(resolve=>setImmediate(resolve))
@@ -40,7 +43,7 @@ async function historyFlow(t, userId='u') {
   return {...h,...env,api,calls,opened,fire,renderComponent:h.render,render,settle,
     view(id,owner=props.userId){api.trackEvent(event('PRODUCT_VIEWED',{productId:id}),owner)},
     setOwner(owner){props={...props,userId:owner};return render()},
-    setProps(value){props=value;return render()},
+    setProps(value){props={...props,...value};return render()},
     respond(callback){respond=callback},
     async reload(){
       h.runtime.dispose()
@@ -213,6 +216,16 @@ test('solo refetch por owner/orden/IDs o Refresh; storage de otro scope se ignor
   assert.equal(f.calls.length,calls+2)
   action(tree,'Actualizar').onClick();await f.settle()
   assert.equal(f.calls.length,calls+3)
+})
+
+test('al cambiar sucursal, el historial oculta disponibilidad anterior mientras carga la nueva',async t=>{
+  const f=await historyFlow(t)
+  f.render()
+  f.view('p1')
+  assert.equal(cards(await f.settle()).length,1)
+  const tree=f.setProps({branchId:'san_jose'})
+  assert.equal(tree,null)
+  assert.equal(cards(await f.settle()).length,1)
 })
 
 test('storage corrupto o bloqueado no rompe personalización ni reatribuye datos',async t=>{

@@ -63,7 +63,7 @@ export class PostgreSQLOrderStore implements OrderStore {
     const record = rowRecord(row)
     requireOrderOwner(record.request_owner_id, ownerId)
     requireOrderOwner(record.owner_user_id, ownerId)
-    if (record.canonical_version !== 1 || typeof record.canonical_payload !== 'string') throw new DatabaseError('transaction')
+    if ((record.canonical_version !== 1 && record.canonical_version !== 2) || typeof record.canonical_payload !== 'string') throw new DatabaseError('transaction')
     if (context) requireCompatible(record.canonical_payload, context.canonicalPayload)
     return mapOrderRow(record)
   }
@@ -104,7 +104,9 @@ export class PostgreSQLOrderStore implements OrderStore {
           }
           if (claim.rows.length !== 1 || claim.rows[0].order_id !== id) throw new DatabaseError('transaction')
           const order = await this.build(build, id, deadline)
-          if (order.id !== id || context.canonicalVersion !== 1 || context.user.role !== 'B2C') throw new DatabaseError('transaction')
+          if (order.id !== id || (order.contractVersion ?? 1) !== context.canonicalVersion
+            || (context.canonicalVersion === 1 && context.user.role !== 'B2C')
+            || (context.canonicalVersion === 2 && context.user.role === 'ADMIN')) throw new DatabaseError('transaction')
           const row = orderToRow(order, context.user)
           const values = ORDER_COLUMNS.map(column => ['user_snapshot', 'buyer_snapshot', 'delivery_snapshot', 'items_snapshot'].includes(column) ? JSON.stringify(row[column]) : row[column])
           const inserted = await this.query(client, insertSql, values, deadline)

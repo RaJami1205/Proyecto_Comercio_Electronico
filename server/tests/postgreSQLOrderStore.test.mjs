@@ -291,6 +291,30 @@ test('OrderService persiste usuario resuelto y descarta actor/precios forjados d
   assert.ok(h.calls.every(call => call.timeout > 0 && call.timeout <= 2000))
 })
 
+test('F1.1 Replay-only V1 conserva historial y revierte claims nuevos sin consultar catálogo', async t => {
+  const h = harness(t)
+  const input = { ...fixture('legacy'), idempotencyKey: 'legacy-recovery' }
+  const service = new OrderService(h.store, async id => ({ objectID: id, title: 'Producto', price: 49999.9975, in_stock: true, stock_quantity: 10 }))
+  const original = await service.create(input, user)
+  const restarted = new OrderService(new PostgreSQLOrderStore(h.db), async () => assert.fail('No reconstruir una compra legacy.'))
+  h.calls.length = 0
+  assert.deepEqual(await restarted.create(input, user, { replayOnly: true }), original)
+  await assert.rejects(restarted.create({ ...input, buyer: { ...input.buyer, fullName: 'Otro' } }, { ...user, id: 'other' }, { replayOnly: true }), { status: 404 })
+  await assert.rejects(restarted.create({ ...input, items: [{ productId: 'p', quantity: 3 }] }, user, { replayOnly: true }), { status: 409 })
+  await assert.rejects(restarted.create({ ...input, idempotencyKey: 'new-legacy' }, user, { replayOnly: true }), { status: 410, code: 'ORDER_CONTRACT_DEPRECATED' })
+  assert.equal(h.calls.at(-1).text, 'ROLLBACK')
+  assert.equal(h.requests.has('new-legacy'), false)
+  assert.equal(h.claims.size, 0)
+  assert.equal(h.orders.size, 1)
+  assert.equal(h.calls.some(call => call.text.startsWith('INSERT INTO commerce.orders')), false)
+
+  // El corte HTTP no reemplaza la reconciliación existente ante un ack de COMMIT perdido.
+  h.state.commit = 'confirmed'
+  assert.deepEqual(await restarted.create(input, user, { replayOnly: true }), original)
+  assert.ok(h.calls.some(call => call.text === 'BEGIN READ ONLY'))
+  assert.equal(h.orders.size, 1)
+})
+
 for (const patch of [{ subtotal: 'NaN' }, { total: 'Infinity' }, { tax: '-1' }, { shipping: '' }, { created_at: 'invalid' },
   { terms_accepted: false }, { contract_version: 2 }, { items_snapshot: [] }, { buyer_snapshot: null },
   { payment_status: 'APPROVED' }, { user_snapshot: { ...user, role: 'ADMIN' } }, { owner_user_id: 'other' },

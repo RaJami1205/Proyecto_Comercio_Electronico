@@ -26,7 +26,7 @@ const runtimeUrl = dataUrl(`
   export function runEffects() { const pending = effects; effects=[]; return pending.map(effect => effect()); }
   export function useCallback(callback) { return callback; }
   export function useReducer(reducer, initial, initialize) {
-    const [state, setState] = useState(() => initialize(initial));
+    const [state, setState] = useState(() => initialize ? initialize(initial) : initial);
     return [state, action => setState(current => reducer(current, action))];
   }
   export function dispatch(action) { cart = cartReducer({items:cart}, action).items; }
@@ -338,5 +338,30 @@ test('CN-53 Provider preserves lineage, quarantines storage changes and clears c
   value = render(); runtime.runEffects()
   assert.equal(value.totalUnits, 0)
   assert.equal(value.hasExternalConflict, false)
-  assert.deepEqual(JSON.parse(raw), {items:[]})
+  assert.deepEqual(JSON.parse(raw), {schemaVersion:2, ownerId:null, items:[]})
+})
+test('CN-53 cart owner keeps stored items inactive until that identity is selected', t => {
+  const previous = globalThis.window
+  let raw = JSON.stringify({schemaVersion:2, ownerId:'customer-1', items:[item()]})
+  globalThis.window = {localStorage:{getItem:() => raw, setItem:(_key, value) => {raw=value}}, addEventListener:() => {}, removeEventListener:() => {}}
+  t.after(() => {globalThis.window=previous})
+  runtime.reset([])
+  const render = () => {runtime.renderStart(); return CartProvider({children:null}).props.value}
+  let value = render()
+  runtime.runEffects()
+  assert.equal(value.isActive, false)
+  assert.deepEqual(value.items, [])
+  assert.equal(JSON.parse(raw).ownerId, 'customer-1')
+  value.addItem(item())
+  value = render()
+  assert.deepEqual(value.items, [])
+  assert.equal(value.setCartOwner('customer-1'), true)
+  value = render()
+  assert.equal(value.isActive, true)
+  assert.equal(value.items[0].productId, 'p')
+  value.setCartOwner(null)
+  value = render()
+  assert.equal(value.isActive, false)
+  assert.equal(JSON.parse(raw).ownerId, 'customer-1')
+  assert.equal(JSON.parse(raw).items.length, 1)
 })
