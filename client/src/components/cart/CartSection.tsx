@@ -1,5 +1,5 @@
 /** Conecta la presentación del Cart con useCart y los cálculos financieros derivados. */
-import { useEffect, useMemo, useState, type MouseEvent } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 
 import { useCart } from '../../hooks/useCart'
 import { useSession } from '../../hooks/useSession'
@@ -21,22 +21,34 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
   currency: 'CRC',
   maximumFractionDigits: 0,
 })
+const CART_PRODUCT_BATCH_SIZE = 10
 
 /** Presenta líneas, controles y resumen, o el Empty State cuando no hay items. */
 function CartSection({ onContinueShopping, onCheckoutRequested, onProductSelect }: CartSectionProps) {
-  const { purchaseBlockReason, openLogin, user } = useSession()
+  const { purchaseBlockReason, openLogin, user, epoch } = useSession()
   const { items, incrementItem, decrementItem, removeItem, totalUnits, ownerId, isActive, hasExternalConflict,
     hasInvalidStorage, updateProductContext } = useCart()
   const { selectedBranchId } = useBranch()
-  const [productContext, setProductContext] = useState<{ key: string; products: Map<string, Product>; error: string | null }>({ key: '', products: new Map(), error: null })
-  const itemIds = useMemo(() => items.map(item => item.productId).sort(), [items])
-  const contextKey = `${user?.id ?? 'anonymous'}:${selectedBranchId ?? 'no-branch'}:${itemIds.join(',')}`
+  const [productContext, setProductContext] = useState<{ context: { key: string } | null; products: Map<string, Product>; error: string | null }>({ context: null, products: new Map(), error: null })
+  // Solo cambia si cambia el conjunto de IDs; cantidades/precios/lineage no provocan nuevas consultas.
+  const itemIdsKey = JSON.stringify([...new Set(items.map(item => item.productId))].sort())
+  const contextKey = JSON.stringify([user?.id ?? null, epoch, ownerId, isActive, selectedBranchId, itemIdsKey])
+  const [validationContext, setValidationContext] = useState({ key: contextKey })
+  // Una vuelta A → B → A también debe validar otra vez, sin reutilizar la respuesta anterior de A.
+  if (validationContext.key !== contextKey) setValidationContext({ key: contextKey })
 
   useEffect(() => {
-    if (itemIds.length === 0) return
+    const itemIds = JSON.parse(itemIdsKey) as string[]
+    if (itemIds.length === 0 || !isActive) return
     let cancelled = false
-    void getProductsByIds(itemIds, user?.id, selectedBranchId).then(products => {
+    const batches: Promise<Product[]>[] = []
+    for (let start = 0; start < itemIds.length; start += CART_PRODUCT_BATCH_SIZE) {
+      batches.push(getProductsByIds(itemIds.slice(start, start + CART_PRODUCT_BATCH_SIZE), user?.id, selectedBranchId))
+    }
+    // El límite público de historial permanece intacto. Ningún lote parcial habilita Checkout.
+    void Promise.all(batches).then(results => {
       if (cancelled) return
+      const products = results.flat()
       const byId = new Map(products.map(product => [product.id, product]))
       for (const product of products) updateProductContext(product.id, {
         ...(product.price !== null ? { price: product.price } : {}), retailPrice: product.retailPrice,
@@ -44,16 +56,16 @@ function CartSection({ onContinueShopping, onCheckoutRequested, onProductSelect 
         branchId: product.inventory.branchId, availableQuantity: product.inventory.quantity,
         inventoryStatus: product.inventory.status, commercialEligible: product.pricing.eligible && product.price !== null,
       })
-      setProductContext({ key: contextKey, products: byId, error: null })
+      setProductContext({ context: validationContext, products: byId, error: null })
     }).catch(() => {
-      if (!cancelled) setProductContext({ key: contextKey, products: new Map(), error: 'No pudimos actualizar precios y existencias. Reintenta la validación antes de continuar.' })
+      if (!cancelled) setProductContext({ context: validationContext, products: new Map(), error: 'No pudimos actualizar precios y existencias. Reintenta la validación antes de continuar.' })
     })
     return () => { cancelled = true }
-  }, [contextKey, itemIds, user?.id, selectedBranchId, updateProductContext])
+  }, [validationContext, itemIdsKey, user?.id, selectedBranchId, isActive, updateProductContext])
 
-  const contextReady = items.length === 0 || productContext.key === contextKey
+  const contextReady = items.length === 0 || productContext.context === validationContext
   const contextError = contextReady ? productContext.error : null
-  const contextualItems = items.map(item => ({ item, product: productContext.key === contextKey ? productContext.products.get(item.productId) : undefined }))
+  const contextualItems = items.map(item => ({ item, product: productContext.context === validationContext ? productContext.products.get(item.productId) : undefined }))
   const unresolved = contextualItems.some(({ product }) => !product || product.price === null || !product.pricing.eligible)
   const conflicts = contextualItems.some(({ item, product }) => !product || product.inventory.status !== 'available'
     || product.inventory.quantity === null || item.quantity > product.inventory.quantity
@@ -114,7 +126,7 @@ function CartSection({ onContinueShopping, onCheckoutRequested, onProductSelect 
           <div className={styles.cartLayout}>
             <div className={styles.itemList} role="list" aria-label="Productos en el carrito">
               {items.map((item) => {
-                const product = productContext.key === contextKey ? productContext.products.get(item.productId) : undefined
+                const product = productContext.context === validationContext ? productContext.products.get(item.productId) : undefined
                 const unitPrice = product?.price ?? null
                 const itemSubtotal = unitPrice === null ? null : calculateLineSubtotal(unitPrice, item.quantity)
                 const minimum = product?.pricing.minOrderQuantity ?? item.minimumOrderQuantity ?? 1

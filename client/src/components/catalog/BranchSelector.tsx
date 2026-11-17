@@ -1,8 +1,10 @@
 /** Selector accesible de sucursal con estado de carga, error y contexto de inventario informativo. */
+import { useId } from 'react'
 import { useBranch } from '../../hooks/useBranch'
 import styles from '../../styles/catalog/BranchSelector.module.css'
 
 function BranchSelector() {
+  const selectId = useId()
   const { branches, selectedBranchId, setSelectedBranchId, isLoading, error } = useBranch()
   return (
     <section className={styles.panel} aria-label="Disponibilidad por sucursal">
@@ -12,8 +14,8 @@ function BranchSelector() {
         <p>Consulta las existencias por ubicación. La selección no se guarda en el navegador.</p>
       </div>
       <div className={styles.control}>
-        <label htmlFor="branch-selector">Sucursal de consulta</label>
-        <select id="branch-selector" value={selectedBranchId ?? ''} disabled={isLoading || Boolean(error)}
+        <label htmlFor={selectId}>Sucursal de consulta</label>
+        <select id={selectId} value={selectedBranchId ?? ''} disabled={isLoading || Boolean(error)}
           aria-busy={isLoading} onChange={event => setSelectedBranchId(event.target.value ? event.target.value as typeof selectedBranchId : null)}>
           <option value="">Selecciona una sucursal</option>
           {branches.map(branch => <option key={branch.id} value={branch.id} disabled={!branch.available}>

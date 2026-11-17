@@ -2,23 +2,21 @@
 import type { NextFunction, Request } from 'express'
 import type { AuthorizedResponse } from '../middleware/authorization.js'
 import { orderService } from '../services/orderService.js'
-import { OrderError } from '../domain/orderError.js'
+import { serverConfig } from '../config/env.js'
 
-/** Crea la Order desde el cuerpo HTTP, responde con su snapshot y delega los errores a Express. */
+/** Conserva Checkout B2C V1; tras el corte V2 solo permite Replay compatible de claves existentes. */
 export async function createOrder(request: Request, response: AuthorizedResponse, next: NextFunction): Promise<void> {
-  try { response.status(201).json(await orderService.create(request.body, response.locals.user)) }
-  catch (error) { next(error) }
+  try {
+    const order = await orderService.create(request.body, response.locals.user,
+      { replayOnly: serverConfig.orderCreationMode === 'v2-only' })
+    response.status(201).json(order)
+  } catch (error) { next(error) }
 }
 
 /** Crea Orders V2; la identidad y el rol vienen del middleware de autorización. */
 export async function createOrderV2(request: Request, response: AuthorizedResponse, next: NextFunction): Promise<void> {
   try { response.status(201).json(await orderService.createV2(request.body, response.locals.user)) }
   catch (error) { next(error) }
-}
-
-/** Deshabilita V1 para impedir Orders sin sucursal ni validaciones comerciales. */
-export function rejectLegacyOrderCreation(_request: Request, _response: AuthorizedResponse, next: NextFunction): void {
-  next(new OrderError(410, 'ORDER_CONTRACT_DEPRECATED', 'La creación legacy está deshabilitada. Utiliza Orders V2 con sucursal seleccionada.'))
 }
 
 /** Busca la Order por el identificador de la ruta, responde con su snapshot y propaga errores a Express. */

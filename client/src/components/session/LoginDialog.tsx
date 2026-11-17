@@ -100,7 +100,7 @@ export default function LoginDialog() {
             <option value="" disabled>Selecciona una identidad</option>
             {users.map(user => <option key={user.id} value={user.id}>{user.displayName} · {user.role}{user.role === 'B2B' ? ` · ${user.company.name}` : ''}</option>)}
           </select>
-          <p>El catálogo muestra precios Retail. Por ahora solo B2C puede finalizar compras.</p>
+          <p>Consulta precios públicos o mayoristas según tu identidad. Por ahora solo B2C puede finalizar compras.</p>
           <button className={styles.primary} type="submit" disabled={!selected || session.resolving || Boolean(session.transitionBlockReason)}>{session.resolving ? 'Validando identidad…' : 'Continuar con esta identidad'}</button>
         </form>}
       </> : null}

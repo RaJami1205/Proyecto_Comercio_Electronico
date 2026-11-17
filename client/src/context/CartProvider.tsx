@@ -38,9 +38,11 @@ function CartProvider({ children }: CartProviderProps) {
   // La misma función pura calcula el snapshot inmediato y el siguiente estado de React.
   const dispatchCart = useCallback((action: CartAction) => {
     const next = cartReducer(current.current, action)
-    if (next !== current.current) revision.current += 1
+    const changed = next !== current.current
+    if (changed) revision.current += 1
     current.current = next
     dispatch(action)
+    return changed
   }, [])
   const getSnapshot = useCallback(() => ({ items: current.current.items, ownerId: ownerRef.current, revision: revision.current,
     hasExternalConflict: conflict.current }), [])
@@ -122,19 +124,29 @@ function CartProvider({ children }: CartProviderProps) {
     clearCart,
     cleanupPurchase,
     addItem: (item) => {
-      if (!isActive) return
+      if (!isActive || ownerRef.current !== ownerId || activeOwnerRef.current !== activeOwnerId) {
+        return { accepted: false, message: 'Selecciona la identidad propietaria del carrito antes de agregar productos.' }
+      }
       const { initialQuantity = 1, ...snapshot } = item as typeof item & { initialQuantity?: number }
       const existing = current.current.items.find(value => value.productId === snapshot.productId)
+      let changed: boolean
       if (existing) {
-        if (existing.availableQuantity !== undefined && existing.availableQuantity !== null && existing.quantity >= existing.availableQuantity) return
-        dispatchCart({ type: 'ADD_ITEM', payload: { ...snapshot, initialQuantity: 1, lineage: existing.lineage } })
-        return
+        if (existing.availableQuantity !== undefined && existing.availableQuantity !== null && existing.quantity >= existing.availableQuantity) {
+          return { accepted: false, message: 'No se agregó el producto: alcanzaste el stock disponible en esta sucursal.' }
+        }
+        changed = dispatchCart({ type: 'ADD_ITEM', payload: { ...snapshot, initialQuantity: 1, lineage: existing.lineage } })
+      } else {
+        if (!Number.isSafeInteger(initialQuantity) || initialQuantity < (snapshot.minimumOrderQuantity ?? 1)) {
+          return { accepted: false, message: 'La cantidad no cumple el mínimo de compra válido del producto.' }
+        }
+        if (snapshot.availableQuantity !== undefined && snapshot.availableQuantity !== null && initialQuantity > snapshot.availableQuantity) {
+          return { accepted: false, message: 'No hay stock suficiente en esta sucursal para agregar la cantidad solicitada.' }
+        }
+        changed = dispatchCart({ type: 'ADD_ITEM', payload: {
+          ...snapshot, initialQuantity, lineage: { id: crypto.randomUUID(), removed: 0 },
+        } })
       }
-      if (!Number.isSafeInteger(initialQuantity) || initialQuantity < (snapshot.minimumOrderQuantity ?? 1)
-        || snapshot.availableQuantity !== undefined && snapshot.availableQuantity !== null && initialQuantity > snapshot.availableQuantity) return
-      dispatchCart({ type: 'ADD_ITEM', payload: {
-        ...snapshot, initialQuantity, lineage: { id: crypto.randomUUID(), removed: 0 },
-      } })
+      return changed ? { accepted: true } : { accepted: false, message: 'No se pudo agregar el producto al carrito.' }
     },
     incrementItem: (productId) => {
       if (!isActive) return

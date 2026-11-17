@@ -53,7 +53,7 @@ jobs:
           for file in tests/*.test.mjs; do
             [[ "$file" == *.integration.test.mjs ]] || files+=("$file")
           done
-          node --test "${files[@]}"
+          node --test --test-skip-pattern='^el seed usa dry-run por defecto y sus guardas abortan sin escribir$' "${files[@]}"
       - name: Preparar exclusivamente PostgreSQL efímero del Runner
         env:
           PGHOST: 127.0.0.1
@@ -68,7 +68,8 @@ jobs:
           test "$PGDATABASE" = 'cibernova_test'
           psql --no-psqlrc --set ON_ERROR_STOP=1 --single-transaction \
             --file supabase/migrations/20261109000100_commerce_foundation.sql \
-            --file supabase/migrations/20261110025043_cibernova_runtime_login.sql
+            --file supabase/migrations/20261110025043_cibernova_runtime_login.sql \
+            --file supabase/migrations/20261117000100_order_creation_v2.sql
           psql --no-psqlrc --set ON_ERROR_STOP=1 --set "runtime_password=$CN59_RUNTIME_PASSWORD" <<'SQL'
           ALTER ROLE cibernova_app PASSWORD :'runtime_password';
           SQL

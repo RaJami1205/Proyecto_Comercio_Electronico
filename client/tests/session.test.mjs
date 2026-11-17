@@ -139,7 +139,11 @@ for (const profile of profiles) test('Login validado ' + profile.role + ' y rest
   assert.deepEqual(state.user, profile)
   assert.equal(state.epoch, 1)
   assert.equal(state.dialog, null)
-  assert.equal(state.purchaseBlockReason === null, profile.role === 'B2C')
+  const expectedReason = profile.role === 'B2B'
+    ? 'Consulta precios mayoristas y condiciones B2B en el catálogo. El Checkout B2B aún no está disponible.'
+    : profile.role === 'ADMIN' ? 'Checkout disponible temporalmente solo para B2C. El catálogo muestra precios Retail.' : null
+  assert.equal(state.purchaseBlockReason, expectedReason)
+  assert.equal(state.getPurchaseBlockReason(), expectedReason)
   assert.equal(runtime.clears, 0)
   state.openLogin()
   await session.render().resolveUser(profile.id)
@@ -172,6 +176,7 @@ test('Logout y cambio preservan identidad/Cart ante cancelación o error', async
   const session = flow(t)
   session.render().openLogin()
   await session.render().resolveUser('c')
+  assert.equal(session.render().purchaseBlockReason, null)
   runtime.changeCart([item])
   session.render().requestLogout()
   assert.equal(session.render().user, null)
@@ -188,9 +193,12 @@ test('Logout y cambio preservan identidad/Cart ante cancelación o error', async
   const pending = session.render()
   pending.confirmTransition(pending.pending.cartRevision)
   assert.equal(session.render().user.id, 'b')
+  assert.match(session.render().purchaseBlockReason, /precios mayoristas y condiciones B2B/)
+  assert.match(session.render().getPurchaseBlockReason(), /Checkout B2B aún no está disponible/)
   assert.equal(runtime.clears, 1)
   session.render().requestLogout()
   assert.equal(session.render().user, null)
+  assert.match(session.render().purchaseBlockReason, /^Inicia una sesión simulada B2C/)
   assert.equal(session.render().epoch, 4)
 })
 

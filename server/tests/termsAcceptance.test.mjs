@@ -5,10 +5,11 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {stripTypeScriptTypes} from 'node:module'
 const dataUrl=source=>'data:text/javascript;base64,'+Buffer.from(source).toString('base64')
-/** Carga fuentes en memoria y bloquea el catálogo real; rotation altera solo el módulo de política de esta prueba. */
+/** Carga dependencias puras en memoria, fuerza stores In-Memory y bloquea el catálogo real; rotation solo altera la política del test. */
 async function domain(rotation=false){
   const sources=new Map([['services/productService',dataUrl('export async function getProductById(){throw new Error("Catálogo real prohibido")}')]])
-  for(const name of ['db/databaseError','domain/termsPolicy','domain/orderError','domain/orderIdentity','domain/orderValidation','domain/orderCalculations','stores/orderStore','stores/paymentStore','stores/commerceStores','domain/paymentValidation','services/paymentSandboxService','services/paymentService','services/orderService']){
+  sources.set('config/env',dataUrl('export const serverConfig={commerceStoreMode:"memory"}'))
+  for(const name of ['db/databaseError','domain/termsPolicy','domain/orderError','domain/catalogError','services/branchService','domain/pricing','domain/inventory','domain/orderIdentity','domain/orderValidation','domain/orderCalculations','stores/orderStore','stores/paymentStore','stores/commerceStores','domain/paymentValidation','services/paymentSandboxService','services/paymentService','services/orderService']){
     let source=readFileSync(new URL('../src/'+name+'.ts',import.meta.url),'utf8')
     // Solo este módulo en memoria admite rotación; producción mantiene una única versión real.
     if(rotation && name==='domain/termsPolicy') source=source.replace('export const CURRENT_TERMS_VERSION', 'export let CURRENT_TERMS_VERSION').replace('Object.freeze([CURRENT_TERMS_VERSION])', "Object.freeze([CURRENT_TERMS_VERSION, 'test-v2'])")+"\nexport function rotateForTest(){CURRENT_TERMS_VERSION='test-v2'}"

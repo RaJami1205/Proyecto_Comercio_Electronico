@@ -27,8 +27,15 @@ if (commerceStoreMode !== 'memory' && commerceStoreMode !== 'postgresql') {
   throw new ConfigurationError('COMMERCE_STORE_MODE debe ser memory o postgresql.')
 }
 
+// El corte de Checkout es independiente del almacenamiento y solo se configura en Server.
+const orderCreationMode = process.env.ORDER_CREATION_MODE?.trim() || 'v1-compatible'
+if (orderCreationMode !== 'v1-compatible' && orderCreationMode !== 'v2-only') {
+  throw new ConfigurationError('ORDER_CREATION_MODE debe ser v1-compatible o v2-only.')
+}
+
 export const serverConfig = {
   commerceStoreMode,
+  orderCreationMode,
   port: resolvePort(process.env.PORT),
   clientOrigin: process.env.CLIENT_ORIGIN?.trim() || DEFAULT_CLIENT_ORIGIN,
 }

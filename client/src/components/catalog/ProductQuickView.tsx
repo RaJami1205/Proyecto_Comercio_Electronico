@@ -1,5 +1,5 @@
 /** Encapsula el detalle modal del Product y su integración con useCart. */
-import { useEffect, useRef, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 
 import CartFeedbackToast from './CartFeedbackToast'
 import { useCart } from '../../hooks/useCart'
@@ -44,6 +44,7 @@ function CartIcon() {
 /** Gestiona el dialog, el foco y el bloqueo de scroll mientras muestra el detalle. */
 function ProductQuickView({ product, onClose, onProductAdded, addedProductId, feedbackProductName, showAddToCart = true }: ProductQuickViewProps) {
   const { addItem, isActive } = useCart()
+  const [addError, setAddError] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
@@ -55,10 +56,10 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
   /** Agrega el snapshot del Product y notifica a la página para mostrar feedback temporal. */
   function handleAddToCart() {
     if (!isActive || !product.canAddToCart || product.price === null) return
-    addItem({
+    const result = addItem({
       productId: product.id,
       name: product.name,
-          price: product.price,
+      price: product.price,
       image: product.image,
       retailPrice: product.retailPrice,
       pricingType: product.pricing.type,
@@ -69,6 +70,8 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
       commercialEligible: product.pricing.eligible,
       initialQuantity: product.pricing.minOrderQuantity ?? 1,
     })
+    if (!result.accepted) { setAddError(result.message); return }
+    setAddError(null)
     onProductAdded({ id: product.id, name: product.name })
   }
 
@@ -157,7 +160,7 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
         onClose()
       }}
     >
-      {feedbackProductName ? <CartFeedbackToast productName={feedbackProductName} /> : null}
+      {feedbackProductName && !addError ? <CartFeedbackToast productName={feedbackProductName} /> : null}
       <article className={styles.surface}>
         <button
           ref={closeButtonRef}
@@ -192,6 +195,7 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
           <p>{product.pricing.type === 'WHOLESALE' ? `Precio B2B · mínimo ${product.pricing.minOrderQuantity ?? 'no disponible'}` : 'Precio público'}</p>
           {product.pricing.message ? <p role="status">{product.pricing.message}</p> : null}
           <p role="status">{product.inventory.message}</p>
+          {addError ? <p role="alert">{addError}</p> : null}
 
           <p className={styles.description} id={descriptionId}>
             {product.description}
@@ -211,7 +215,7 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
 
             {showAddToCart ? <div className={styles.actions}>
               <button
-                className={`${styles.cartButton} ${addedProductId === product.id ? styles.cartButtonAdded : ''}`}
+                className={`${styles.cartButton} ${addedProductId === product.id && !addError ? styles.cartButtonAdded : ''}`}
                 type="button"
                 disabled={!isActive || !product.canAddToCart}
                 aria-label={product.canAddToCart && isActive ? `Agregar ${product.name} al carrito` : !isActive ? 'Selecciona la identidad propietaria del carrito.' : product.inventory.message}

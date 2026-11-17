@@ -21,7 +21,7 @@ export class OrderService {
   constructor(private readonly store: OrderStore = commerceStores.orders, private readonly lookup: ProductLookup = getProductById) {}
 
   /** La identidad procede de CN-54, no del body. Promise Sharing no sustituye la unicidad del store. */
-  async create(value: unknown, user: ResolvedUser): Promise<Order> {
+  async create(value: unknown, user: ResolvedUser, { replayOnly = false }: { replayOnly?: boolean } = {}): Promise<Order> {
     if (user.role !== 'B2C') throw new OrderError(403, 'FORBIDDEN', 'Esta identidad no tiene permiso para realizar la operación.')
     const request = validateCreateOrderRequest(value)
     const fingerprint = orderIdentity(request)
@@ -36,7 +36,12 @@ export class OrderService {
     }
     const context = { idempotencyKey: request.idempotencyKey, canonicalPayload: fingerprint, canonicalVersion: 1 as const,
       user: { id: user.id, displayName: user.displayName, role: 'B2C' as const } }
-    const task = Promise.resolve().then(() => this.store.createOrReplay(context, (id, signal) => this.buildOrder(request, id, currentTermsAccepted, signal)))
+    const task = Promise.resolve().then(() => this.store.createOrReplay(context, (id, signal) => {
+      // El store comprueba ownership/payload antes del builder. Una key nueva falla sin catálogo ni Order;
+      // PostgreSQL revierte también el claim, conservando su atomicidad y Recovery existentes.
+      if (replayOnly) throw new OrderError(410, 'ORDER_CONTRACT_DEPRECATED', 'La creación legacy está deshabilitada. Utiliza Orders V2 con sucursal seleccionada.')
+      return this.buildOrder(request, id, currentTermsAccepted, signal)
+    }))
     this.pending.set(request.idempotencyKey, { ownerId, identity: fingerprint, task })
     try { return structuredClone(await task) }
     finally { this.pending.delete(request.idempotencyKey) }

@@ -1,7 +1,7 @@
-/** Frontera PostgreSQL/DTO V1. No recalcula importes ni consulta contratos comerciales actuales. */
+/** Frontera PostgreSQL/DTO V1/V2. No recalcula importes ni consulta contratos comerciales actuales. */
 import { DatabaseError } from '../db/databaseError.js'
 import type { Order, OrderItem } from '../types/order.js'
-import type { ResolvedUser } from '../types/user.js'
+import type { Company, ResolvedUser } from '../types/user.js'
 import type { BranchId } from '../types/branch.js'
 
 function invalid(): never { throw new DatabaseError('transaction') }
@@ -10,6 +10,11 @@ export function rowRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 function text(value: unknown): string { return typeof value === 'string' && value.trim() ? value : invalid() }
+/** Copia solo el contrato público de Company, conservando literalmente los textos históricos. */
+function companySnapshot(value: unknown): Company {
+  const company = rowRecord(value)
+  return { id: text(company.id), name: text(company.name) }
+}
 function money(value: unknown): number {
   if (typeof value !== 'number' && (typeof value !== 'string' || !/^[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?$/i.test(value))) return invalid()
   const amount = Number(value)
@@ -64,15 +69,15 @@ export function mapOrderRow(value: unknown): Order {
   let commercial: Order['commercial']
   if (contractVersion === 2) {
     const user = rowRecord(row.user_snapshot)
-    if (typeof row.branch_id !== 'string' || !['RETAIL', 'WHOLESALE'].includes(String(row.pricing_type))
+    if (typeof row.branch_id !== 'string' || (row.pricing_type !== 'RETAIL' && row.pricing_type !== 'WHOLESALE')
       || typeof row.commercial_policy_version !== 'string' || !row.commercial_policy_version.trim()
       || (user.role !== 'B2C' && user.role !== 'B2B')
       || (user.role === 'B2B' && !('company' in user))
       || (user.role === 'B2C' && row.pricing_type !== 'RETAIL')
       || (user.role === 'B2B' && row.pricing_type !== 'WHOLESALE')) return invalid()
     commercial = { userId: text(row.owner_user_id), customerRole: user.role,
-      ...(user.role === 'B2B' ? { company: rowRecord(user.company) as unknown as NonNullable<Order['commercial']>['company'] } : {}),
-      branchId: row.branch_id as BranchId, pricingType: row.pricing_type as NonNullable<Order['commercial']>['pricingType'],
+      ...(user.role === 'B2B' ? { company: companySnapshot(user.company) } : {}),
+      branchId: row.branch_id as BranchId, pricingType: row.pricing_type,
       policyVersion: row.commercial_policy_version }
   } else if (row.pricing_type !== null || row.commercial_policy_version !== null) return invalid()
   if (!((row.order_status === 'CONFIRMED' && row.payment_status === 'APPROVED')
@@ -110,19 +115,23 @@ export function mapOrderSnapshot(value: unknown): Order {
   for (const key of ['subtotal', 'tax', 'shipping', 'total']) if (typeof totals[key] !== 'number') return invalid()
   let commercial: Order['commercial']
   let contractVersion: Order['contractVersion']
+  // V1 histórico no llevaba versión ni contexto comercial; nunca degradar una versión desconocida a V1.
+  if (snapshot.contractVersion !== undefined && snapshot.contractVersion !== 1 && snapshot.contractVersion !== 2) return invalid()
+  if (snapshot.contractVersion !== 2 && snapshot.commercial !== undefined && snapshot.commercial !== null) return invalid()
   if (snapshot.contractVersion === 2) {
     const snapshotCommercial = rowRecord(snapshot.commercial)
-    if (!['B2C', 'B2B'].includes(String(snapshotCommercial.customerRole))
+    const customerRole = snapshotCommercial.customerRole, pricingType = snapshotCommercial.pricingType
+    if ((customerRole !== 'B2C' && customerRole !== 'B2B')
       || typeof snapshotCommercial.userId !== 'string' || typeof snapshotCommercial.branchId !== 'string'
       || !['san_jose', 'alajuela', 'cartago', 'heredia'].includes(snapshotCommercial.branchId)
-      || !['RETAIL', 'WHOLESALE'].includes(String(snapshotCommercial.pricingType))
+      || (pricingType !== 'RETAIL' && pricingType !== 'WHOLESALE')
       || typeof snapshotCommercial.policyVersion !== 'string' || !snapshotCommercial.policyVersion.trim()
-      || (snapshotCommercial.customerRole === 'B2C' && snapshotCommercial.pricingType !== 'RETAIL')
-      || (snapshotCommercial.customerRole === 'B2B' && snapshotCommercial.pricingType !== 'WHOLESALE')) return invalid()
-    commercial = { userId: text(snapshotCommercial.userId), customerRole: snapshotCommercial.customerRole as 'B2C' | 'B2B',
-      ...(snapshotCommercial.customerRole === 'B2B' ? { company: rowRecord(snapshotCommercial.company) as unknown as NonNullable<Order['commercial']>['company'] } : {}),
+      || (customerRole === 'B2C' && pricingType !== 'RETAIL')
+      || (customerRole === 'B2B' && pricingType !== 'WHOLESALE')) return invalid()
+    commercial = { userId: text(snapshotCommercial.userId), customerRole,
+      ...(customerRole === 'B2B' ? { company: companySnapshot(snapshotCommercial.company) } : {}),
       branchId: snapshotCommercial.branchId as BranchId,
-      pricingType: snapshotCommercial.pricingType as NonNullable<Order['commercial']>['pricingType'], policyVersion: text(snapshotCommercial.policyVersion) }
+      pricingType, policyVersion: text(snapshotCommercial.policyVersion) }
     contractVersion = 2
   }
   return {

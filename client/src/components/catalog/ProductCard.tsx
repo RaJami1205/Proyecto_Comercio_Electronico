@@ -1,5 +1,6 @@
 /** Integra cada producto del catálogo con Quick View y la API pública del Cart. */
 import type { Product } from '../../types/product'
+import { useState } from 'react'
 import { useCart } from '../../hooks/useCart'
 import styles from '../../styles/catalog/ProductCard.module.css'
 
@@ -30,12 +31,13 @@ function CartIcon() {
 /** Presenta disponibilidad y precio, delegando detalle y feedback al owner. */
 function ProductCard({ product, onProductSelect, onProductAdded, addedProductId }: ProductCardProps) {
   const { addItem, isActive } = useCart()
+  const [addError, setAddError] = useState<string | null>(null)
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
 
   /** Envía el snapshot mínimo al Cart; quantity y duplicados quedan a cargo del reducer. */
   function handleAddToCart() {
     if (!isActive || !product.canAddToCart || product.price === null) return
-    addItem({
+    const result = addItem({
       productId: product.id,
       name: product.name,
       price: product.price,
@@ -49,6 +51,8 @@ function ProductCard({ product, onProductSelect, onProductAdded, addedProductId 
       commercialEligible: product.pricing.eligible,
       initialQuantity: product.pricing.minOrderQuantity ?? 1,
     })
+    if (!result.accepted) { setAddError(result.message); return }
+    setAddError(null)
     onProductAdded({ id: product.id, name: product.name })
   }
 
@@ -72,7 +76,7 @@ function ProductCard({ product, onProductSelect, onProductAdded, addedProductId 
           <p className={styles.price}>{product.price === null ? 'Precio no disponible' : priceFormatter.format(product.price)}</p>
           <button
             className={`${styles.cartButton} ${
-              addedProductId === product.id ? styles.cartButtonAdded : ''
+              addedProductId === product.id && !addError ? styles.cartButtonAdded : ''
             }`}
             type="button"
             disabled={!isActive || !product.canAddToCart}
@@ -88,6 +92,7 @@ function ProductCard({ product, onProductSelect, onProductAdded, addedProductId 
           </button>
         </div>
 
+        {addError ? <p className={styles.stock} role="alert">{addError}</p> : null}
         <p className={styles.stock}>
           {product.pricing.type === 'WHOLESALE' ? `Precio B2B · mínimo ${product.pricing.minOrderQuantity ?? 'no disponible'}` : 'Precio público'}
         </p>

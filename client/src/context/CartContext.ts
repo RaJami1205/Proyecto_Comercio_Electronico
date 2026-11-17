@@ -2,6 +2,9 @@
 import { createContext } from 'react'
 import type { CartItem, CartPurchaseCleanup } from '../types/cart'
 
+/** Resultado de la transición real del Cart, independiente del siguiente render de React. */
+export type CartAddResult = { accepted: true } | { accepted: false; message: string }
+
 // Contrato público compartido: separa los detalles internos del estado de sus componentes consumidores.
 // Se consume mediante useCart(), sin acceder al reducer; dispatch permanece interno al Provider.
 export interface CartContextValue {
@@ -14,7 +17,7 @@ export interface CartContextValue {
   getSnapshot: () => { items: readonly CartItem[]; ownerId: string | null; revision: number; hasExternalConflict: boolean }
   setCartOwner: (ownerId: string | null, adoptUnowned?: boolean) => boolean
   updateProductContext: (productId: string, context: Partial<CartItem>) => void
-  addItem: (item: Omit<CartItem, 'quantity'> & { initialQuantity?: number }) => void
+  addItem: (item: Omit<CartItem, 'quantity'> & { initialQuantity?: number }) => CartAddResult
   incrementItem: (productId: string) => void
   decrementItem: (productId: string) => void
   removeItem: (productId: string) => void

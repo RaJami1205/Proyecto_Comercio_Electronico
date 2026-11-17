@@ -1,6 +1,6 @@
 # Payment Persistence & Recovery · CN-59
 
-La implementación añade persistencia PostgreSQL opcional para Payment Sandbox V1. **Express continúa usando InMemoryOrderStore + InMemoryPaymentStore**, independientemente de DATABASE_URL. No se habilitó PostgreSQL en Production y no existe fallback silencioso. Las garantías reales de PostgreSQL quedan pendientes del workflow de integración; los tests locales usan dobles.
+La implementación añade persistencia PostgreSQL opcional para Payment Sandbox. **La composición predeterminada de Express es InMemoryOrderStore + InMemoryPaymentStore.** `COMMERCE_STORE_MODE=postgresql` selecciona conjuntamente PostgreSQLOrderStore + PostgreSQLPaymentStore; `memory` es el default y DATABASE_URL por sí sola no cambia la selección. No existe fallback silencioso. La activación comercial PostgreSQL en Render Production sigue pendiente de QA y autorización explícita; las garantías reales quedan pendientes del workflow de integración y los tests locales usan dobles. El estado vigente y la transición V1/V2 independiente se detallan en [Orders Persistence & Idempotency](orders-persistence.md#estado-vigente-y-selección-coordinada).
 
 ## Contratos y composición
 
@@ -16,7 +16,7 @@ const orderService = new OrderService(orders)
 const paymentService = new PaymentService(orders, undefined, payments)
 ```
 
-Ambos repositorios PostgreSQL deben compartir exactamente la misma Database. PaymentService valida que su persistencia pertenezca al OrderStore recibido. Pasar solo un PostgreSQLOrderStore al constructor no selecciona Payments en memoria: falla la configuración. Los servicios predeterminados consumen la única pareja activa `commerceStores`, actualmente In-Memory, en vez de seleccionar cada mecanismo por separado. Crear/importar repositorios no abre conexiones. El ejemplo no se conecta automáticamente a Express ni autoriza una activación.
+Ambos repositorios PostgreSQL deben compartir exactamente la misma Database. PaymentService valida que su persistencia pertenezca al OrderStore recibido. Pasar solo un PostgreSQLOrderStore al constructor no selecciona Payments en memoria: falla la configuración. Los servicios predeterminados consumen la única pareja `commerceStores` seleccionada por `COMMERCE_STORE_MODE`, con In-Memory por defecto, en vez de seleccionar cada mecanismo por separado. Crear/importar repositorios no abre conexiones. El ejemplo anterior muestra composición manual: no cambia la pareja predeterminada de Express ni autoriza una activación.
 
 ## Operación transaccional
 
