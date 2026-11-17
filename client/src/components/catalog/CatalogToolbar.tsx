@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import styles from '../../styles/catalog/CatalogToolbar.module.css'
 import type { Product } from '../../types/product'
 import { useProductSearch } from '../../hooks/useProductSearch'
+import type { BranchId } from '../../types/branch'
 import SearchBox from './SearchBox'
 
 export type ActivePanel = 'filters' | 'categories' | 'price' | null
@@ -50,6 +51,8 @@ interface CatalogToolbarProps {
   onTogglePanel: (panel: ActivePanel) => void
   onSearchChange: (query: string, source?: 'catalog' | 'recent') => void
   onProductSelect: (product: Product) => void
+  userId?: string
+  branchId?: BranchId | null
 }
 
 /** Coordina useProductSearch y propaga el query al catálogo con debounce. */
@@ -59,8 +62,10 @@ function CatalogToolbar({
   onTogglePanel,
   onSearchChange,
   onProductSelect,
+  userId,
+  branchId,
 }: CatalogToolbarProps) {
-  const { query, setQuery, results, isLoading, error } = useProductSearch()
+  const { query, setQuery, results, isLoading, error } = useProductSearch(userId, branchId)
   const source = useRef<'catalog' | 'recent'>('catalog')
 
   useEffect(() => {

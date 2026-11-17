@@ -53,10 +53,11 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
 
   /** Agrega el snapshot del Product y notifica a la página para mostrar feedback temporal. */
   function handleAddToCart() {
+    if (!product.canAddToCart || product.price === null) return
     addItem({
       productId: product.id,
       name: product.name,
-      price: product.price,
+          price: product.price,
       image: product.image,
     })
     onProductAdded({ id: product.id, name: product.name })
@@ -169,7 +170,7 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
           <h2 id={titleId}>{product.name}</h2>
 
           <div className={styles.commercialSummary}>
-            <p className={styles.price}>{priceFormatter.format(product.price)}</p>
+            <p className={styles.price}>{product.price === null ? 'Precio no disponible' : priceFormatter.format(product.price)}</p>
             <p
               className={`${styles.stock} ${
                 product.inStock ? styles.inStock : styles.outOfStock
@@ -179,6 +180,9 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
               {availabilityLabel}
             </p>
           </div>
+          <p>{product.pricing.type === 'WHOLESALE' ? `Precio B2B · mínimo ${product.pricing.minOrderQuantity ?? 'no disponible'}` : 'Precio público'}</p>
+          {product.pricing.message ? <p role="status">{product.pricing.message}</p> : null}
+          <p role="status">{product.inventory.message}</p>
 
           <p className={styles.description} id={descriptionId}>
             {product.description}
@@ -202,17 +206,17 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
                   addedProductId === product.id ? styles.cartButtonAdded : ''
                 }`}
                 type="button"
-                disabled={!product.inStock}
+                disabled={!product.canAddToCart}
                 aria-label={
-                  product.inStock
+                  product.canAddToCart
                     ? `Agregar ${product.name} al carrito`
-                    : `${product.name} está agotado`
+                    : product.inventory.message
                 }
-                title={product.inStock ? `Agregar ${product.name} al carrito` : 'Producto agotado'}
+                title={product.canAddToCart ? `Agregar ${product.name} al carrito` : product.inventory.message}
                 onClick={handleAddToCart}
               >
                 <CartIcon />
-                {product.inStock ? 'Agregar al carrito' : 'Agotado'}
+                {product.canAddToCart ? 'Agregar al carrito' : 'No disponible para agregar'}
               </button>
             </div>
         </div>

@@ -28,7 +28,10 @@ async function setup(t) {
   return { ...h, ...env, api, listeners }
 }
 
-const product = { id:'p', name:'Producto', image:'', price:10000, inStock:true }
+const product = { id:'p', name:'Producto', image:'', price:10000, retailPrice:10000,
+  pricing:{type:'RETAIL',eligible:true,minOrderQuantity:1,message:null},
+  inventory:{branchId:null,quantity:null,status:'unselected',canFulfillMinimum:null,message:'Selecciona una sucursal.'},
+  canAddToCart:true, inStock:true }
 
 test('App registra Cart Add después del Provider real; hidratación/remove/cleanup/storage no emiten', async t => {
   const h = await setup(t)

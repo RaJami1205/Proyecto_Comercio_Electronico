@@ -1,0 +1,13 @@
+.panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.72fr); gap: 1.5rem; align-items: center; margin: 0 0 1.75rem; padding: 1.25rem 1.4rem; border: 1px solid rgba(31, 94, 255, 0.16); border-radius: 1.15rem; background: linear-gradient(120deg, #fff, #f5f8ff); box-shadow: 0 0.75rem 2rem rgba(24, 43, 79, 0.05); }
+.copy { min-width: 0; }
+.eyebrow { margin: 0 0 0.25rem; color: #164ed6; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+.copy h2 { margin: 0; color: var(--color-text-primary); font-size: 1.2rem; letter-spacing: -0.025em; }
+.copy > p:last-child { margin: 0.35rem 0 0; color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.45; }
+.control { display: grid; gap: 0.4rem; }
+.control label { color: var(--color-text-primary); font-size: 0.82rem; font-weight: 750; }
+.control select { min-height: 2.8rem; padding: 0.55rem 0.75rem; color: var(--color-text-primary); border: 1px solid #cbd6e7; border-radius: 0.7rem; background: #fff; font: inherit; }
+.control select:focus-visible { outline: 3px solid rgba(31, 94, 255, 0.3); outline-offset: 2px; }
+.status, .notice, .error { margin: 0; font-size: 0.75rem; line-height: 1.4; }
+.status, .notice { color: var(--color-text-muted); }
+.error { color: #a33442; }
+@media (max-width: 640px) { .panel { grid-template-columns: 1fr; gap: 0.9rem; padding: 1rem; } }

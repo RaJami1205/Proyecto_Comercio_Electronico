@@ -34,6 +34,7 @@ function ProductCard({ product, onProductSelect, onProductAdded, addedProductId 
 
   /** Envía el snapshot mínimo al Cart; quantity y duplicados quedan a cargo del reducer. */
   function handleAddToCart() {
+    if (!product.canAddToCart || product.price === null) return
     addItem({
       productId: product.id,
       name: product.name,
@@ -60,24 +61,30 @@ function ProductCard({ product, onProductSelect, onProductAdded, addedProductId 
         <h3 title={product.name}>{product.name}</h3>
 
         <div className={styles.purchaseRow}>
-          <p className={styles.price}>{priceFormatter.format(product.price)}</p>
+          <p className={styles.price}>{product.price === null ? 'Precio no disponible' : priceFormatter.format(product.price)}</p>
           <button
             className={`${styles.cartButton} ${
               addedProductId === product.id ? styles.cartButtonAdded : ''
             }`}
             type="button"
-            disabled={!product.inStock}
+            disabled={!product.canAddToCart}
             aria-label={
-              product.inStock
+              product.canAddToCart
                 ? `Agregar ${product.name} al carrito`
-                : `${product.name} está agotado`
+                : product.inventory.message
             }
-            title={product.inStock ? `Agregar ${product.name} al carrito` : 'Producto agotado'}
+            title={product.canAddToCart ? `Agregar ${product.name} al carrito` : product.inventory.message}
             onClick={handleAddToCart}
           >
             <CartIcon />
           </button>
         </div>
+
+        <p className={styles.stock}>
+          {product.pricing.type === 'WHOLESALE' ? `Precio B2B · mínimo ${product.pricing.minOrderQuantity ?? 'no disponible'}` : 'Precio público'}
+        </p>
+        {product.pricing.message ? <p className={styles.stock} role="status">{product.pricing.message}</p> : null}
+        <p className={styles.stock} role="status">{product.inventory.message}</p>
 
         <p
           className={`${styles.stock} ${

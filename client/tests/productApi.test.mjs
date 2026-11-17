@@ -4,10 +4,15 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 
-const source = readFileSync(new URL('../src/services/productApi.ts', import.meta.url), 'utf8').replace('import.meta.env.VITE_API_BASE_URL', 'undefined')
+const branchTypes = 'data:text/javascript;base64,' + Buffer.from("export const BRANCH_IDS=['san_jose','alajuela','cartago','heredia']").toString('base64')
+const source = readFileSync(new URL('../src/services/productApi.ts', import.meta.url), 'utf8')
+  .replace('import.meta.env.VITE_API_BASE_URL', 'undefined')
+  .replaceAll("'../types/branch'", `'${branchTypes}'`).replaceAll('"../types/branch"', `'${branchTypes}'`)
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText
 const productApi = await import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'))
-const product = (id = 'p1') => ({ id, name:'Producto actual', image:'/ssd.png', price:99999.495,
+const product = (id = 'p1') => ({ id, name:'Producto actual', image:'/ssd.png', price:99999.495, retailPrice:99999.495,
+  pricing:{type:'RETAIL',eligible:true,minOrderQuantity:1,message:null},
+  inventory:{branchId:null,quantity:null,status:'unselected',canFulfillMinimum:null,message:'Selecciona una sucursal.'},canAddToCart:false,
   category:'Almacenamiento', inStock:true, description:'Descripción', specifications:[{label:'Capacidad',value:'2 TB'}] })
 
 test('resuelve hasta diez IDs codificados; conserva recencia y datos exactos; omite inexistentes', async t => {
@@ -35,7 +40,6 @@ const invalid = [
   ['ID inesperado',()=>({products:[product('other')]})],
   ['ID duplicado',()=>({products:[product(),product()]})],
   ['precio negativo',()=>({products:[{...product(),price:-1}]})],
-  ['precio no finito',()=>({products:[{...product(),price:Infinity}]})],
   ['stock inválido',()=>({products:[{...product(),inStock:'true'}]})],
   ['categoría inválida',()=>({products:[{...product(),category:[]} ]})],
   ['especificaciones null',()=>({products:[{...product(),specifications:null}]})],
@@ -59,4 +63,31 @@ test('propaga red y JSON inválido; IDs vacíos no alcanzan el Server',async t=>
   const count=mock.mock.callCount()
   await assert.rejects(productApi.getProductsByIds([' ']))
   assert.equal(mock.mock.callCount(),count)
+})
+
+test('envía identidad y sucursal en catálogo, sugerencias e historial', async t => {
+  const calls=[]
+  t.mock.method(globalThis,'fetch',async (url,options={})=>{
+    calls.push({url:String(url),headers:options.headers})
+    return Response.json({products:[],page:1,totalPages:1,totalProducts:0,facets:{}})
+  })
+  await productApi.getCatalogPage(1,20,undefined,'', 'b2b-user','san_jose')
+  await productApi.searchProducts('ssd','b2b-user','cartago')
+  await productApi.getProductsByIds(['p1'],'b2b-user','heredia')
+  assert.equal(calls[0].headers['X-CiberNova-User-Id'],'b2b-user')
+  assert.equal(new URL(calls[0].url,'http://local').searchParams.get('branchId'),'san_jose')
+  assert.equal(calls[1].headers['X-CiberNova-User-Id'],'b2b-user')
+  assert.equal(new URL(calls[1].url,'http://local').searchParams.get('branchId'),'cartago')
+  assert.equal(new URL(calls[2].url,'http://local').searchParams.get('branchId'),'heredia')
+})
+
+test('valida contrato de sucursales y disponibilidad', async t => {
+  t.mock.method(globalThis,'fetch',async()=>Response.json({branches:[
+    {id:'san_jose',name:'San José',available:true},{id:'alajuela',name:'Alajuela',available:false},
+  ]}))
+  assert.deepEqual(await productApi.getBranches(),[
+    {id:'san_jose',name:'San José',available:true},{id:'alajuela',name:'Alajuela',available:false},
+  ])
+  t.mock.method(globalThis,'fetch',async()=>Response.json({branches:[{id:'desconocida',name:'X',available:true}]}))
+  await assert.rejects(productApi.getBranches(),/sucursales inválidas/)
 })

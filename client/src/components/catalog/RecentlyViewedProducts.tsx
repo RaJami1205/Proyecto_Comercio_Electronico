@@ -1,12 +1,14 @@
 /** Presenta productos vistos desde IDs por identidad y datos actuales del ProductService. */
 import { useEffect, useRef, useState } from 'react'
 import type { Product } from '../../types/product'
+import type { BranchId } from '../../types/branch'
 import { getProductsByIds } from '../../services/productApi'
 import { analyticsStorage, getRecentlyViewedProductIds, refreshAnalyticsState } from '../../services/analytics'
 import styles from '../../styles/catalog/RecentlyViewedProducts.module.css'
 
 interface RecentlyViewedProductsProps {
   userId?: string
+  branchId?: BranchId | null
   onProductSelect: (product: Product) => void
 }
 
@@ -21,8 +23,9 @@ interface HistorySnapshot {
 }
 
 /** Carga solo las tarjetas actuales de los IDs guardados y descarta respuestas obsoletas. */
-function RecentlyViewedProducts({ userId, onProductSelect }: RecentlyViewedProductsProps) {
-  const [snapshot, setSnapshot] = useState<HistorySnapshot>({ owner: userId, ids: [], products: [], status: 'empty' })
+function RecentlyViewedProducts({ userId, branchId, onProductSelect }: RecentlyViewedProductsProps) {
+  const ownerKey = `${userId ?? 'anonymous'}:${branchId ?? 'no-branch'}`
+  const [snapshot, setSnapshot] = useState<HistorySnapshot>({ owner: ownerKey, ids: [], products: [], status: 'empty' })
   const requestRefresh = useRef<(() => void) | null>(null)
 
   useEffect(() => {
@@ -40,17 +43,17 @@ function RecentlyViewedProducts({ userId, onProductSelect }: RecentlyViewedProdu
       const version = ++requestVersion
       if (ids.length === 0) {
         inFlight = false
-        setSnapshot({ owner: userId, ids, products: [], status: 'empty' })
+        setSnapshot({ owner: ownerKey, ids, products: [], status: 'empty' })
         return
       }
       inFlight = true
       // Solo se conservan productos válidos del mismo owner que aún pertenecen al historial.
-      setSnapshot(current => ({ owner: userId, ids, status: 'loading', products: current.owner === userId
+      setSnapshot(current => ({ owner: ownerKey, ids, status: 'loading', products: current.owner === ownerKey
         ? ids.flatMap(id => current.products.filter(product => product.id === id)) : [] }))
-      void getProductsByIds(ids).then((currentProducts) => {
+      void getProductsByIds(ids, userId, branchId).then((currentProducts) => {
         if (!cancelled && version === requestVersion) {
           inFlight = false
-          setSnapshot({ owner: userId, ids, products: currentProducts, status: currentProducts.length ? 'success' : 'empty' })
+          setSnapshot({ owner: ownerKey, ids, products: currentProducts, status: currentProducts.length ? 'success' : 'empty' })
         }
       }).catch(() => {
         if (!cancelled && version === requestVersion) {
@@ -79,9 +82,9 @@ function RecentlyViewedProducts({ userId, onProductSelect }: RecentlyViewedProdu
       window.removeEventListener(analyticsStorage.changedEvent, handleAnalytics)
       window.removeEventListener('storage', handleStorage)
     }
-  }, [userId])
+  }, [userId, branchId, ownerKey])
 
-  if (snapshot.owner !== userId || snapshot.ids.length === 0) return null
+  if (snapshot.owner !== ownerKey || snapshot.ids.length === 0) return null
   const { products, status } = snapshot
   return (
     <section className={styles.section} aria-labelledby="recently-viewed-title" aria-busy={status === 'loading'}>
@@ -105,7 +108,7 @@ function RecentlyViewedProducts({ userId, onProductSelect }: RecentlyViewedProdu
           <button key={product.id} className={styles.card} type="button" onClick={() => onProductSelect(product)}>
             <img src={product.image} alt="" loading="lazy" />
             <span className={styles.name}>{product.name}</span>
-            <span className={styles.price}>{priceFormatter.format(product.price)}</span>
+            <span className={styles.price}>{product.price === null ? 'Precio no disponible' : priceFormatter.format(product.price)}</span>
           </button>
         ))}
       </div>
