@@ -8,9 +8,9 @@ import { analyticsEnvironment, loadAnalytics } from './helpers/analyticsHarness.
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 const runtimeUrl = dataUrl(`
   let slots=[], cursor=0, effects=[];
-  export let cart=[], revision=0, conflict=false, clears=0;
+  export let cart=[], revision=0, conflict=false, clears=0, ownerId=null;
   export function dispose() { slots.forEach(slot=>slot?.cleanup?.()); }
-  export function reset(items=[]) { dispose(); slots=[];cursor=0;effects=[];cart=items;revision=0;conflict=false;clears=0; }
+  export function reset(items=[]) { dispose(); slots=[];cursor=0;effects=[];cart=items;revision=0;conflict=false;clears=0;ownerId=null; }
   export function begin() { cursor=0; }
   export function useState(initial) { const index=cursor++; if(!(index in slots))slots[index]=typeof initial==='function'?initial():initial; return [slots[index],value=>{slots[index]=typeof value==='function'?value(slots[index]):value}]; }
   export function useRef(initial) { const [ref]=useState(()=>({current:initial})); return ref; }
@@ -19,9 +19,10 @@ const runtimeUrl = dataUrl(`
   export function flush() { const pending=effects;effects=[];pending.forEach(effect=>effect()); return pending; }
   export function changeCart(items) { cart=items;revision++; }
   export function externalChange() { conflict=true;revision++; }
-  const getSnapshot=()=>({items:cart,revision,hasExternalConflict:conflict});
+  const getSnapshot=()=>({items:cart,ownerId,revision,hasExternalConflict:conflict});
   const clearCart=()=>{cart=[];revision++;conflict=false;clears++;};
-  export function useCart() { return {getSnapshot,clearCart,items:cart,hasExternalConflict:conflict}; }
+  const setCartOwner=(next,adopt=false)=>{if(next===null)return true;if(ownerId!==null&&ownerId!==next&&cart.length)return false;if(ownerId===null&&cart.length&&!adopt)return false;ownerId=next;return true;};
+  export function useCart() { return {getSnapshot,clearCart,setCartOwner,items:cart,hasExternalConflict:conflict}; }
   export function jsx(type,props) {return {type,props};} export const jsxs=jsx;
 `)
 const runtime = await import(runtimeUrl)
@@ -162,7 +163,8 @@ test('Cart restaurado requiere consentimiento y cancelar no lo modifica', async 
   const consent = state.pending.cartRevision
   state.confirmTransition(consent)
   state.confirmTransition(consent)
-  assert.equal(runtime.clears, 1)
+  assert.equal(runtime.clears, 0)
+  assert.equal(runtime.ownerId, 'c')
   assert.equal(session.render().user.id, 'c')
 })
 
@@ -172,13 +174,12 @@ test('Logout y cambio preservan identidad/Cart ante cancelación o error', async
   await session.render().resolveUser('c')
   runtime.changeCart([item])
   session.render().requestLogout()
-  assert.equal(session.render().user.id, 'c')
-  session.render().cancelTransition()
+  assert.equal(session.render().user, null)
   session.respond(() => Response.json({ error: { code: 'USER_DISABLED' } }, { status: 403 }))
   session.render().openLogin()
   await session.render().resolveUser('disabled')
   assert.match(session.render().error, /deshabilitada/)
-  assert.equal(session.render().user.id, 'c')
+  assert.equal(session.render().user, null)
   assert.deepEqual(runtime.cart, [item])
   session.render().cancelTransition()
   session.respond(id => Response.json({ user: profiles.find(user => user.id === id) }))
@@ -190,7 +191,7 @@ test('Logout y cambio preservan identidad/Cart ante cancelación o error', async
   assert.equal(runtime.clears, 1)
   session.render().requestLogout()
   assert.equal(session.render().user, null)
-  assert.equal(session.render().epoch, 3)
+  assert.equal(session.render().epoch, 4)
 })
 
 test('doble submit y respuestas obsoletas tras cancelar no cambian Session', async t => {
@@ -231,7 +232,8 @@ test('revalida Cart después de resolver y exige consentimiento nuevo si vuelve 
   assert.match(session.render().error, /carrito cambió/)
   const latest = session.render()
   latest.confirmTransition(latest.pending.cartRevision)
-  assert.equal(runtime.clears, 1)
+  assert.equal(runtime.clears, 0)
+  assert.equal(runtime.ownerId, 'c')
   assert.equal(session.render().user.id, 'c')
 })
 
@@ -291,4 +293,19 @@ test('un desmontaje invalida la petición y un nuevo Provider comienza sin ident
   runtime.reset([item])
   assert.equal(session.render().user, null)
   assert.deepEqual(runtime.cart, [item])
+})
+test('cancelar el cambio de usuario conserva el propietario y el contenido actual del carrito', async t => {
+  const session = flow(t)
+  session.render().openLogin()
+  await session.render().resolveUser('c')
+  runtime.changeCart([item])
+  session.render().openLogin()
+  await session.render().resolveUser('b')
+  assert.equal(session.render().user.id, 'c')
+  assert.equal(session.render().pending.cartOwnerId, 'c')
+  session.render().cancelTransition()
+  assert.equal(session.render().user.id, 'c')
+  assert.equal(runtime.ownerId, 'c')
+  assert.deepEqual(runtime.cart, [item])
+  assert.equal(runtime.clears, 0)
 })

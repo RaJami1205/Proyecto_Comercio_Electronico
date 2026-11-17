@@ -22,7 +22,7 @@ function BranchSelector() {
         </select>
         {isLoading ? <p className={styles.status} role="status">Cargando sucursales…</p> : null}
         {error ? <p className={styles.error} role="alert">{error}</p> : null}
-        {!isLoading && !error ? <p className={styles.notice} role="note">Las existencias mostradas son informativas; la orden aún no valida la sucursal seleccionada.</p> : null}
+        {!isLoading && !error ? <p className={styles.notice} role="note">La disponibilidad se confirma nuevamente al crear la orden.</p> : null}
       </div>
     </section>
   )

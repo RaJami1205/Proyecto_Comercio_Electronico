@@ -22,7 +22,13 @@ function resolvePort(value: string | undefined): number {
   return Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_PORT
 }
 
+const commerceStoreMode = process.env.COMMERCE_STORE_MODE?.trim() || 'memory'
+if (commerceStoreMode !== 'memory' && commerceStoreMode !== 'postgresql') {
+  throw new ConfigurationError('COMMERCE_STORE_MODE debe ser memory o postgresql.')
+}
+
 export const serverConfig = {
+  commerceStoreMode,
   port: resolvePort(process.env.PORT),
   clientOrigin: process.env.CLIENT_ORIGIN?.trim() || DEFAULT_CLIENT_ORIGIN,
 }

@@ -85,7 +85,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   // Garantiza que el Cart se limpie una sola vez por confirmación (CN-33), incluso si
   // algo disparara un re-render extra del mismo resultado APPROVED.
   const cartClearedRef = useRef(false)
-  const purchaseBaselineRef = useRef<{ orderId: string; items: CartItem[] } | undefined>(undefined)
+  const purchaseBaselineRef = useRef<{ orderId: string; ownerId: string; items: CartItem[] } | undefined>(undefined)
   const pageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageChangedRef = useRef(false)
@@ -192,7 +192,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       if (!isCurrentSession()) return
       receivedOrder = true
       const alreadyConfirmed = created.orderStatus === 'CONFIRMED' && created.paymentStatus === 'APPROVED'
-      purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, items: activeAttempt.items }
+      purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, ownerId: activeAttempt.userId, items: activeAttempt.items }
       const changes = alreadyConfirmed ? [] : orderReviewDifferences(activeAttempt.items, created)
       requiresAcceptance = changes.length > 0
       setDifferences(changes)
@@ -303,7 +303,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
         && result.order.paymentStatus === 'APPROVED' && baseline?.orderId === result.order.id
         && !cartClearedRef.current) {
         cartClearedRef.current = true
-        cleanupPurchase({ baseline: baseline.items, purchased: result.order.items })
+        cleanupPurchase({ baseline: baseline.items, purchased: result.order.items, ownerId: baseline.ownerId })
       }
     } catch (failure) {
       if (!isCurrentSession()) return

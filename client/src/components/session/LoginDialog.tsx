@@ -75,10 +75,14 @@ export default function LoginDialog() {
       {session.user ? <p>Identidad actual: <strong>{session.user.displayName}</strong> · {session.user.role}</p> : null}
       {session.error ? <p role="alert">{session.error}</p> : null}
       {consent ? <>
-        <p>Para {session.pending?.kind === 'conflict' ? 'resolver el conflicto' : session.pending?.user ? `continuar como ${session.pending.user.displayName}` : 'cerrar sesión'}, debes descartar el carrito actual ({items.length} productos distintos).</p>
+        {session.pending?.user && session.pending.cartOwnerId === null && session.pending.cartItemCount > 0
+          ? <p>Este carrito anterior no tiene propietario. Si continúas, se asignará explícitamente a {session.pending.user.displayName} ({session.pending.user.role}) y conservará sus productos.</p>
+          : <p>Para {session.pending?.kind === 'conflict' ? 'resolver el conflicto' : session.pending?.user ? `continuar como ${session.pending.user.displayName}` : 'resolver el carrito pendiente'}, se descartará el carrito actual ({session.pending?.cartItemCount ?? items.length} productos distintos).</p>}
         {hasExternalConflict ? <p>Se detectó un cambio externo. No importamos productos de otra pestaña. La clave de guardado sigue compartida: el descarte guardará un carrito vacío y otras pestañas podrán detectar el cambio.</p> : null}
         <p>Este descarte es explícito y no cancela órdenes existentes.</p>
-        <button ref={consentButton} className={styles.primary} type="button" disabled={Boolean(session.transitionBlockReason)} onClick={() => { if (session.pending) session.confirmTransition(session.pending.cartRevision) }}>Descartar carrito y continuar</button>
+        <button ref={consentButton} className={styles.primary} type="button" disabled={Boolean(session.transitionBlockReason)} onClick={() => { if (session.pending) session.confirmTransition(session.pending.cartRevision) }}>
+          {session.pending?.user && session.pending.cartOwnerId === null && session.pending.cartItemCount > 0 ? 'Asignar carrito y continuar' : 'Descartar carrito y continuar'}
+        </button>
       </> : session.dialog === 'login' ? <>
         {loading ? <p role="status">Cargando identidades…</p> : listError ? <>
           <p role="alert">{listError}</p>

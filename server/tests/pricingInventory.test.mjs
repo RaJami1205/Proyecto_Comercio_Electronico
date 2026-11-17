@@ -59,7 +59,7 @@ test('DTO presenta precios y stock según identidad y sucursal, sin habilitar B2
   const b2b = mapper.mapProductRecord(product(), {id:'wholesale',displayName:'Mayorista',role:'B2B',company:{id:'co',name:'Empresa'}}, 'san_jose')
   assert.equal(b2b.price, 800)
   assert.equal(b2b.inventory.quantity, 5)
-  assert.equal(b2b.canAddToCart, false)
+  assert.equal(b2b.canAddToCart, true)
   const b2bUnavailable = mapper.mapProductRecord(product(), {id:'wholesale',displayName:'Mayorista',role:'B2B',company:{id:'co',name:'Empresa'}}, 'alajuela')
   assert.equal(b2bUnavailable.inventory.status, 'out-of-stock')
   const admin = mapper.mapProductRecord(product(), {id:'admin',displayName:'Admin',role:'ADMIN'}, 'san_jose')

@@ -7,8 +7,14 @@ import type { CartItem, CartPurchaseCleanup } from '../types/cart'
 export interface CartContextValue {
   items: CartItem[]
   hasExternalConflict: boolean
-  getSnapshot: () => { items: readonly CartItem[]; revision: number; hasExternalConflict: boolean }
-  addItem: (item: Omit<CartItem, 'quantity'>) => void
+  ownerId: string | null
+  activeOwnerId: string | null
+  isActive: boolean
+  hasInvalidStorage: boolean
+  getSnapshot: () => { items: readonly CartItem[]; ownerId: string | null; revision: number; hasExternalConflict: boolean }
+  setCartOwner: (ownerId: string | null, adoptUnowned?: boolean) => boolean
+  updateProductContext: (productId: string, context: Partial<CartItem>) => void
+  addItem: (item: Omit<CartItem, 'quantity'> & { initialQuantity?: number }) => void
   incrementItem: (productId: string) => void
   decrementItem: (productId: string) => void
   removeItem: (productId: string) => void

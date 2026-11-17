@@ -12,6 +12,7 @@ interface ProductQuickViewProps {
   addedProductId?: string
   onClose: () => void
   feedbackProductName?: string
+  showAddToCart?: boolean
 }
 
 const priceFormatter = new Intl.NumberFormat('es-CR', {
@@ -41,8 +42,8 @@ function CartIcon() {
 }
 
 /** Gestiona el dialog, el foco y el bloqueo de scroll mientras muestra el detalle. */
-function ProductQuickView({ product, onClose, onProductAdded, addedProductId, feedbackProductName }: ProductQuickViewProps) {
-  const { addItem } = useCart()
+function ProductQuickView({ product, onClose, onProductAdded, addedProductId, feedbackProductName, showAddToCart = true }: ProductQuickViewProps) {
+  const { addItem, isActive } = useCart()
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
@@ -53,12 +54,20 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
 
   /** Agrega el snapshot del Product y notifica a la página para mostrar feedback temporal. */
   function handleAddToCart() {
-    if (!product.canAddToCart || product.price === null) return
+    if (!isActive || !product.canAddToCart || product.price === null) return
     addItem({
       productId: product.id,
       name: product.name,
           price: product.price,
       image: product.image,
+      retailPrice: product.retailPrice,
+      pricingType: product.pricing.type,
+      minimumOrderQuantity: product.pricing.minOrderQuantity ?? 1,
+      branchId: product.inventory.branchId,
+      availableQuantity: product.inventory.quantity,
+      inventoryStatus: product.inventory.status,
+      commercialEligible: product.pricing.eligible,
+      initialQuantity: product.pricing.minOrderQuantity ?? 1,
     })
     onProductAdded({ id: product.id, name: product.name })
   }
@@ -200,25 +209,19 @@ function ProductQuickView({ product, onClose, onProductAdded, addedProductId, fe
             </dl>
           </section>
 
-            <div className={styles.actions}>
+            {showAddToCart ? <div className={styles.actions}>
               <button
-                className={`${styles.cartButton} ${
-                  addedProductId === product.id ? styles.cartButtonAdded : ''
-                }`}
+                className={`${styles.cartButton} ${addedProductId === product.id ? styles.cartButtonAdded : ''}`}
                 type="button"
-                disabled={!product.canAddToCart}
-                aria-label={
-                  product.canAddToCart
-                    ? `Agregar ${product.name} al carrito`
-                    : product.inventory.message
-                }
+                disabled={!isActive || !product.canAddToCart}
+                aria-label={product.canAddToCart && isActive ? `Agregar ${product.name} al carrito` : !isActive ? 'Selecciona la identidad propietaria del carrito.' : product.inventory.message}
                 title={product.canAddToCart ? `Agregar ${product.name} al carrito` : product.inventory.message}
                 onClick={handleAddToCart}
               >
                 <CartIcon />
                 {product.canAddToCart ? 'Agregar al carrito' : 'No disponible para agregar'}
               </button>
-            </div>
+            </div> : null}
         </div>
       </article>
     </dialog>

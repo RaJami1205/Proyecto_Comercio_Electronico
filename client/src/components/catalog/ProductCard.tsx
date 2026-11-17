@@ -29,17 +29,25 @@ function CartIcon() {
 
 /** Presenta disponibilidad y precio, delegando detalle y feedback al owner. */
 function ProductCard({ product, onProductSelect, onProductAdded, addedProductId }: ProductCardProps) {
-  const { addItem } = useCart()
+  const { addItem, isActive } = useCart()
   const availabilityLabel = product.inStock ? 'En stock' : 'Agotado'
 
   /** Envía el snapshot mínimo al Cart; quantity y duplicados quedan a cargo del reducer. */
   function handleAddToCart() {
-    if (!product.canAddToCart || product.price === null) return
+    if (!isActive || !product.canAddToCart || product.price === null) return
     addItem({
       productId: product.id,
       name: product.name,
       price: product.price,
       image: product.image,
+      retailPrice: product.retailPrice,
+      pricingType: product.pricing.type,
+      minimumOrderQuantity: product.pricing.minOrderQuantity ?? 1,
+      branchId: product.inventory.branchId,
+      availableQuantity: product.inventory.quantity,
+      inventoryStatus: product.inventory.status,
+      commercialEligible: product.pricing.eligible,
+      initialQuantity: product.pricing.minOrderQuantity ?? 1,
     })
     onProductAdded({ id: product.id, name: product.name })
   }
@@ -67,11 +75,11 @@ function ProductCard({ product, onProductSelect, onProductAdded, addedProductId 
               addedProductId === product.id ? styles.cartButtonAdded : ''
             }`}
             type="button"
-            disabled={!product.canAddToCart}
+            disabled={!isActive || !product.canAddToCart}
             aria-label={
-              product.canAddToCart
+              product.canAddToCart && isActive
                 ? `Agregar ${product.name} al carrito`
-                : product.inventory.message
+                : !isActive ? 'Selecciona la identidad propietaria del carrito.' : product.inventory.message
             }
             title={product.canAddToCart ? `Agregar ${product.name} al carrito` : product.inventory.message}
             onClick={handleAddToCart}

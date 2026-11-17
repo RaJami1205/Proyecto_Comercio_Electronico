@@ -59,8 +59,8 @@ export function mapProductRecord(record: ProductRecord, user: ResolvedUser | nul
     retailPrice: pricing.retailPrice,
     pricing: { type: pricing.type, eligible: pricing.eligible, minOrderQuantity, message: pricingMessage },
     inventory: { ...inventory, canFulfillMinimum, message: inventoryMessage },
-    // Cart agrega unidades de una en una; B2C conserva stock total si aún no selecciona sucursal.
-    canAddToCart: pricing.eligible && minOrderQuantity === 1 && (
+    // B2C conserva stock total sin sucursal; B2B exige inventario local suficiente para su MOQ.
+    canAddToCart: pricing.eligible && minOrderQuantity !== null && (
       inventory.status === 'available' && canFulfillMinimum === true
       || inventory.status === 'unselected' && pricing.type === 'RETAIL'
         && (record.in_stock ?? (typeof record.stock_quantity === 'number' && record.stock_quantity > 0))

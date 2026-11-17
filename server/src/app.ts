@@ -4,7 +4,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 
 import { ConfigurationError, serverConfig } from './config/env.js'
 import productsRouter from './routes/products.js'
-import ordersRouter from './routes/orders.js'
+import ordersRouter, { ordersV2Router } from './routes/orders.js'
 import usersRouter from './routes/users.js'
 import sessionRouter from './routes/session.js'
 import branchesRouter from './routes/branches.js'
@@ -28,7 +28,8 @@ app.use(
 
 app.use('/api/products', productsRouter)
 app.use('/api/branches', branchesRouter)
-app.use('/api/orders', authorizeRoles('B2C'), express.json(), ordersRouter)
+app.use('/api/orders', authorizeRoles('B2C', 'B2B'), express.json(), ordersRouter)
+app.use('/api/v2/orders', authorizeRoles('B2C', 'B2B'), express.json(), ordersV2Router)
 app.use('/api/users', usersRouter)
 app.use('/api/session', express.json(), sessionRouter)
 
@@ -48,7 +49,8 @@ app.use(
       response.status(status).json(body)
       return
     }
-    if (_request.path === '/api/orders' || _request.path.startsWith('/api/orders/')) {
+    if (_request.path === '/api/orders' || _request.path.startsWith('/api/orders/')
+      || _request.path === '/api/v2/orders' || _request.path.startsWith('/api/v2/orders/')) {
       let status = 500
       let body: ApiErrorResponse = { error: { code: 'UNEXPECTED_ERROR', message: 'No se pudo completar la solicitud.' } }
       if (error instanceof OrderError || error instanceof UserError) {

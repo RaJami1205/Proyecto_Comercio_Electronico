@@ -17,8 +17,8 @@ test('Recent Searches conserva cancelación, limpia cambio/Logout/reload y nunca
   h.overrides.set('hooks/useProductCatalog',dataUrl('export function useProductCatalog(){return {products:[],totalPages:1,nbHits:0,facets:{},isLoading:false,error:null}}'))
   for(const name of ['CartFeedbackToast','CatalogFilters','CatalogHero','CatalogToolbar','Pagination','ProductGrid','ProductQuickView','RecentlyViewedProducts'])h.overrides.set('components/catalog/'+name,dataUrl("export default '"+name+"'"))
   for(const name of ['Header','Footer'])h.overrides.set('components/layout/'+name,dataUrl("export default '"+name+"'"))
-  let cart=[],revision=0
-  h.runtime.setCart({getSnapshot:()=>({items:cart,revision,hasExternalConflict:false}),hasExternalConflict:false,clearCart(){cart=[];revision++}})
+  let cart=[],revision=0,ownerId=null
+  h.runtime.setCart({getSnapshot:()=>({items:cart,ownerId,revision,hasExternalConflict:false}),hasExternalConflict:false,clearCart(){cart=[];revision++},setCartOwner(next,adopt=false){if(next===null)return true;if(ownerId!==null&&ownerId!==next&&cart.length)return false;if(ownerId===null&&cart.length&&!adopt)return false;ownerId=next;return true}})
   const profiles=[{id:'c',displayName:'Cliente',role:'B2C'},{id:'b',displayName:'Empresa',role:'B2B',company:{id:'co',name:'Empresa Demo'}}]
   t.mock.method(globalThis,'fetch',async(path,options)=>{
     assert.equal(path,'/api/session/resolve')

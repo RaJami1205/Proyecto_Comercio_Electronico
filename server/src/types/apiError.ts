@@ -25,6 +25,7 @@ export type ApiErrorCode =
   | 'INVENTORY_UNAVAILABLE'
   | 'INSUFFICIENT_INVENTORY'
   | 'CATALOG_RESULT_LIMIT'
+  | 'ORDER_CONTRACT_DEPRECATED'
 
 export interface ApiErrorResponse {
   error: {

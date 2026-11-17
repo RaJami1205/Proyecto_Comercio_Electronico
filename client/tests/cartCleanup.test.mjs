@@ -11,7 +11,7 @@ async function loadSource(file) {
   return import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'))
 }
 const {cartReducer} = await loadSource('context/cartReducer.ts')
-const {saveCart, loadCart, CART_STORAGE_KEY} = await loadSource('utils/cartStorage.ts')
+const {saveCart, loadCart, loadCartEnvelope, parseStoredCart, CART_STORAGE_KEY} = await loadSource('utils/cartStorage.ts')
 const product = {productId:'product-1', name:'Producto', price:10000, image:'', quantity:2}
 
 test('CLEAR_CART no muta el snapshot original y conserva las operaciones del carrito', () => {
@@ -35,5 +35,35 @@ test('el carrito vacío se persiste y no restaura productos anteriores al recarg
     saveCart(cartReducer({items:[product]},{type:'CLEAR_CART'}))
     assert.deepEqual(JSON.parse(storage.get(CART_STORAGE_KEY)),{items:[]})
     assert.deepEqual(loadCart({items:[product]}),{items:[]})
+  } finally { globalThis.window = originalWindow }
+})
+
+test('ownership queda persistido, se restaura inactivo sin sesión y no asigna carritos legacy automáticamente', () => {
+  const originalWindow = globalThis.window
+  const storage = new Map()
+  globalThis.window = {localStorage:{setItem:(key,value) => storage.set(key,value), getItem:key => storage.get(key) ?? null}}
+  try {
+    saveCart({items:[product]}, 'customer-1')
+    assert.deepEqual(loadCartEnvelope(), {items:[product], ownerId:'customer-1', valid:true, legacy:false})
+    saveCart({items:[product]})
+    assert.deepEqual(loadCartEnvelope(), {items:[product], ownerId:null, valid:true, legacy:true})
+    storage.set(CART_STORAGE_KEY, JSON.stringify({schemaVersion:2, ownerId:'bad owner', items:[product]}))
+    assert.equal(loadCartEnvelope().valid, false)
+    assert.equal(loadCartEnvelope().items.length, 0)
+  } finally { globalThis.window = originalWindow }
+})
+test('el storage rechaza sumas duplicadas fuera del rango entero seguro', () => {
+  const duplicate = {...product, quantity:Number.MAX_SAFE_INTEGER}
+  const raw = JSON.stringify({items:[duplicate, {...product, quantity:1}]})
+  assert.equal(parseStoredCart(raw), null)
+})
+test('el envelope pone en cuarentena cualquier línea incompleta sin perderla silenciosamente', () => {
+  const originalWindow = globalThis.window
+  globalThis.window = {localStorage:{getItem:() => JSON.stringify({schemaVersion:2, ownerId:'customer-1', items:[product, {productId:'broken'}]})}}
+  try {
+    const envelope = loadCartEnvelope()
+    assert.equal(envelope.valid, false)
+    assert.deepEqual(envelope.items, [])
+    assert.equal(envelope.ownerId, null)
   } finally { globalThis.window = originalWindow }
 })
