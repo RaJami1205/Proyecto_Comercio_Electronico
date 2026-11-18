@@ -1,5 +1,7 @@
-/** Normaliza y valida datos de comprador y entrega para los formularios del Client. */
+/** Normaliza y valida datos de comprador y entrega, y revisa el contexto comercial previo a crear la Order. */
 import type { BuyerInfo, DeliveryInfo } from '../types/checkout'
+import type { BranchId } from '../types/branch'
+import type { CartItem } from '../types/cart'
 
 export type BuyerErrors = Partial<Record<keyof BuyerInfo, string>>
 export type DeliveryErrors = Partial<Record<keyof DeliveryInfo, string>>
@@ -44,4 +46,36 @@ export function validateDelivery(value: DeliveryInfo): DeliveryErrors {
   if (!delivery.canton) errors.canton = 'Ingresa el cantón.'
   if (!delivery.address) errors.address = 'Ingresa la dirección de entrega.'
   return errors
+}
+
+export type CommercialIssueKind = 'BRANCH_MISMATCH' | 'BELOW_MINIMUM_QUANTITY' | 'INSUFFICIENT_BRANCH_STOCK' | 'INVALID_COMMERCIAL_PRICE'
+
+export interface CommercialIssue {
+  productId: string
+  kind: CommercialIssueKind
+  message: string
+}
+
+/**
+ * Revisa el contexto comercial conocido de cada línea antes de enviar la Order.
+ * Es una verificación preventiva: el Server vuelve a validar precio, MOQ e inventario y su respuesta es la autoridad.
+ * Solo bloquea cuando el contexto indica un problema; no completa datos ni elige sucursales.
+ */
+export function commercialIssues(items: readonly CartItem[], role: 'B2C' | 'B2B', branchId: BranchId): CommercialIssue[] {
+  const expectedPricing = role === 'B2B' ? 'WHOLESALE' : 'RETAIL'
+  const issues: CommercialIssue[] = []
+  for (const item of items) {
+    const minimum = item.minimumOrderQuantity ?? 1
+    if (item.branchId !== undefined && item.branchId !== branchId) {
+      issues.push({ productId: item.productId, kind: 'BRANCH_MISMATCH', message: `${item.name}: la disponibilidad se validó para otra sucursal.` })
+    } else if (item.commercialEligible === false || (item.pricingType !== undefined && item.pricingType !== expectedPricing)) {
+      issues.push({ productId: item.productId, kind: 'INVALID_COMMERCIAL_PRICE', message: `${item.name}: no tiene un precio comercial vigente para tu cuenta.` })
+    } else if (!Number.isSafeInteger(item.quantity) || item.quantity < minimum) {
+      issues.push({ productId: item.productId, kind: 'BELOW_MINIMUM_QUANTITY', message: `${item.name}: la cantidad mínima es ${minimum}.` })
+    } else if ((item.inventoryStatus !== undefined && item.inventoryStatus !== 'available')
+      || (typeof item.availableQuantity === 'number' && item.quantity > item.availableQuantity)) {
+      issues.push({ productId: item.productId, kind: 'INSUFFICIENT_BRANCH_STOCK', message: `${item.name}: la sucursal no tiene existencias suficientes.` })
+    }
+  }
+  return issues
 }

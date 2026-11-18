@@ -12,15 +12,16 @@ interface HeaderProps {
   checkoutView?: boolean
   policyView?: boolean
   analyticsView?: boolean
+  ordersView?: boolean
   onCartClick?: () => void
   onCatalogClick?: () => void
 }
 
 /** Presenta los accesos según la vista activa usando totalUnits de useCart. */
-function Header({ cartView = false, checkoutView = false, policyView = false, analyticsView = false, onCartClick, onCatalogClick }: HeaderProps) {
+function Header({ cartView = false, checkoutView = false, policyView = false, analyticsView = false, ordersView = false, onCartClick, onCatalogClick }: HeaderProps) {
   const { totalUnits } = useCart()
   const session = useSession()
-  const outsideCatalog = cartView || checkoutView || policyView || analyticsView
+  const outsideCatalog = cartView || checkoutView || policyView || analyticsView || ordersView
 
   /** Permite regresar al catálogo mediante el callback de navegación o un ancla. */
   function handleCatalogNavigation(event: MouseEvent<HTMLAnchorElement>) {
@@ -39,6 +40,13 @@ function Header({ cartView = false, checkoutView = false, policyView = false, an
     <li>
       <a href="#analytics" aria-current={analyticsView ? 'page' : undefined}>
         Analytics
+      </a>
+    </li>
+  ) : session.user ? (
+    // CN-64: compradores B2C/B2B acceden a su historial; App resuelve #my-orders igual que #analytics.
+    <li>
+      <a href="#my-orders" aria-current={ordersView ? 'page' : undefined}>
+        Mis órdenes
       </a>
     </li>
   ) : null

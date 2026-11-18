@@ -16,10 +16,8 @@ function transitionReason(state: SessionState): string | null {
 function purchaseReason(state: SessionState, conflict: boolean): string | null {
   if (conflict) return 'Hay un cambio de carrito de otra pestaña pendiente de revisión.'
   if (state.dialog || state.resolving) return 'Completa o cancela el cambio de sesión antes de comprar.'
-  if (!state.user) return 'Inicia una sesión simulada B2C para finalizar la compra.'
-  if (state.user.role !== 'B2C') return state.user.role === 'B2B'
-    ? 'Consulta precios mayoristas y condiciones B2B en el catálogo. El Checkout B2B aún no está disponible.'
-    : 'Checkout disponible temporalmente solo para B2C. El catálogo muestra precios Retail.'
+  if (!state.user) return 'Inicia una sesión simulada B2C o B2B para finalizar la compra.'
+  if (state.user.role === 'ADMIN') return 'La identidad administrativa no puede realizar compras. El catálogo muestra precios Retail.'
   return null
 }
 

@@ -14,7 +14,7 @@ import { OrderPersistenceError } from './domain/orderPersistenceError.js'
 import { PaymentPersistenceError } from './domain/paymentPersistenceError.js'
 import { UserError } from './domain/userError.js'
 import type { ApiErrorResponse } from './types/apiError.js'
-import { authorizeRoles } from './middleware/authorization.js'
+import { authorizeIdentity, authorizeRoles } from './middleware/authorization.js'
 
 const app = express()
 
@@ -29,7 +29,7 @@ app.use(
 app.use('/api/products', productsRouter)
 app.use('/api/branches', branchesRouter)
 app.use('/api/orders', authorizeRoles('B2C', 'B2B'), express.json(), ordersRouter)
-app.use('/api/v2/orders', authorizeRoles('B2C', 'B2B'), express.json(), ordersV2Router)
+app.use('/api/v2/orders', authorizeIdentity(), ordersV2Router)
 app.use('/api/users', usersRouter)
 app.use('/api/session', express.json(), sessionRouter)
 

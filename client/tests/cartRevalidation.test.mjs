@@ -226,7 +226,7 @@ test('el Cart vacío no consulta productos y Recently Viewed sigue limitado a di
   assert.deepEqual(f.calls[0].ids, ids(10))
 })
 
-test('el Cart B2B conserva Wholesale/MOQ y no habilita Checkout B2B anticipadamente', async t => {
+test('el Cart B2B conserva Wholesale/MOQ y habilita Checkout con contexto comercial válido', async t => {
   const f = await flow(t, ids(11).map(id => ({ ...line(id), quantity: 3 })))
   f.respond(call => Response.json({ products: call.ids.map(id => product(id, { ...call, price: 800.125,
     pricing: { type: 'WHOLESALE', eligible: true, minOrderQuantity: 3, message: null } })) }))
@@ -234,5 +234,14 @@ test('el Cart B2B conserva Wholesale/MOQ y no habilita Checkout B2B anticipadame
   const tree = await f.settle()
   assert.ok(f.items.every(item => item.price === 800.125 && item.minimumOrderQuantity === 3))
   assert.match(label(tree), /Precios B2B/)
+  assert.equal(checkout(tree).disabled, false)
+})
+
+test('el Cart B2B bloquea Checkout cuando una cantidad queda bajo el MOQ', async t => {
+  const f = await flow(t, [{ ...line('p1'), quantity: 2 }])
+  f.respond(call => Response.json({ products: call.ids.map(id => product(id, { ...call, price: 800,
+    pricing: { type: 'WHOLESALE', eligible: true, minOrderQuantity: 3, message: null } })) }))
+  f.setUser('business', 'B2B')
+  const tree = await f.settle()
   assert.equal(checkout(tree).disabled, true)
 })

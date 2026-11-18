@@ -142,6 +142,71 @@ test('CN-58/CN-59/CN-61 PostgreSQL aislado: Orders + Payment + Recovery', {
     assert.deepEqual(await otherOrders.findByIdForOwner(order.id, v2Buyer.id), order)
   })
 
+  await t.test('CN-64 Order History paginado en PostgreSQL: dueño, orden estable y persistencia tras reinicio', async () => {
+    const historyOwner = { id: 'history-' + randomUUID().slice(0, 8), displayName: 'Historial ficticio', role: 'B2C' }
+    const stranger = { id: 'stranger-' + randomUUID().slice(0, 8), displayName: 'Otro ficticio', role: 'B2C' }
+    const context = (user) => ({ user, idempotencyKey: randomUUID(), canonicalVersion: 1, canonicalPayload: 'canonical-v1' })
+    const created = []
+    for (let index = 0; index < 12; index += 1) {
+      // Grupos de cuatro con el mismo created_at fuerzan el desempate por id.
+      const createdAt = new Date(Date.UTC(2026, 9, 1 + Math.floor(index / 4), 12)).toISOString()
+      created.push(await orders.createOrReplay(context(historyOwner), async id => ({ ...orderFixture(id), createdAt })))
+    }
+    for (let index = 0; index < 2; index += 1) await orders.createOrReplay(context(stranger), async id => orderFixture(id))
+    const expected = [...created].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || (a.id < b.id ? -1 : 1)).map(order => order.id)
+    const readAll = async store => {
+      const ids = []
+      for (const offset of [0, 5, 10]) {
+        const page = await store.listByOwner(historyOwner.id, offset, 5)
+        assert.equal(page.total, 12)
+        ids.push(...page.orders.map(order => order.id))
+      }
+      return ids
+    }
+    assert.deepEqual(await readAll(orders), expected)
+    // Un Pool y un Store nuevos simulan el reinicio de Node.js: el historial sale de PostgreSQL.
+    const restartedDb = runtime()
+    try {
+      const restarted = new PostgreSQLOrderStore(restartedDb)
+      assert.deepEqual(await readAll(restarted), expected)
+      const beyond = await restarted.listByOwner(historyOwner.id, 50, 5)
+      assert.deepEqual([beyond.orders, beyond.total], [[], 12])
+      assert.equal((await restarted.listByOwner(stranger.id, 0, 10)).total, 2)
+      assert.deepEqual(await restarted.listByOwner('nobody-' + randomUUID().slice(0, 8), 0, 10), { orders: [], total: 0 })
+      const first = (await restarted.listByOwner(historyOwner.id, 0, 1)).orders[0]
+      assert.deepEqual(first, created.find(order => order.id === expected[0]), 'Snapshot financiero histórico intacto')
+      const service = new OrderService(restarted, async () => assert.fail('El historial no consulta el catálogo.'))
+      const mine = await service.listMine(historyOwner, { page: '2', pageSize: '5' })
+      assert.deepEqual([mine.page, mine.pageSize, mine.total, mine.hasMore], [2, 5, 12, true])
+      assert.deepEqual(mine.orders.map(order => order.id), expected.slice(5, 10))
+      assert.ok(mine.orders.every(order => order.branchId === null && order.contractVersion === 1))
+      await assert.rejects(service.listMine({ id: 'admin-ci', displayName: 'Admin', role: 'ADMIN' }, {}), { status: 403, code: 'FORBIDDEN' })
+    } finally { await restartedDb.close() }
+  })
+
+  await t.test('CN-63 Order Ownership con PostgreSQL autoritativo: propietario, ajeno, ADMIN, Payment y Replay', async () => {
+    const order = await new OrderService(orders, v2Lookup).createV2(v2Request(randomUUID()), v2Buyer)
+    const reader = new OrderService(new PostgreSQLOrderStore(secondDb), async () => assert.fail('La consulta no usa catálogo ni Algolia.'))
+    assert.deepEqual(await reader.findAuthorized(order.id, v2Buyer), order)
+    const history = await reader.listMine(v2Buyer, { pageSize: '50' })
+    const summary = history.orders.find(entry => entry.id === order.id)
+    assert.deepEqual(summary, { id: order.id, orderNumber: order.orderNumber, createdAt: order.createdAt, contractVersion: 2,
+      branchId: order.commercial.branchId, total: order.totals.total, currency: 'CRC', orderStatus: 'PENDING', paymentStatus: 'PENDING' })
+    for (const intruder of [owner, { ...v2Buyer, id: 'other-business' }]) {
+      await assert.rejects(reader.findAuthorized(order.id, intruder), { status: 404, code: 'ORDER_NOT_FOUND' })
+    }
+    const adminUser = { id: 'admin-ci', displayName: 'Administración ficticia', role: 'ADMIN' }
+    assert.deepEqual(await reader.findAuthorized(order.id, adminUser), order)
+    await assert.rejects(reader.findAuthorized(randomUUID(), adminUser), { status: 404, code: 'ORDER_NOT_FOUND' })
+    const { service } = pair(secondDb)
+    await assert.rejects(service.process(order.id, paymentRequest('PAYMENT_DECLINED', 'cn63'), owner.id), { status: 404 })
+    assert.equal(await countAttempts(order.id), 0)
+    const declined = await service.process(order.id, paymentRequest('PAYMENT_DECLINED', 'cn63'), v2Buyer.id)
+    await assert.rejects(service.process(order.id, paymentRequest('PAYMENT_DECLINED', 'cn63'), owner.id), { status: 404 })
+    assert.deepEqual(await service.process(order.id, paymentRequest('PAYMENT_DECLINED', 'cn63'), v2Buyer.id), declined)
+    assert.equal(await countAttempts(order.id), 1)
+  })
+
   await t.test('CN-61 fallo comercial y COMMIT diferido revierten Order V2 e Idempotency juntos', async () => {
     const input = v2Request(randomUUID()), key = `${v2Buyer.id}:${input.idempotencyKey}`
     const service = new OrderService(orders, v2Lookup)

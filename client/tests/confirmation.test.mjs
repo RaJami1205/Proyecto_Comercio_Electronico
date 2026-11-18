@@ -38,7 +38,7 @@ modules.set('./services/analytics', dataUrl('export function trackEvent() {}'))
 modules.set('./hooks/useSession', runtimeUrl)
 modules.set('./components/session/LoginDialog', dataUrl("export default 'LoginDialog'"))
 for (const name of ['Header','Footer']) modules.set('../components/layout/'+name,dataUrl(`export default '${name}'`))
-for (const name of ['ProductListingPage','CartPage','CheckoutPage','PolicyPlaceholderPage','TermsPage','ReturnsPolicyPage','FaqPage','AnalyticsDashboardPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
+for (const name of ['ProductListingPage','CartPage','CheckoutPage','PolicyPlaceholderPage','TermsPage','ReturnsPolicyPage','FaqPage','AnalyticsDashboardPage','MyOrdersPage','OrderDetailPage']) modules.set('./pages/'+name,dataUrl(`export default '${name}'`))
 for (const name of ['ShippingPolicyPage','PrivacyPolicyPage']) modules.set('./pages/'+name,dataUrl(`export const ${name} = '${name}'`))
 modules.set('./components/cart/CartPreviewDrawer',dataUrl("export default 'CartPreviewDrawer'"))
 /** Transpila el archivo indicado y resuelve únicamente las dependencias aisladas del harness. */
@@ -110,6 +110,13 @@ test('Confirmation usa snapshot autoritativo con Cart vacío o diferente, sin re
     runtime.flushEffects()
     assert.deepEqual(requests,[])
   }
+})
+
+test('F2-01 Confirmation distingue una consulta de estado de un nuevo resultado de Payment', () => {
+  runtime.reset()
+  assert.match(text(renderConfirmation({ recovered: true })), /Esta orden ya estaba confirmada/)
+  assert.match(text(renderConfirmation({ recovered: true })), /la consulta no procesó pagos ni modificó tu carrito/)
+  assert.doesNotMatch(text(renderConfirmation()), /Recuperamos su estado/)
 })
 
 test('F3 destino semántico, foco tras commit y sin reenfocar por renders ordinarios',()=>{

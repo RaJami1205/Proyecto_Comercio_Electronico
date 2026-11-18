@@ -1,0 +1,16 @@
+# Client build (tsc -b + vite build) | 2026-11-18T15:33:41Z | commit base 0b90fe3 + cambios CN-69 | node v22.23.5
+
+> client@0.0.0 build
+> tsc -b && vite build
+
+vite v8.3.7 building client environment for production...
+transforming...
+✓ 124 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.45 kB │ gzip:   0.28 kB
+dist/assets/index-Bt75x22y.css  101.73 kB │ gzip:  20.25 kB
+dist/assets/index-CiduO4Sg.js   432.66 kB │ gzip: 127.52 kB
+
+✓ built in 601ms
+exit=0

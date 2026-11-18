@@ -1,0 +1,107 @@
+{
+  "UI-01": {
+    "title": "Simulated Login B2C y catálogo Retail",
+    "expected": "El Header muestra la identidad B2C y el catálogo presenta precios Retail",
+    "obtained": "Identidad Cliente QA (B2C) visible y SSD a ₡45 000 (Retail)",
+    "status": "PASS",
+    "evidence": [
+      "UI-01-catalogo-b2c-*.jpg"
+    ],
+    "consoleErrors": []
+  },
+  "UI-02": {
+    "title": "Sucursal, inventario y Shopping Cart",
+    "expected": "Al elegir sucursal se muestra disponibilidad y el carrito conserva las líneas",
+    "obtained": "Carrito B2C con SSD y Mouse validados para San José",
+    "status": "PASS",
+    "evidence": [
+      "UI-02-carrito-b2c-*.jpg"
+    ],
+    "consoleErrors": []
+  },
+  "UI-03": {
+    "title": "Checkout B2C con Payment DECLINED, Retry y APPROVED",
+    "expected": "Review muestra cuenta y sucursal, el rechazo permite Retry y el pago aprobado confirma la compra",
+    "obtained": "Rechazo con Retry, aprobación y carrito limpio (Safe Cart Cleanup)",
+    "status": "PASS",
+    "evidence": [
+      "UI-03-review-b2c-*.jpg",
+      "UI-03-pago-rechazado-desktop.jpg",
+      "UI-03-confirmacion-b2c-*.jpg"
+    ],
+    "consoleErrors": []
+  },
+  "UI-04": {
+    "title": "My Orders y Order Detail B2C",
+    "expected": "El historial lista la compra con sus estados y el detalle muestra el snapshot",
+    "obtained": "Listado con Order confirmada y detalle con productos, importes, sucursal y Términos",
+    "status": "PASS",
+    "evidence": [
+      "UI-04-mis-ordenes-*.jpg",
+      "UI-04-detalle-*.jpg"
+    ],
+    "consoleErrors": []
+  },
+  "UI-05": {
+    "title": "Recarga directa del detalle",
+    "expected": "Tras recargar se pide identidad y, al elegirla, el detalle se recupera desde el Server",
+    "obtained": "Hash #my-orders/4b632a91-0925-4cce-9590-6b3bfa346d8d conservado y detalle recuperado tras elegir identidad",
+    "status": "PASS",
+    "evidence": [
+      "UI-05-recarga-sin-sesion-desktop.jpg",
+      "UI-05-recarga-detalle-desktop.jpg"
+    ],
+    "consoleErrors": []
+  },
+  "UI-06": {
+    "title": "Inventario insuficiente por sucursal",
+    "expected": "Con existencias insuficientes en la sucursal el carrito bloquea el Checkout",
+    "obtained": "Alajuela tiene 2 unidades y el carrito no permite superar ese límite (cantidad 2)",
+    "status": "PASS",
+    "evidence": [
+      "UI-06-stock-insuficiente-desktop.jpg"
+    ],
+    "consoleErrors": []
+  },
+  "UI-07": {
+    "title": "Simulated Login B2B, Wholesale y MOQ",
+    "expected": "El catálogo muestra precio mayorista y el mínimo de compra B2B",
+    "obtained": "SSD a ₡39 000 Wholesale y Mouse sin condición B2B bloqueado",
+    "status": "PASS",
+    "evidence": [
+      "UI-07-catalogo-b2b-*.jpg"
+    ],
+    "consoleErrors": []
+  },
+  "UI-08": {
+    "title": "Compra B2B completa con MOQ",
+    "expected": "El carrito agrega el mínimo, Review muestra empresa y MOQ y el pago confirma",
+    "obtained": "Compra B2B confirmada con empresa, Wholesale y MOQ en el detalle",
+    "status": "PASS",
+    "evidence": [
+      "UI-08-review-b2b-desktop.jpg",
+      "UI-08-detalle-b2b-*.jpg"
+    ],
+    "consoleErrors": []
+  },
+  "UI-09": {
+    "title": "ADMIN no usa My Orders ni compra",
+    "expected": "El acceso directo a #my-orders vuelve al catálogo y el Header ofrece Analytics",
+    "obtained": "ADMIN redirigido a #catalog, sin Mis órdenes y con Analytics",
+    "status": "PASS",
+    "evidence": [
+      "UI-09-admin-*.jpg"
+    ],
+    "consoleErrors": []
+  },
+  "UI-10": {
+    "title": "Recuperación de Orders después de reiniciar el Server",
+    "expected": "Tras reiniciar Node.js el historial B2C y B2B sigue disponible desde PostgreSQL",
+    "obtained": "Historiales B2C y B2B recuperados después de reiniciar el proceso del Server",
+    "status": "PASS",
+    "evidence": [
+      "UI-10-tras-reinicio-desktop.jpg"
+    ],
+    "consoleErrors": []
+  }
+}

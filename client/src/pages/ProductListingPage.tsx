@@ -122,10 +122,10 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
       <main>
         <p className="retail-notice">
           {user?.role === 'B2B'
-            ? 'Precios mayoristas y condiciones comerciales aplicados. La compra B2B estará disponible cuando el checkout valide estas condiciones.'
+            ? 'Precios mayoristas y condiciones comerciales aplicados. El checkout valida nuevamente precio, mínimo de compra e inventario de tu sucursal.'
             : user?.role === 'ADMIN'
               ? 'Vista administrativa de precios públicos; las compras están deshabilitadas.'
-              : 'Catálogo público a precios Retail. Checkout disponible temporalmente solo para identidades B2C.'}
+              : 'Catálogo público a precios Retail. Inicia una sesión B2C o B2B para comprar.'}
         </p>
         <BranchSelector />
         <CatalogHero />

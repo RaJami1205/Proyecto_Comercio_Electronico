@@ -2,9 +2,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { BranchContext } from './BranchContext'
 import { getBranches } from '../services/productApi'
+import { useSession } from '../hooks/useSession'
 import type { Branch, BranchId } from '../types/branch'
 
 export default function BranchProvider({ children }: { children: ReactNode }) {
+  const { isTransactionBlocked } = useSession()
   const [branches, setBranches] = useState<Branch[]>([])
   const [selectedBranchId, setSelectedBranchId] = useState<BranchId | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -24,6 +26,8 @@ export default function BranchProvider({ children }: { children: ReactNode }) {
   }, [])
 
   function selectBranch(branchId: BranchId | null) {
+    // Una Order o un Payment pendiente/incierto conserva la sucursal de su intento.
+    if (isTransactionBlocked()) return
     if (branchId !== null && !branches.some(branch => branch.id === branchId && branch.available)) return
     setSelectedBranchId(branchId)
   }

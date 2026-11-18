@@ -13,10 +13,25 @@ export interface OrderCreationContext {
 
 export type OrderBuilder = (id: string, signal?: AbortSignal) => Promise<Order>
 
+/** Página de Orders de un propietario; total cuenta todas las Orders de ese propietario. */
+export interface OwnerOrdersPage {
+  orders: Order[]
+  total: number
+}
+
+/** Orden estable del historial: createdAt descendente y, ante empates, id ascendente. */
+export function compareHistoryOrder(first: Pick<Order, 'createdAt' | 'id'>, second: Pick<Order, 'createdAt' | 'id'>): number {
+  const byDate = Date.parse(second.createdAt) - Date.parse(first.createdAt)
+  if (byDate !== 0) return byDate
+  return first.id < second.id ? -1 : first.id > second.id ? 1 : 0
+}
+
 export interface OrderStore {
   createOrReplay(context: OrderCreationContext, build: OrderBuilder): Promise<Order>
   findById(id: string): Promise<Order | undefined>
   findByIdForOwner(id: string, ownerId: string): Promise<Order | undefined>
+  /** Consulta paginada filtrada por propietario en la persistencia; nunca filtra un listado global. */
+  listByOwner(ownerId: string, offset: number, limit: number): Promise<OwnerOrdersPage>
   findByIdempotencyKey(key: string, ownerId: string): Promise<Order | undefined>
   update(order: Order, ownerId: string): Promise<Order | undefined>
 }
@@ -76,6 +91,13 @@ export class InMemoryOrderStore implements OrderStore {
   async findByIdForOwner(id: string, ownerId: string): Promise<Order | undefined> {
     const entry = this.orders.get(id)
     return ownerId && entry?.ownerId === ownerId ? structuredClone(entry.snapshot) : undefined
+  }
+
+  async listByOwner(ownerId: string, offset: number, limit: number): Promise<OwnerOrdersPage> {
+    // Las Orders sin propietario verificable nunca coinciden con un ownerId y quedan fuera del historial.
+    const owned = ownerId ? [...this.orders.values()].filter(entry => entry.ownerId === ownerId).map(entry => entry.snapshot) : []
+    owned.sort(compareHistoryOrder)
+    return { orders: owned.slice(offset, offset + limit).map(order => structuredClone(order)), total: owned.length }
   }
 
   async findByIdempotencyKey(key: string, ownerId?: string): Promise<Order | undefined> {
