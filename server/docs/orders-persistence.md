@@ -38,7 +38,7 @@ Mantener `v1-compatible` mientras el Client utilice Checkout V1. Esa compatibili
 
 - `OrderStore` expone Create-or-Replay, búsquedas y actualización de estados mediante Promises. La creación persistente no ofrece un INSERT de Order separado de Idempotency. `InMemoryOrderStore.create` permanece como utilidad async de fixtures/compatibilidad legacy.
 - `OrderService.create` recibe el `ResolvedUser` ya validado por CN-54; conserva B2C-only. Copia id/displayName/role desde ese contexto, nunca del body. No consulta nuevamente Algolia Users.
-- El DTO HTTP de Order no cambia ni expone ownership interno. GET espera el resultado async. Las búsquedas de propietario, Payment y Replay ajeno conservan 404.
+- El DTO HTTP de Order no cambia ni expone ownership interno. GET espera el resultado async. Las búsquedas de propietario, Payment y Replay ajeno conservan 404. La matriz RBAC, la consulta administrativa y la política de Orders sin propietario se documentan en [Order Ownership y Payment Authorization](order-authorization.md).
 - La key V1 sigue siendo global. La canonicalización conserva Buyer/Delivery normalizados, Terms y cantidades agregadas/ordenadas. No cambia el tratamiento histórico de teléfonos, email, información adicional vacía ni líneas repetidas.
 - Se captura la vigencia de Terms al recibir la solicitud, como en V1; solo se exige al ganar una creación nueva. Replay admite versiones reconocidas históricas y no ejecuta el builder.
 - UUID, Order Number y snapshots financieros siguen generándose con las reglas existentes. Las Orders legacy sin owner no se asignan a una identidad seleccionada ni se migran automáticamente desde memoria.

@@ -4,6 +4,7 @@ import { OrderError } from '../domain/orderError.js'
 import { validateCreateOrderRequest, validateCreateOrderV2Request } from '../domain/orderValidation.js'
 import { isCurrentTermsVersion } from '../domain/termsPolicy.js'
 import { orderIdentity, orderIdentityV2, orderQuantities, requireCompatible, requireOrderOwner } from '../domain/orderIdentity.js'
+import { orderReadScope } from '../domain/orderAccess.js'
 import type { OrderStore } from '../stores/orderStore.js'
 import { commerceStores } from '../stores/commerceStores.js'
 import type { CreateOrderRequest, Order, OrderItem } from '../types/order.js'
@@ -69,8 +70,23 @@ export class OrderService {
     finally { this.pending.delete(storageKey) }
   }
 
+  /** Compatibilidad interna previa al CN-63: lectura acotada a un propietario ya conocido. */
   async findById(id: string, ownerId: string): Promise<Order> {
     const order = await this.store.findByIdForOwner(id, ownerId)
+    if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
+    return order
+  }
+
+  /**
+   * Consulta individual autorizada. La propiedad se verifica contra el owner almacenado en la persistencia
+   * (PostgreSQL cuando está configurado), nunca contra datos del body ni contra Algolia.
+   * Inexistente, ajena o sin propietario verificable responden igual (404) para no revelar Orders de otros usuarios.
+   */
+  async findAuthorized(id: string, user: ResolvedUser): Promise<Order> {
+    const scope = orderReadScope(user)
+    const order = scope.kind === 'all'
+      ? await this.store.findById(id)
+      : await this.store.findByIdForOwner(id, scope.ownerId)
     if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
     return order
   }

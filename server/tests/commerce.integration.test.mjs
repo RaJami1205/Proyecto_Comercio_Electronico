@@ -142,6 +142,25 @@ test('CN-58/CN-59/CN-61 PostgreSQL aislado: Orders + Payment + Recovery', {
     assert.deepEqual(await otherOrders.findByIdForOwner(order.id, v2Buyer.id), order)
   })
 
+  await t.test('CN-63 Order Ownership con PostgreSQL autoritativo: propietario, ajeno, ADMIN, Payment y Replay', async () => {
+    const order = await new OrderService(orders, v2Lookup).createV2(v2Request(randomUUID()), v2Buyer)
+    const reader = new OrderService(new PostgreSQLOrderStore(secondDb), async () => assert.fail('La consulta no usa catálogo ni Algolia.'))
+    assert.deepEqual(await reader.findAuthorized(order.id, v2Buyer), order)
+    for (const intruder of [owner, { ...v2Buyer, id: 'other-business' }]) {
+      await assert.rejects(reader.findAuthorized(order.id, intruder), { status: 404, code: 'ORDER_NOT_FOUND' })
+    }
+    const adminUser = { id: 'admin-ci', displayName: 'Administración ficticia', role: 'ADMIN' }
+    assert.deepEqual(await reader.findAuthorized(order.id, adminUser), order)
+    await assert.rejects(reader.findAuthorized(randomUUID(), adminUser), { status: 404, code: 'ORDER_NOT_FOUND' })
+    const { service } = pair(secondDb)
+    await assert.rejects(service.process(order.id, paymentRequest('PAYMENT_DECLINED', 'cn63'), owner.id), { status: 404 })
+    assert.equal(await countAttempts(order.id), 0)
+    const declined = await service.process(order.id, paymentRequest('PAYMENT_DECLINED', 'cn63'), v2Buyer.id)
+    await assert.rejects(service.process(order.id, paymentRequest('PAYMENT_DECLINED', 'cn63'), owner.id), { status: 404 })
+    assert.deepEqual(await service.process(order.id, paymentRequest('PAYMENT_DECLINED', 'cn63'), v2Buyer.id), declined)
+    assert.equal(await countAttempts(order.id), 1)
+  })
+
   await t.test('CN-61 fallo comercial y COMMIT diferido revierten Order V2 e Idempotency juntos', async () => {
     const input = v2Request(randomUUID()), key = `${v2Buyer.id}:${input.idempotencyKey}`
     const service = new OrderService(orders, v2Lookup)

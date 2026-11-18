@@ -19,8 +19,8 @@ export async function createOrderV2(request: Request, response: AuthorizedRespon
   catch (error) { next(error) }
 }
 
-/** Busca la Order por el identificador de la ruta, responde con su snapshot y propaga errores a Express. */
+/** Consulta legacy y V2: la política de Order Ownership decide el alcance antes de leer la persistencia. */
 export async function getOrder(request: Request, response: AuthorizedResponse, next: NextFunction): Promise<void> {
-  try { response.status(200).json(await orderService.findById(String(request.params.orderId), response.locals.user.id)) }
+  try { response.status(200).json(await orderService.findAuthorized(String(request.params.orderId), response.locals.user)) }
   catch (error) { next(error) }
 }
