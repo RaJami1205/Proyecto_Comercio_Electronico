@@ -22,20 +22,21 @@ function clientService(name,base){
 test('CN-47 Client/Server: errores, POST, GET, Payment Retry y confirmed replay con metadata real',async t=>{
   mockUserDirectory(t)
   const original=orderService.lookup
-  orderService.lookup=async id=>({objectID:id,title:'Producto local',price:10000,image_url:'',in_stock:true,stock_quantity:5})
+  // El Client crea Orders V2 (CN-62): el producto necesita inventario de la sucursal solicitada.
+  orderService.lookup=async id=>({objectID:id,title:'Producto local',price:10000,image_url:'',in_stock:true,stock_quantity:5,stock_by_branch:{san_jose:5}})
   const server=app.listen(0,'127.0.0.1')
   await new Promise(resolve=>server.once('listening',resolve))
   const base='http://127.0.0.1:'+server.address().port
   const realFetch=globalThis.fetch,sent=[]
   t.mock.method(globalThis,'fetch',async(url,options)=>{
-    assert.ok(String(url).startsWith(base+'/api/orders'),'Solo HTTP local de prueba')
+    assert.ok(String(url).startsWith(base+'/api/orders')||String(url).startsWith(base+'/api/v2/orders'),'Solo HTTP local de prueba')
     if(options?.body)sent.push(JSON.parse(options.body))
     return realFetch(url,options)
   })
   try {
     const {orderApi,OrderApiError}=await clientService('orderApi',base)
     const {paymentApi}=await clientService('paymentApi',base)
-    const input={buyer:{fullName:'Prueba',email:'test@example.com',phone:'88888888'},delivery:{province:'San José',canton:'Central',address:'Ficticia'},items:[{productId:'p',quantity:1}],idempotencyKey:'integration',termsAcceptance:{accepted:true,version:CURRENT_TERMS_VERSION,acceptedAt:'forged'}}
+    const input={buyer:{fullName:'Prueba',email:'test@example.com',phone:'88888888'},delivery:{province:'San José',canton:'Central',address:'Ficticia'},items:[{productId:'p',quantity:1}],idempotencyKey:'integration',branchId:'san_jose',termsAcceptance:{accepted:true,version:CURRENT_TERMS_VERSION,acceptedAt:'forged'}}
     for(const [termsAcceptance,field] of [[{accepted:false,version:CURRENT_TERMS_VERSION},'accepted'],[{accepted:true,version:'unknown'},'version']]){
       await assert.rejects(orderApi.createOrder({...input,termsAcceptance}, 'test-user'),error=>error instanceof OrderApiError && error.conclusive && !!error.fieldErrors['termsAcceptance.'+field])
     }
@@ -48,15 +49,15 @@ test('CN-47 Client/Server: errores, POST, GET, Payment Retry y confirmed replay 
     assert.equal(new Date(created.termsAcceptance.acceptedAt).toISOString(),created.termsAcceptance.acceptedAt)
     const fetched=await fetch(base+'/api/orders/'+created.id, { headers: testIdentityHeaders })
     assert.equal(fetched.status,200);assert.deepEqual(await fetched.json(),created)
-    const replay=await fetch(base+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json', ...testIdentityHeaders},body:JSON.stringify(input)})
+    const replay=await fetch(base+'/api/v2/orders',{method:'POST',headers:{'Content-Type':'application/json', ...testIdentityHeaders},body:JSON.stringify(input)})
     assert.equal(replay.status,201);assert.deepEqual(await replay.json(),created)
-    const forged=await fetch(base+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json', ...testIdentityHeaders},body:JSON.stringify({...input,idempotencyKey:'forged-time'})})
+    const forged=await fetch(base+'/api/v2/orders',{method:'POST',headers:{'Content-Type':'application/json', ...testIdentityHeaders},body:JSON.stringify({...input,idempotencyKey:'forged-time'})})
     assert.equal(forged.status,201)
     const forgedOrder=await forged.json()
     assert.equal(forgedOrder.termsAcceptance.acceptedAt,forgedOrder.createdAt)
     assert.notEqual(forgedOrder.termsAcceptance.acceptedAt,'forged')
-    // Mantiene la clasificación preexistente de conflictos; no genera otra key.
-    await assert.rejects(orderApi.createOrder({...input,buyer:{...input.buyer,fullName:'Otro'}}, 'test-user'),error=>error instanceof OrderApiError && !error.conclusive && !!error.fieldErrors.idempotencyKey)
+    // CN-62: el conflicto de key es concluyente (no se creó otra Order) y no genera otra key automáticamente.
+    await assert.rejects(orderApi.createOrder({...input,buyer:{...input.buyer,fullName:'Otro'}}, 'test-user'),error=>error instanceof OrderApiError && error.conclusive && !!error.fieldErrors.idempotencyKey)
     let approved
     for(const scenario of ['PAYMENT_ERROR','PAYMENT_DECLINED','PAYMENT_APPROVED']){
       const payment={scenario,idempotencyKey:scenario}
@@ -74,7 +75,7 @@ test('CN-47 Client/Server: errores, POST, GET, Payment Retry y confirmed replay 
     await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()))
   }
 })
-test('CN-58 HTTP 503 y outcome unknown conservan el intento en el Client V1 sin exponer errores internos',async t=>{
+test('CN-58 HTTP 503 y outcome unknown conservan el intento en el Client sin exponer errores internos',async t=>{
   mockUserDirectory(t)
   const server=app.listen(0,'127.0.0.1')
   await new Promise(resolve=>server.once('listening',resolve))
@@ -82,9 +83,10 @@ test('CN-58 HTTP 503 y outcome unknown conservan el intento en el Client V1 sin 
   const base='http://127.0.0.1:'+server.address().port
   const {orderApi,OrderApiError}=await clientService('orderApi',base)
   const input={buyer:{fullName:'Test',email:'test@example.com',phone:'88888888'},delivery:{province:'San José',canton:'Central',address:'Prueba'},
-    items:[{productId:'p',quantity:1}],idempotencyKey:'same-key',termsAcceptance:{accepted:true,version:CURRENT_TERMS_VERSION}}
+    items:[{productId:'p',quantity:1}],idempotencyKey:'same-key',branchId:'san_jose',termsAcceptance:{accepted:true,version:CURRENT_TERMS_VERSION}}
   for(const outcome of ['not-committed','unknown']){
     const mock=t.mock.method(orderService,'create',async()=>{throw new OrderPersistenceError(outcome)})
+    const mockV2=t.mock.method(orderService,'createV2',async()=>{throw new OrderPersistenceError(outcome)})
     const response=await fetch(base+'/api/orders',{method:'POST',headers:{...testIdentityHeaders,'Content-Type':'application/json'},body:JSON.stringify(input)})
     assert.equal(response.status,503)
     const body=await response.json()
@@ -93,5 +95,6 @@ test('CN-58 HTTP 503 y outcome unknown conservan el intento en el Client V1 sin 
     assert.doesNotMatch(JSON.stringify(body),/password|certificate|postgres:\/\//i)
     await assert.rejects(orderApi.createOrder(input,'test-user'),error=>error instanceof OrderApiError&&!error.conclusive&&error.code==='UNEXPECTED_ERROR')
     mock.mock.restore()
+    mockV2.mock.restore()
   }
 })
