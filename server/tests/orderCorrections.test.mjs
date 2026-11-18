@@ -11,6 +11,8 @@ const sources = new Map()
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 sources.set('services/productService', dataUrl('export async function getProductById() { throw new Error("Debe inyectarse el catálogo simulado") }'))
 sources.set('config/env', dataUrl('export const serverConfig={commerceStoreMode:undefined}'))
+// CN-65: la proyección hacia Algolia queda deshabilitada en estos módulos aislados.
+sources.set('services/orderIndexing', dataUrl('export const orderIndexNotifier={notify(){}}'))
 for (const name of ['db/databaseError', 'domain/termsPolicy', 'domain/orderError', 'domain/userError', 'domain/orderAccess', 'domain/orderHistory', 'domain/catalogError', 'services/branchService', 'domain/pricing', 'domain/inventory', 'domain/orderIdentity', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderRowMapper', 'stores/orderStore', 'stores/paymentStore', 'stores/commerceStores', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
   const source = readFileSync(new URL('../src/' + name + '.ts', import.meta.url), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText

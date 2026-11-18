@@ -39,9 +39,13 @@ export class PostgreSQLOrderStore implements OrderStore {
     return mapOrderRow(rows[0])
   }
 
-  /** Actualiza únicamente estados con el client prestado; nunca inicia otra transacción. */
+  /**
+   * Actualiza únicamente estados con el client prestado; nunca inicia otra transacción.
+   * Un cambio efectivo registra en el mismo commit una revisión pendiente para el índice orders (CN-65).
+   */
   async updateWithClient(client: PoolClient, order: Order, ownerId: string, timeoutMs: number): Promise<Order | undefined> {
-    const statement = { text: `UPDATE commerce.orders SET order_status = $1, payment_status = $2, updated_at = $3
+    const statement = { text: `UPDATE commerce.orders SET order_status = $1, payment_status = $2, updated_at = $3,
+      index_version = index_version + CASE WHEN order_status = $1 AND payment_status = $2 THEN 0 ELSE 1 END
       WHERE id = $4 AND owner_user_id = $5 RETURNING *`,
       values: [order.orderStatus, order.paymentStatus, new Date().toISOString(), order.id, ownerId], query_timeout: timeoutMs }
     const rows = (await client.query(statement)).rows
