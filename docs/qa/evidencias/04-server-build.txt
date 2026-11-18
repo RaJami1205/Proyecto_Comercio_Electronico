@@ -1,0 +1,6 @@
+# Server build (TypeScript check) | 2026-11-18T15:34:21Z | commit base 0b90fe3 + cambios CN-69 | node v22.23.5
+
+> cibernova-server@0.0.0 build
+> tsc -p tsconfig.json
+
+exit=0

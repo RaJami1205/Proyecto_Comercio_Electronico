@@ -55,3 +55,27 @@ jobs:
       - name: Run build
         working-directory: client
         run: npm run build
+
+  # CN-69: las suites del Client (node:test) no se ejecutaban en CI; solo lint y build.
+  test:
+    name: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Run automated tests
+        working-directory: client
+        run: node --test
