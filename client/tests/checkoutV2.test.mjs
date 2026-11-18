@@ -67,6 +67,7 @@ modules.set('../utils/authorizationErrors', compile('utils/authorizationErrors.t
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 modules.set('../services/paymentApi', compile('services/paymentApi.ts'))
+modules.set('../services/orderHistoryApi', compile('services/orderHistoryApi.ts'))
 const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx'))
 const { default: ReviewStep } = await import(compile('components/checkout/ReviewStep.tsx'))
 const { calculateCartTotals } = await import(calculationsUrl)
@@ -404,6 +405,31 @@ test('Payment incierto conserva Order ID y key; el Retry de red no duplica el pr
   assert.equal(payments.length, 2)
   assert.equal(payments[0].body.idempotencyKey, payments[1].body.idempotencyKey)
   assert.equal(runtime.cleanups.length, 1)
+})
+
+test('F2-01 B2B recupera la misma Order y sucursal con la identidad capturada', async t => {
+  const created = serverOrder(b2b, [wholesaleLine])
+  const confirmed = { ...created, orderStatus: 'CONFIRMED', paymentStatus: 'APPROVED' }
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, method: options.method })
+    assert.equal(options.headers['X-CiberNova-User-Id'], b2b.id)
+    if (url === '/api/v2/orders') return Response.json(created, { status: 201 })
+    if (options.method === 'POST') return Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED' } }, { status: 409 })
+    assert.equal(url, '/api/v2/orders/' + created.id)
+    assert.equal(options.method, 'GET')
+    return Response.json(confirmed)
+  })
+  const flow = checkout({ user: b2b, items: [wholesaleLine] })
+  await flow.review().onConfirm(); flow.render()
+  flow.payment().onScenarioChange('PAYMENT_APPROVED'); flow.render()
+  await flow.payment().onProcessPayment(); flow.render()
+  assert.equal(flow.tree.type, 'OrderConfirmationPage')
+  assert.deepEqual(flow.tree.props.order, confirmed)
+  assert.equal(flow.tree.props.recovered, true)
+  assert.equal(flow.events.at(-1), 'tx:known')
+  assert.deepEqual(runtime.cleanups, [])
+  assert.deepEqual(requests.map(request => request.method), ['POST', 'POST', 'GET'])
 })
 
 test('Respuesta de creación tras cambio de identidad no se aplica a la nueva Session', async t => {

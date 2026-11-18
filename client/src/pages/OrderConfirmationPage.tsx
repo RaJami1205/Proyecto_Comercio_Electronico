@@ -9,6 +9,8 @@ interface OrderConfirmationPageProps {
   order: Order
   onCatalogClick: (hash?: '#top' | '#catalog') => void
   onCartClick: () => void
+  /** Estado consultado tras rechazar otro Payment; no implica un resultado nuevo de ese intento. */
+  recovered?: boolean
 }
 
 /**
@@ -16,7 +18,7 @@ interface OrderConfirmationPageProps {
  * autoritativa: no lee CartState ni recalcula nada a partir de él, y no
  * ofrece ninguna acción de pago (no hay Retry posible desde acá).
  */
-function OrderConfirmationPage({ order, onCatalogClick, onCartClick }: OrderConfirmationPageProps) {
+function OrderConfirmationPage({ order, onCatalogClick, onCartClick, recovered = false }: OrderConfirmationPageProps) {
   // Defensa adicional: aunque quien monta esta página ya debe garantizar
   // Order CONFIRMED/APPROVED, nunca se presenta una confirmación falsa
   // si por algún estado inconsistente se llegara a invocar sin cumplirlo.
@@ -69,6 +71,7 @@ function OrderConfirmationPage({ order, onCatalogClick, onCartClick }: OrderConf
                 Orden <strong>{order.orderNumber}</strong>
               </p>
               <p className={styles.date}>{formattedDate}</p>
+              {recovered ? <p>Esta orden ya estaba confirmada. Recuperamos su estado; la consulta no procesó pagos ni modificó tu carrito.</p> : null}
             </div>
           </div>
 

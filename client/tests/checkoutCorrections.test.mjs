@@ -65,6 +65,7 @@ modules.set('../utils/authorizationErrors', compile('utils/authorizationErrors.t
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 modules.set('../services/paymentApi', compile('services/paymentApi.ts'))
+modules.set('../services/orderHistoryApi', compile('services/orderHistoryApi.ts'))
 modules.set('./OrderConfirmationPage', dataUrl("export default 'OrderConfirmationPage'"))
 const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx'))
 const { default: ReviewStep } = await import(compile('components/checkout/ReviewStep.tsx'))

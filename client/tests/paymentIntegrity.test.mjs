@@ -67,6 +67,7 @@ const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 const paymentApiUrl = compile('services/paymentApi.ts');
 modules.set('../services/paymentApi', paymentApiUrl);
+modules.set('../services/orderHistoryApi', compile('services/orderHistoryApi.ts'));
 const { paymentApi, PaymentApiError } = await import(paymentApiUrl);
 modules.set('./OrderConfirmationPage', dataUrl("export default 'OrderConfirmationPage'"))
 const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx'))
@@ -121,9 +122,17 @@ async function paymentFlow(t, scenario = 'PAYMENT_DECLINED', Page = CheckoutPage
   const requests = []
   /** Construye la respuesta simulada para el escenario incluido en la solicitud de pago. */
   let respond = request => { const response = result(request.scenario); return Response.json({ ...response, order: { ...response.order, id: orderId } }) }
+  let readOrder = () => { throw new Error('Consulta de Order inesperada') }
   globalThis.fetch = async (url, options) => {
-    assert.equal(options.method, 'POST')
     assert.equal(options.headers['X-CiberNova-User-Id'], 'test-user')
+    if (options.method === 'GET') {
+      assert.equal(url, '/api/v2/orders/' + encodeURIComponent(orderId))
+      assert.equal(options.body, undefined)
+      assert.ok(options.signal instanceof AbortSignal)
+      requests.push({ url, method: 'GET' })
+      return readOrder()
+    }
+    assert.equal(options.method, 'POST')
     const payload = JSON.parse(options.body)
     assert.equal(typeof payload.idempotencyKey, 'string')
     assert.ok(payload.idempotencyKey.length > 0)
@@ -136,7 +145,7 @@ async function paymentFlow(t, scenario = 'PAYMENT_DECLINED', Page = CheckoutPage
   const flow = checkout({ Page })
   await flow.review().onConfirm(); flow.render()
   flow.find('PaymentStep').onScenarioChange(scenario); flow.render()
-  return {...flow, requests, respond: fn => { respond = fn }, payment: () => flow.find('PaymentStep')}
+  return {...flow, requests, respond: fn => { respond = fn }, readOrder: fn => { readOrder = fn }, payment: () => flow.find('PaymentStep')}
 }
 
 async function trackedCheckout(t) {
@@ -147,6 +156,126 @@ async function trackedCheckout(t) {
   modules.set('../services/analytics', analyticsUrl)
   return { api, Page, ...storage }
 }
+
+test('F2-01 ORDER_ALREADY_CONFIRMED recupera la Order propia y navegación sin PaymentResult, Analytics ni cleanup', { timeout: 3000 }, async t => {
+  const { api, Page } = await trackedCheckout(t)
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED', Page)
+  const baseline = structuredClone(runtime.cart)
+  const process = flow.payment().onProcessPayment
+  flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED' } }, { status: 409 }))
+  let release
+  flow.readOrder(() => new Promise(resolve => { release = resolve }))
+  const pending = process()
+  await new Promise(resolve => setImmediate(resolve))
+  flow.render()
+  assert.equal(flow.transactions.at(-1), 'active', 'La consulta todavía no libera el bloqueo')
+  assert.equal(flow.find('button').disabled, true)
+  assert.equal(flow.payment(), undefined)
+  assert.equal(flow.find('PaymentResultPanel'), undefined)
+  assert.equal(flow.find('OrderConfirmationPage'), undefined)
+  await process()
+  assert.equal(flow.requests.length, 3, 'Un POST de creación, un POST de Payment y un GET autorizado')
+  const authoritative = result('PAYMENT_APPROVED').order
+  release(Response.json(authoritative))
+  await pending; flow.render()
+  const confirmation = flow.find('OrderConfirmationPage')
+  assert.deepEqual(confirmation.order, authoritative)
+  assert.equal(confirmation.recovered, true)
+  assert.equal(flow.transactions.at(-1), 'known')
+  assert.equal(flow.events.at(-1), false, 'La navegación queda desbloqueada')
+  assert.equal(flow.find('PaymentResultPanel'), undefined)
+  assert.equal(runtime.cleanupCount, 0)
+  assert.deepEqual(runtime.cart, baseline)
+  assert.equal(api.getAnalyticsCounters('test-user').purchases, 0)
+  assert.equal(api.getAggregateAnalyticsSnapshot().counters.purchases, 0)
+  await process()
+  assert.equal(flow.requests.length, 3, 'Un callback obsoleto tampoco vuelve a pagar ni genera otra key')
+  await api.flushAnalytics()
+})
+
+const failedOrderRecoveries = [
+  ['red', () => { throw new TypeError('INTERNAL network failure') }],
+  ['no disponible', () => Response.json({ error: { code: 'UNEXPECTED_ERROR', message: 'INTERNAL' } }, { status: 503 })],
+  ['sin autorización', () => Response.json({ error: { code: 'FORBIDDEN', message: 'INTERNAL' } }, { status: 403 })],
+  ['ajena o inexistente', () => Response.json({ error: { code: 'ORDER_NOT_FOUND', message: 'INTERNAL' } }, { status: 404 })],
+  ['todavía pendiente', () => Response.json(order())],
+  ['otra Order', () => Response.json({ ...result('PAYMENT_APPROVED').order, id: 'another-order' })],
+  ['otro propietario', () => { const confirmed = result('PAYMENT_APPROVED').order; return Response.json({ ...confirmed, commercial: { ...confirmed.commercial, userId: 'other' } }) }],
+  ['otra sucursal', () => { const confirmed = result('PAYMENT_APPROVED').order; return Response.json({ ...confirmed, commercial: { ...confirmed.commercial, branchId: 'alajuela' } }) }],
+]
+for (const [label, readOrder] of failedOrderRecoveries) {
+  test('F2-01 consulta insuficiente conserva Recovery y reintenta solo GET: ' + label, { timeout: 3000 }, async t => {
+    const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+    const process = flow.payment().onProcessPayment
+    flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED' } }, { status: 409 }))
+    flow.readOrder(readOrder)
+    await process(); flow.render()
+    assert.equal(flow.transactions.at(-1), 'uncertain')
+    assert.equal(flow.find('OrderConfirmationPage'), undefined)
+    assert.equal(flow.find('PaymentResultPanel'), undefined)
+    assert.equal(flow.payment(), undefined)
+    const retry = flow.find('button')
+    assert.equal(retry.disabled, false)
+    assert.equal(retry.children, 'Recuperar estado de la orden')
+    assert.ok(nodes(flow.find('section').children).some(node => node.props.role === 'alert'
+      && !String(node.props.children).includes('INTERNAL')))
+    flow.readOrder(() => Response.json(result('PAYMENT_APPROVED').order))
+    await retry.onClick(); flow.render()
+    assert.equal(flow.requests.filter(request => request.url.endsWith('/payment')).length, 1)
+    assert.equal(flow.requests.filter(request => request.method === 'GET').length, 2)
+    assert.equal(flow.transactions.at(-1), 'known')
+    assert.equal(flow.find('OrderConfirmationPage').recovered, true)
+    assert.equal(runtime.cleanupCount, 0)
+  })
+}
+
+test('F2-01 una consulta tardía de otra Session no muestra la Order ni libera sus guardas', { timeout: 3000 }, async t => {
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+  flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED' } }, { status: 409 }))
+  let release
+  flow.readOrder(() => new Promise(resolve => { release = resolve }))
+  const process = flow.payment().onProcessPayment
+  const pending = process()
+  await new Promise(resolve => setImmediate(resolve))
+  runtime.setUser({ id: 'other', role: 'B2C' }); flow.render()
+  release(Response.json(result('PAYMENT_APPROVED').order))
+  await pending; flow.render()
+  assert.equal(flow.find('OrderConfirmationPage'), undefined)
+  assert.equal(flow.find('PaymentResultPanel'), undefined)
+  assert.equal(runtime.cleanupCount, 0)
+  assert.equal(flow.transactions.at(-1), 'active')
+  await process()
+  assert.equal(flow.requests.length, 3)
+})
+
+test('F2-01 un error no concluyente conserva la key y el Replay de Payment, sin consultar Order', async t => {
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+  flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED', outcome: 'unknown' } }, { status: 503 }))
+  await flow.payment().onProcessPayment(); flow.render()
+  assert.equal(flow.transactions.at(-1), 'uncertain')
+  assert.equal(flow.payment().scenarioLocked, true)
+  flow.respond(() => Response.json(result('PAYMENT_APPROVED')))
+  await flow.payment().onProcessPayment(); flow.render()
+  assert.deepEqual(flow.requests[1], flow.requests[2])
+  assert.equal(flow.requests.some(request => request.method === 'GET'), false)
+  assert.equal(runtime.cleanupCount, 1)
+  assert.equal(flow.find('OrderConfirmationPage').recovered, false)
+})
+
+test('F2-01 rechazo concluyente tras una respuesta perdida recupera estado sin cambiar la key', async t => {
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+  flow.respond(() => { throw new TypeError('Network failure') })
+  await flow.payment().onProcessPayment(); flow.render()
+  assert.equal(flow.transactions.at(-1), 'uncertain')
+  flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED' } }, { status: 409 }))
+  flow.readOrder(() => Response.json(result('PAYMENT_APPROVED').order))
+  await flow.payment().onProcessPayment(); flow.render()
+  assert.deepEqual(flow.requests[1], flow.requests[2])
+  assert.equal(flow.requests.filter(request => request.method === 'GET').length, 1)
+  assert.equal(flow.transactions.at(-1), 'known')
+  assert.equal(flow.find('OrderConfirmationPage').recovered, true)
+  assert.equal(runtime.cleanupCount, 0)
+})
 
 for (const code of ['IDENTITY_REQUIRED', 'USER_DISABLED', 'FORBIDDEN', 'ORDER_NOT_FOUND']) {
   test('RBAC rechazo inicial de Payment queda conocido y no habilita Retry comercial ' + code, async t => {

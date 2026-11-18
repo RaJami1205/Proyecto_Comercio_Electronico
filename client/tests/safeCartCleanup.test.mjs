@@ -71,6 +71,7 @@ const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 const paymentApiUrl = compile('services/paymentApi.ts');
 modules.set('../services/paymentApi', paymentApiUrl);
+modules.set('../services/orderHistoryApi', compile('services/orderHistoryApi.ts'));
 modules.set('./OrderConfirmationPage', dataUrl('export default \'OrderConfirmationPage\''));
 const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx'))
 const { calculateCartTotals } = await import(calculationsUrl)

@@ -21,6 +21,7 @@ import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalcula
 import { commercialIssues, normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
 import { classifyOrderFailure, orderApi, OrderApiError, orderErrorMessage, type CheckoutRecovery } from '../services/orderApi'
 import { paymentApi, PaymentApiError, paymentErrorMessage } from '../services/paymentApi'
+import { orderHistoryApi } from '../services/orderHistoryApi'
 import { orderReviewDifferences } from '../utils/orderReviewDifferences'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
@@ -80,6 +81,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [selectedPaymentScenario, setSelectedPaymentScenario] = useState<PaymentScenario | null>(null)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [hasPendingPayment, setHasPendingPayment] = useState(false)
+  const [confirmedOrderRecovery, setConfirmedOrderRecovery] = useState(false)
   const [paymentError, setPaymentError] = useState<string>()
   // Último PaymentResult validado por paymentApi; es la fuente para decidir qué pantalla de
   // resultado mostrar (CN-32). Se limpia al pedir un Retry, lo que vuelve a mostrar el form.
@@ -87,6 +89,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const attemptRef = useRef<CreationAttempt | undefined>(undefined)
   const submittingRef = useRef(false)
   const paymentAttemptRef = useRef<PaymentAttempt | undefined>(undefined)
+  const confirmedOrderRecoveryRef = useRef(false)
   const paymentSubmittingRef = useRef(false)
   const paymentResultRef = useRef<PaymentResult | undefined>(undefined)
   // Garantiza que el Cart se limpie una sola vez por confirmación (CN-33), incluso si
@@ -142,7 +145,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
   /** Cambia a la etapa solicitada si las guardas del intento y del pago permiten navegar. */
   function changeStep(next: CheckoutStep) {
-    if (submittingRef.current || paymentSubmittingRef.current || confirmed) return
+    if (submittingRef.current || paymentSubmittingRef.current || confirmed || confirmedOrderRecoveryRef.current) return
     if (next === 'payment' && !order) return
     if (attemptRef.current && next !== 'review' && next !== 'payment') return
     stageChangedRef.current = true
@@ -156,7 +159,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
    * al aceptar diferencias financieras, sin crear otra ni modificar su consentimiento.
    */
   async function confirmOrder() {
-    if (!isCurrentSession() || authorizationRejectedRef.current || !purchaser) return
+    if (!isCurrentSession() || authorizationRejectedRef.current || confirmedOrderRecoveryRef.current || !purchaser) return
     const retryingUncertain = Boolean(attemptRef.current)
     if (submittingRef.current || paymentSubmittingRef.current || confirmed || (!order && invalid)) return
     const blockedReason = getPurchaseBlockReason?.() ?? purchaseBlockedReason
@@ -292,8 +295,24 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
   /** Selecciona el escenario solicitado solo cuando no existe un intento pendiente ni un resultado cerrado. */
   function changePaymentScenario(scenario: PaymentScenario) {
-    if (paymentSubmittingRef.current || paymentAttemptRef.current || paymentResultRef.current || confirmed) return
+    if (paymentSubmittingRef.current || paymentAttemptRef.current || paymentResultRef.current || confirmed || confirmedOrderRecoveryRef.current) return
     setSelectedPaymentScenario(scenario)
+  }
+
+  /** Recupera solo el estado de la misma Order propia; una consulta nunca constituye un PaymentResult. */
+  async function recoverConfirmedOrder(activeAttempt: PaymentAttempt) {
+    try {
+      const recovered = await orderHistoryApi.getOrder(activeAttempt.userId, activeAttempt.orderId, AbortSignal.timeout(20000))
+      if (!isCurrentSession()) return
+      if (recovered.orderStatus !== 'CONFIRMED' || recovered.paymentStatus !== 'APPROVED'
+        || recovered.commercial?.branchId !== order?.commercial?.branchId) throw new Error('Estado de Order insuficiente.')
+      setOrder(recovered)
+      paymentAttemptRef.current = undefined
+      setHasPendingPayment(false)
+      setDifferences([])
+    } catch {
+      if (isCurrentSession()) setPaymentError('El servidor indicó que la orden ya estaba confirmada, pero no pudimos verificar su estado. Reintenta la consulta; no se enviará otro pago.')
+    }
   }
 
   /** Procesa el escenario con una identidad estable; actualiza la Order y limpia unidades originales solo ante aprobación válida. */
@@ -303,6 +322,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     // Guarda de doble-submit / múltiples Retry concurrentes: el ref cubre clicks antes
     // del siguiente render; isProcessingPayment refleja el bloqueo en la UI.
     if (paymentSubmittingRef.current || submittingRef.current || paymentResultRef.current || confirmed || !order || !selectedPaymentScenario) return
+    // Incluso un callback anterior a la recuperación no puede iniciar otro Payment.
+    if (confirmedOrderRecoveryRef.current && !paymentAttemptRef.current) return
 
     paymentSubmittingRef.current = true
     setIsProcessingPayment(true)
@@ -316,6 +337,10 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       })
       paymentAttemptRef.current = activeAttempt
       setHasPendingPayment(true)
+      if (confirmedOrderRecoveryRef.current) {
+        await recoverConfirmedOrder(activeAttempt)
+        return
+      }
       const result = await paymentApi.processPayment(activeAttempt.orderId, activeAttempt, activeAttempt.userId)
       if (!isCurrentSession()) return
       // Resultado concluyente (APPROVED/DECLINED/ERROR): el intento queda cerrado,
@@ -344,6 +369,14 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       }
     } catch (failure) {
       if (!isCurrentSession()) return
+      if (failure instanceof PaymentApiError && failure.conclusive && failure.code === 'ORDER_ALREADY_CONFIRMED'
+        && paymentAttemptRef.current) {
+        confirmedOrderRecoveryRef.current = true
+        setConfirmedOrderRecovery(true)
+        setCurrentStep('payment')
+        await recoverConfirmedOrder(paymentAttemptRef.current)
+        return
+      }
       if (failure instanceof PaymentApiError && failure.authorizationDenied && !retryingUncertain) {
         paymentAttemptRef.current = undefined
         setHasPendingPayment(false)
@@ -395,7 +428,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   // de edición. La Order sigue viva en este mismo state, independiente del Cart (que
   // pudo conservar nuevas incorporaciones): Confirmation nunca depende de CartState para renderizarse.
   if (confirmed && order) {
-    return <OrderConfirmationPage order={order} onCatalogClick={onCatalogClick} onCartClick={onCartClick} />
+    return <OrderConfirmationPage order={order} recovered={confirmedOrderRecovery} onCatalogClick={onCatalogClick} onCartClick={onCartClick} />
   }
 
   const displayItems = order?.items ?? reviewItems.map(item => ({ productId: item.productId, name: item.name, image: item.image, unitPrice: item.price, quantity: item.quantity, lineSubtotal: calculateLineSubtotal(item.price, item.quantity), minOrderQuantity: item.minimumOrderQuantity }))
@@ -433,7 +466,14 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                 errors={fieldErrors} />
             ) : currentStep === 'payment' && order ? (
               <>
-                {paymentResult ? (
+                {confirmedOrderRecovery ? (
+                  <div>
+                    <p role={paymentError ? 'alert' : 'status'}>{paymentError ?? 'Consultando el estado de la orden ya confirmada…'}</p>
+                    <button type="button" className={styles.back} disabled={isProcessingPayment} onClick={handleProcessPayment}>
+                      {isProcessingPayment ? 'Consultando orden…' : 'Recuperar estado de la orden'}
+                    </button>
+                  </div>
+                ) : paymentResult ? (
                   <PaymentResultPanel
                     result={paymentResult.result}
                     order={order}
@@ -452,7 +492,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                   />
                 )}
                 <div className={styles.actions}>
-                  <button type="button" className={styles.back} disabled={isProcessingPayment} onClick={() => changeStep('review')}>Revisar orden</button>
+                  <button type="button" className={styles.back} disabled={isProcessingPayment || confirmedOrderRecovery} onClick={() => changeStep('review')}>Revisar orden</button>
                 </div>
               </>
             ) : (

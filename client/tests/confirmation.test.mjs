@@ -112,6 +112,13 @@ test('Confirmation usa snapshot autoritativo con Cart vacío o diferente, sin re
   }
 })
 
+test('F2-01 Confirmation distingue una consulta de estado de un nuevo resultado de Payment', () => {
+  runtime.reset()
+  assert.match(text(renderConfirmation({ recovered: true })), /Esta orden ya estaba confirmada/)
+  assert.match(text(renderConfirmation({ recovered: true })), /la consulta no procesó pagos ni modificó tu carrito/)
+  assert.doesNotMatch(text(renderConfirmation()), /Recuperamos su estado/)
+})
+
 test('F3 destino semántico, foco tras commit y sin reenfocar por renders ordinarios',()=>{
   runtime.reset()
   const tree=renderConfirmation()
