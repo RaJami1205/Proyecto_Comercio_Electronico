@@ -4,6 +4,8 @@ La infraestructura PostgreSQL de CN-57 y su procedimiento manual se documentan e
 
 La alternativa PostgreSQL de Orders/Idempotency CN-58, su selección explícita y las limitaciones de validación se documentan en [Orders Persistence](docs/orders-persistence.md). El flujo comercial activo permanece In-Memory hasta validar CN-59.
 
+CN-65 añade el índice Algolia `orders`, sincronizado desde PostgreSQL con revisiones persistentes, Retry y Reconciliation: ver [Orders Search Index](docs/orders-search-index.md). Requiere aplicar su migración antes de desplegar.
+
 CN-59 añade [Payment Persistence & Recovery](docs/payments-persistence.md): repositorios coordinados, Replay histórico, locking transaccional y un workflow aislado PostgreSQL 17. La validación real de CI sigue pendiente; la implementación no activa PostgreSQL ni cambia Render. `DATABASE_URL` no selecciona el almacenamiento.
 
 El seed valida y permite cargar el catálogo canonical desde `data/productos.json`.
