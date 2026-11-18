@@ -7,7 +7,7 @@ import { OrderError } from '../domain/orderError.js'
 import { OrderPersistenceError } from '../domain/orderPersistenceError.js'
 import { requireCompatible, requireOrderOwner } from '../domain/orderIdentity.js'
 import type { Order } from '../types/order.js'
-import type { OrderBuilder, OrderCreationContext, OrderStore } from './orderStore.js'
+import type { OrderBuilder, OrderCreationContext, OrderStore, OwnerOrdersPage } from './orderStore.js'
 import { mapOrderRow, orderToRow, ORDER_COLUMNS, rowRecord } from './orderRowMapper.js'
 
 export const ORDER_PERSISTENCE_LIMITS = Object.freeze({ operationMs: 8000, sqlMs: 2000, lockMs: 1000 })
@@ -174,6 +174,30 @@ export class PostgreSQLOrderStore implements OrderStore {
       const rows = await this.read('SELECT * FROM commerce.orders WHERE id = $1 AND owner_user_id = $2', [id, ownerId])
       if (!rows.length || rowRecord(rows[0]).owner_user_id !== ownerId) return undefined
       return mapOrderRow(rows[0])
+    }
+    catch (error) { if (error instanceof OrderError) throw error; throw new OrderPersistenceError() }
+  }
+
+  /**
+   * Una sola sentencia READ ONLY obtiene el total y la página desde el mismo snapshot.
+   * El orden created_at DESC, id ASC coincide con orders_owner_created_idx.
+   */
+  async listByOwner(ownerId: string, offset: number, limit: number): Promise<OwnerOrdersPage> {
+    try {
+      const rows = await this.read(`SELECT counted.total_count, page.*
+        FROM (SELECT count(*)::integer AS total_count FROM commerce.orders WHERE owner_user_id = $1) counted
+        LEFT JOIN LATERAL (
+          SELECT * FROM commerce.orders WHERE owner_user_id = $1
+          ORDER BY created_at DESC, id ASC LIMIT $2 OFFSET $3
+        ) page ON TRUE`, [ownerId, limit, offset], true)
+      const first = rowRecord(rows[0])
+      const total = first.total_count
+      if (typeof total !== 'number' || !Number.isSafeInteger(total) || total < 0) throw new DatabaseError('transaction')
+      const orders = rows.filter(row => rowRecord(row).id !== null).map(row => {
+        if (rowRecord(row).owner_user_id !== ownerId) throw new DatabaseError('transaction')
+        return mapOrderRow(row)
+      })
+      return { orders, total }
     }
     catch (error) { if (error instanceof OrderError) throw error; throw new OrderPersistenceError() }
   }

@@ -19,6 +19,7 @@ Payment no tiene un permiso propio. El Technical Preflight no encontró una nece
 | Ruta | Quién puede usarla | Regla |
 | --- | --- | --- |
 | `POST /api/v2/orders` | B2C, B2B | `checkout:create` |
+| `GET /api/v2/orders/mine` | B2C, B2B | `orders:read:own`, solo el historial propio (CN-64) |
 | `GET /api/v2/orders/:orderId` | B2C, B2B, ADMIN | B2C y B2B solo su Order, ADMIN cualquiera |
 | `POST /api/orders` (legacy) | B2C | Compatibilidad V1 sin cambios |
 | `GET /api/orders/:orderId` (legacy) | B2C, B2B | Solo el propietario |
@@ -64,3 +65,16 @@ PostgreSQL exige `owner_user_id NOT NULL`, así que toda Order persistida tiene 
 - Nunca se asignan al usuario activo y no se migran ni se eliminan.
 - ADMIN puede consultarlas por `GET /api/v2/orders/:orderId` para revisión administrativa o pruebas históricas.
 - Nadie puede procesar Payments sobre ellas.
+
+## Order History (CN-64)
+
+`GET /api/v2/orders/mine` devuelve las Orders del comprador activo. ADMIN recibe 403 porque no usa My Orders, y su consulta global corresponde a otra Story.
+
+- La consulta filtra por `owner_user_id` dentro de PostgreSQL con `listByOwner`. Nunca se lee un listado global para filtrarlo después.
+- Orden estable por `created_at` descendente y, ante empates, por `id` ascendente. Coincide con el índice `orders_owner_created_idx`.
+- El total y la página salen de una sola sentencia READ ONLY, así ambos corresponden al mismo snapshot.
+- Parámetros `page` (base 1) y `pageSize` (default 10, máximo 50). Igual que en el catálogo, un valor ausente o inválido usa el default y un tamaño mayor se limita al máximo.
+- Respuesta `{ orders, page, pageSize, total, hasMore }`. Cada elemento es un resumen con `id`, `orderNumber`, `createdAt`, `contractVersion`, `branchId`, `total`, `currency`, `orderStatus` y `paymentStatus`.
+- Las Orders V1 informan `branchId` null porque no registraban sucursal. No se completan datos históricos ausentes.
+- El detalle reutiliza `GET /api/v2/orders/:orderId` y la misma autorización del CN-63.
+- Las consultas no modifican Orders ni Payments y no consultan Algolia.

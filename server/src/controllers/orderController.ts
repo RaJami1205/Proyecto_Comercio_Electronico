@@ -19,6 +19,14 @@ export async function createOrderV2(request: Request, response: AuthorizedRespon
   catch (error) { next(error) }
 }
 
+/** Historial propio paginado (CN-64); page y pageSize llegan por query string. */
+export async function listMyOrders(request: Request, response: AuthorizedResponse, next: NextFunction): Promise<void> {
+  try {
+    const query = request.query as Record<string, unknown>
+    response.status(200).json(await orderService.listMine(response.locals.user, { page: query.page, pageSize: query.pageSize }))
+  } catch (error) { next(error) }
+}
+
 /** Consulta legacy y V2: la política de Order Ownership decide el alcance antes de leer la persistencia. */
 export async function getOrder(request: Request, response: AuthorizedResponse, next: NextFunction): Promise<void> {
   try { response.status(200).json(await orderService.findAuthorized(String(request.params.orderId), response.locals.user)) }

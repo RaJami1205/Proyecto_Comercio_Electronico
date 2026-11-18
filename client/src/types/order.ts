@@ -92,3 +92,25 @@ export interface OrderCommercialSnapshot {
   pricingType: PricingType
   policyVersion: string
 }
+
+/** Fila resumida de Order History (CN-64); el detalle completo se consulta por separado. */
+export interface OrderSummary {
+  id: string
+  orderNumber: string
+  createdAt: string
+  contractVersion: 1 | 2
+  /** null en Orders V1, que no registraban sucursal. */
+  branchId: BranchId | null
+  total: number
+  currency: 'CRC'
+  orderStatus: OrderStatus
+  paymentStatus: PaymentStatus
+}
+
+export interface OrderHistoryPage {
+  orders: OrderSummary[]
+  page: number
+  pageSize: number
+  total: number
+  hasMore: boolean
+}

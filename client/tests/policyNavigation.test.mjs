@@ -44,7 +44,7 @@ const runtimeUrl = dataUrl(`
 const runtime = await import(runtimeUrl)
 const modules = new Map()
 // Solo se sustituyen las vistas ajenas al alcance. Las rutas, Footer, Header y políticas son código real.
-for (const name of ['ProductListingPage', 'CartPage', 'CheckoutPage', 'AnalyticsDashboardPage']) {
+for (const name of ['ProductListingPage', 'CartPage', 'CheckoutPage', 'AnalyticsDashboardPage', 'MyOrdersPage', 'OrderDetailPage']) {
   modules.set(`pages/${name}`, dataUrl(`export default '${name}'`))
 }
 modules.set('components/cart/CartPreviewDrawer', dataUrl("export default 'CartPreviewDrawer'"))
@@ -388,11 +388,15 @@ test('Header informativo mantiene retorno al catálogo y respeta clicks modifica
   runtime.reset()
   let calls = 0
   const tree = Header({policyView:true, onCatalogClick:()=>calls++})
-  const links = nodes(tree).filter(n=>n.type === 'a' && n.props.href !== '#analytics')
+  // #analytics y #my-orders son hashes nativos que App resuelve; el resto vuelve al catálogo por callback.
+  const links = nodes(tree).filter(n=>n.type === 'a' && n.props.href !== '#analytics' && n.props.href !== '#my-orders')
   assert.ok(links.every(n=>n.props.href === '#catalog'))
-  // El usuario B2C de este caso no debe recibir acceso a Analytics.
+  // El usuario B2C de este caso no debe recibir acceso a Analytics, pero sí a su historial (CN-64).
   const activity = nodes(tree).filter(n=>n.type === 'a' && n.props.href === '#analytics')
   assert.equal(activity.length, 0)
+  const orders = nodes(tree).filter(n=>n.type === 'a' && n.props.href === '#my-orders')
+  assert.equal(orders.length, 1)
+  assert.equal(orders[0].props.onClick, undefined)
   for (const link of links) {
     assert.equal(click(link.props, {metaKey:true}).defaultPrevented, false)
     assert.equal(click(link.props).defaultPrevented, true)

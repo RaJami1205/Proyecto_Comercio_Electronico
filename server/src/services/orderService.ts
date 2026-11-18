@@ -5,9 +5,11 @@ import { validateCreateOrderRequest, validateCreateOrderV2Request } from '../dom
 import { isCurrentTermsVersion } from '../domain/termsPolicy.js'
 import { orderIdentity, orderIdentityV2, orderQuantities, requireCompatible, requireOrderOwner } from '../domain/orderIdentity.js'
 import { orderReadScope } from '../domain/orderAccess.js'
+import { parseOrderHistoryQuery, toOrderSummary } from '../domain/orderHistory.js'
+import { UserError } from '../domain/userError.js'
 import type { OrderStore } from '../stores/orderStore.js'
 import { commerceStores } from '../stores/commerceStores.js'
-import type { CreateOrderRequest, Order, OrderItem } from '../types/order.js'
+import type { CreateOrderRequest, Order, OrderHistoryPage, OrderItem } from '../types/order.js'
 import type { ResolvedUser } from '../types/user.js'
 import type { ProductRecord } from '../types/product.js'
 import { getProductById } from './productService.js'
@@ -89,6 +91,19 @@ export class OrderService {
       : await this.store.findByIdForOwner(id, scope.ownerId)
     if (!order) throw new OrderError(404, 'ORDER_NOT_FOUND', 'La orden solicitada no existe.')
     return order
+  }
+
+  /**
+   * Order History (CN-64): solo las Orders del comprador activo, paginadas en la persistencia.
+   * ADMIN no usa My Orders; su consulta global corresponde a otra Story.
+   */
+  async listMine(user: ResolvedUser, query: { page?: unknown; pageSize?: unknown }): Promise<OrderHistoryPage> {
+    const scope = orderReadScope(user)
+    if (scope.kind !== 'own') throw new UserError(403, 'FORBIDDEN', 'Esta identidad no tiene permiso para realizar la operación.')
+    const { page, pageSize, offset } = parseOrderHistoryQuery(query)
+    const result = await this.store.listByOwner(scope.ownerId, offset, pageSize)
+    return { orders: result.orders.map(toOrderSummary), page, pageSize, total: result.total,
+      hasMore: offset + result.orders.length < result.total }
   }
 
   /** Sin IO de persistencia: un resultado tardío del catálogo nunca puede insertar una Order. */

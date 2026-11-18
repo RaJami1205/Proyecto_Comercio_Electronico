@@ -1,0 +1,108 @@
+/* My Orders y Order Detail (CN-64): misma escala y superficies que Analytics y PolicyLayout. */
+.page { display: flex; flex-direction: column; min-height: 100vh; background: var(--color-surface); }
+.main { flex: 1; min-width: 0; padding: clamp(2rem, 6vw, 4.5rem) 1rem; }
+.container { width: min(100%, var(--content-max-width)); margin-inline: auto; overflow-wrap: anywhere; }
+.eyebrow { margin: 0 0 1rem; color: #164ed6; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.title { margin: 0 0 1rem; color: var(--color-text-primary); font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.2; letter-spacing: -0.04em; }
+.title[tabindex="-1"]:focus { outline: none; }
+.introduction { max-width: 48rem; margin: 0 0 2rem; color: var(--color-text-muted); line-height: 1.7; }
+.summary { margin: 0 0 1rem; color: var(--color-text-muted); font-size: 0.95rem; }
+
+.status, .error, .notice {
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  background: #fff;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+.error { color: #8a1c2b; border-color: #f1b2bb; background: #fff3f5; }
+.error p, .notice p { margin: 0 0 0.9rem; }
+.notice { padding: clamp(1.25rem, 4vw, 2rem); border-top: 3px solid var(--color-primary); box-shadow: 0 10px 28px rgba(27, 51, 94, 0.08); }
+.notice h2 { margin: 0 0 0.5rem; color: var(--color-text-primary); font-size: 1.25rem; }
+
+.primaryButton, .secondaryButton, .detailLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.6rem 1.1rem;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+}
+.primaryButton { color: #fff; border: 1px solid transparent; background: linear-gradient(135deg, var(--color-primary), var(--color-secondary)); }
+.secondaryButton, .detailLink { color: var(--color-text-primary); border: 1px solid var(--color-border); background: #fff; }
+.primaryButton:disabled, .secondaryButton:disabled { opacity: 0.6; cursor: default; }
+.detailLink:hover, .secondaryButton:not(:disabled):hover { border-color: var(--color-primary); }
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 0 0 1.5rem; }
+.list + .actions, .error + .actions { margin-top: 1.5rem; }
+
+.list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(0.85rem, 2vw, 1.25rem); margin: 0; padding: 0; list-style: none; }
+.card, .panel {
+  min-width: 0;
+  padding: clamp(1rem, 3vw, 1.4rem);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(27, 51, 94, 0.06);
+}
+.card { display: flex; flex-direction: column; gap: 0.9rem; }
+.cardHeader { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.6rem; }
+.orderNumber { margin: 0; color: var(--color-text-primary); font-size: 1.05rem; }
+.badges { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.badge {
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: #f4f7fb;
+  color: #33415c;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.badge[data-tone="success"] { color: #0b6b3a; border-color: #a7e3c3; background: #ecfbf3; }
+.badge[data-tone="danger"] { color: #8a1c2b; border-color: #f1b2bb; background: #fff3f5; }
+.badge[data-tone="warning"] { color: #6b4a00; border-color: #f0c96b; background: #fff8e6; }
+
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin: 0; }
+.facts dt, .info dt { color: var(--color-text-muted); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.facts dd, .info dd { margin: 0.15rem 0 0; color: var(--color-text-primary); }
+.total { font-weight: 800; }
+.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+.hint { margin: 0; color: var(--color-text-muted); font-size: 0.85rem; line-height: 1.5; }
+.detailLink { align-self: flex-start; }
+
+.detailHeader { display: grid; gap: 1rem; margin: 0 0 1.5rem; padding: clamp(1rem, 3vw, 1.4rem); border: 1px solid var(--color-border); border-radius: var(--border-radius); background: #fff; }
+.detailGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: clamp(0.85rem, 2vw, 1.25rem); margin: 0 0 1.25rem; }
+.panel h2 { margin: 0 0 0.9rem; color: var(--color-text-primary); font-size: 1.1rem; }
+.detailGrid + .panel, .panel + .detailGrid { margin-top: 1.25rem; }
+.info { display: grid; gap: 0.6rem; margin: 0; }
+
+.items { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+.items th, .items td { padding: 0.65rem 0.5rem; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: top; }
+.items th { color: var(--color-text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.items td:not(:first-child), .items th:not(:first-child) { text-align: right; white-space: nowrap; }
+.moq { display: block; margin-top: 0.25rem; color: #164ed6; font-size: 0.8rem; }
+
+.totals { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem 1rem; margin: 0 0 0.9rem; }
+.totals dd { margin: 0; text-align: right; }
+.grandTotal { padding-top: 0.5rem; border-top: 1px solid var(--color-border); color: var(--color-text-primary); font-weight: 800; font-size: 1.05rem; }
+
+/* Tablet: una columna de tarjetas. */
+@media (max-width: 960px) {
+  .list { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Mobile: datos apilados y la tabla de productos se convierte en tarjetas con sus etiquetas. */
+@media (max-width: 600px) {
+  .facts { grid-template-columns: minmax(0, 1fr); }
+  .detailLink, .actions > button { width: 100%; }
+  .items thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .items tr { display: block; padding: 0.75rem 0; border-bottom: 1px solid var(--color-border); }
+  .items td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.2rem 0; border: 0; text-align: right; white-space: normal; }
+  .items td::before { content: attr(data-label); color: var(--color-text-muted); font-weight: 700; text-align: left; }
+  .items td:first-child { display: block; text-align: left; font-weight: 700; }
+  .items td:first-child::before { content: none; }
+}

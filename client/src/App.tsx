@@ -11,18 +11,24 @@ import type { Product } from './types/product'
 import PolicyPlaceholderPage from './pages/PolicyPlaceholderPage'
 import TermsPage from './pages/TermsPage'
 import ReturnsPolicyPage from './pages/ReturnsPolicyPage'
-import { hashForView, policyDestinations, viewFromHash, type AppView, type CatalogHash } from './utils/appNavigation'
+import { hashForOrder, hashForView, orderIdFromHash, policyDestinations, viewFromHash, type AppView, type CatalogHash } from './utils/appNavigation'
 import { ShippingPolicyPage } from './pages/ShippingPolicyPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import FaqPage from './pages/FaqPage'
 import AnalyticsDashboardPage from './pages/AnalyticsDashboardPage'
+import MyOrdersPage from './pages/MyOrdersPage'
+import OrderDetailPage from './pages/OrderDetailPage'
 import { trackEvent } from './services/analytics'
 
 interface NavigationState {
   view: AppView
   emptyCartNotice: boolean
   checkoutNotice?: string
+  /** Order abierta en #my-orders/<id>. */
+  orderId?: string
 }
+
+const isOrdersView = (view: AppView) => view === 'orders' || view === 'order-detail'
 
 /** Resuelve el hash mediante el mapa de destinos comerciales e informativos de appNavigation. */
 function viewFromLocation(): AppView {
@@ -34,12 +40,14 @@ function App() {
   const { items, hasExternalConflict } = useCart()
   const session = useSession()
   const canViewAnalytics = session.user?.role === 'ADMIN'
+  // Sin Session se muestra la invitación a elegir identidad; ADMIN no usa My Orders.
+  const canViewOrders = session.user?.role !== 'ADMIN'
   const { getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState } = session
   const checkoutLockedRef = useRef(false)
   const [checkoutLocked, setCheckoutLocked] = useState(false)
   const [checkoutHasOrder, setCheckoutHasOrder] = useState(false)
   const [navigation, setNavigation] = useState<NavigationState>(() => ({
-    view: viewFromLocation(), emptyCartNotice: false,
+    view: viewFromLocation(), emptyCartNotice: false, orderId: orderIdFromHash(window.location.hash) ?? undefined,
   }))
   const initialNavigationRef = useRef(navigation)
   const [isCartPreviewOpen, setIsCartPreviewOpen] = useState(false)
@@ -56,7 +64,7 @@ function App() {
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }
   // Revocar antes del commit evita conservar contenido protegido durante cambios de Session.
-  if (navigation.view === 'analytics' && !canViewAnalytics) {
+  if ((navigation.view === 'analytics' && !canViewAnalytics) || (isOrdersView(navigation.view) && !canViewOrders)) {
     setNavigation({ view: 'catalog', emptyCartNotice: false })
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }
@@ -87,7 +95,7 @@ function App() {
         return
       }
       const requested = viewFromLocation()
-      const analyticsDenied = requested === 'analytics' && !canViewAnalytics
+      const analyticsDenied = (requested === 'analytics' && !canViewAnalytics) || (isOrdersView(requested) && !canViewOrders)
       const reason = requested === 'checkout' ? getPurchaseBlockReason() : null
       const next = analyticsDenied ? 'catalog' : reason ? 'cart' : requested
       if (analyticsDenied) window.history.replaceState({ view: 'catalog' }, '', '#catalog')
@@ -96,7 +104,8 @@ function App() {
       setCheckoutMounted(next === 'checkout')
       restoreDrawerFocusRef.current = false
       setIsCartPreviewOpen(false)
-      setNavigation({ view: next, emptyCartNotice: false, checkoutNotice: reason ?? undefined })
+      setNavigation({ view: next, emptyCartNotice: false, checkoutNotice: reason ?? undefined,
+        orderId: next === 'order-detail' ? orderIdFromHash(window.location.hash) ?? undefined : undefined })
     }
     window.addEventListener('popstate', syncLocation)
     window.addEventListener('hashchange', syncLocation)
@@ -110,12 +119,12 @@ function App() {
       window.removeEventListener('hashchange', syncLocation)
       window.removeEventListener('beforeunload', protectReload)
     }
-  }, [getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState, canViewAnalytics])
+  }, [getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState, canViewAnalytics, canViewOrders])
 
   useEffect(() => setCheckoutMounted(view === 'checkout'), [view, setCheckoutMounted])
 
   useEffect(() => {
-    if (!canViewAnalytics && window.location.hash === '#analytics') {
+    if ((!canViewAnalytics && window.location.hash === '#analytics') || (!canViewOrders && isOrdersView(viewFromLocation()))) {
       window.history.replaceState({ view: 'catalog' }, '', '#catalog')
     }
     if ((emptyCartNotice || navigation.checkoutNotice) && window.location.hash === '#checkout') {
@@ -133,7 +142,7 @@ function App() {
       heading?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
-  }, [navigation, view, emptyCartNotice, canViewAnalytics])
+  }, [navigation, view, emptyCartNotice, canViewAnalytics, canViewOrders])
 
   useEffect(() => () => {
     if (feedbackTimeoutRef.current !== null) clearTimeout(feedbackTimeoutRef.current)
@@ -158,7 +167,7 @@ function App() {
     restoreDrawerFocusRef.current = false
     setIsCartPreviewOpen(false)
     const reason = requestedView === 'checkout' ? getPurchaseBlockReason() : null
-    const analyticsDenied = requestedView === 'analytics' && !canViewAnalytics
+    const analyticsDenied = (requestedView === 'analytics' && !canViewAnalytics) || (isOrdersView(requestedView) && !canViewOrders)
     const denied = requestedView === 'checkout' && (items.length === 0 || Boolean(reason))
     const nextView = analyticsDenied ? 'catalog' : denied ? 'cart' : requestedView
     const nextCatalogHash = analyticsDenied ? '#catalog' : catalogHash
@@ -174,6 +183,19 @@ function App() {
     }
     setCheckoutMounted(nextView === 'checkout')
     setNavigation({ view: nextView, emptyCartNotice: denied && !reason, checkoutNotice: reason ?? undefined })
+  }
+
+  /** Abre el detalle de una Order con un hash directo, compatible con recarga y Back/Forward. */
+  function openOrder(orderId: string) {
+    if (checkoutLockedRef.current || isTransactionBlocked() || !canViewOrders) return
+    setCheckoutHasOrder(false)
+    setTransactionState('idle')
+    restoreDrawerFocusRef.current = false
+    setIsCartPreviewOpen(false)
+    const destination = hashForOrder(orderId)
+    if (window.location.hash !== destination) window.history.pushState({ view: 'order-detail' }, '', destination)
+    setCheckoutMounted(false)
+    setNavigation({ view: 'order-detail', emptyCartNotice: false, orderId })
   }
 
   /** Abre el preview cuando la navegación está permitida y habilita el retorno del foco al trigger. */
@@ -222,6 +244,26 @@ function App() {
       ) : null}
       {view === 'analytics' && canViewAnalytics ? (
         <AnalyticsDashboardPage
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'orders' && canViewOrders ? (
+        // La key por usuario y epoch descarta resultados y requests de la Session anterior.
+        <MyOrdersPage
+          key={`orders:${session.user?.id ?? 'none'}:${session.epoch}`}
+          onOpenOrder={openOrder}
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'order-detail' && canViewOrders && navigation.orderId ? (
+        <OrderDetailPage
+          key={`order:${session.user?.id ?? 'none'}:${session.epoch}:${navigation.orderId}`}
+          orderId={navigation.orderId}
+          onBackToOrders={() => navigate('orders')}
           onCatalogClick={(hash) => navigate('catalog', hash)}
           onPolicyNavigate={navigate}
           onCartClick={openCartPreview}

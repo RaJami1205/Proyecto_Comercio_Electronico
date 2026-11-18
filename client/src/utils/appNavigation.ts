@@ -17,12 +17,33 @@ const destinations = [
   { view: 'cart', hash: '#cart-page' },
   { view: 'checkout', hash: '#checkout' },
   { view: 'analytics', hash: '#analytics' },
+  { view: 'orders', hash: '#my-orders' },
   ...policyDestinations,
 ] as const
-export type AppView = 'catalog' | typeof destinations[number]['view']
+export type AppView = 'catalog' | 'order-detail' | typeof destinations[number]['view']
+
+const ORDER_DETAIL_PREFIX = '#my-orders/'
+
+/** Extrae el Order ID de #my-orders/<id>; un ID vacío o mal codificado no abre ningún detalle. */
+export function orderIdFromHash(hash: string): string | null {
+  if (!hash.startsWith(ORDER_DETAIL_PREFIX)) return null
+  const encoded = hash.slice(ORDER_DETAIL_PREFIX.length)
+  // hashForOrder codifica cualquier "/" del ID; una barra sin codificar no corresponde a un detalle.
+  if (encoded.includes('/')) return null
+  try {
+    const id = decodeURIComponent(encoded)
+    return id.trim() ? id : null
+  } catch { return null }
+}
+
+/** Hash de acceso directo al detalle; codifica el ID para conservarlo en recargas y Back/Forward. */
+export function hashForOrder(orderId: string): string {
+  return ORDER_DETAIL_PREFIX + encodeURIComponent(orderId)
+}
 
 /** Resuelve destinos explícitos; las anclas del catálogo y hashes desconocidos conservan el fallback actual. */
 export function viewFromHash(hash: string): AppView {
+  if (orderIdFromHash(hash)) return 'order-detail'
   return destinations.find(destination => destination.hash === hash)?.view ?? 'catalog'
 }
 
