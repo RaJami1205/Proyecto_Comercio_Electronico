@@ -26,7 +26,7 @@ const runtimeUrl = dataUrl(`
   export function useRef(initial) { const [value] = useState(() => ({current:initial})); return value; }
   export function useEffect() {}
   export function useLayoutEffect(callback) { callback(); }
-  export function useCart() { return {items:cart, cleanupPurchase: payload => { cleanupCount++; cart = cartReducer({items:cart}, {type:'CLEANUP_PURCHASE', payload}).items; }}; }
+  export function useCart() { return {items:cart, ownerId:'test-user', cleanupPurchase: payload => { cleanupCount++; cart = cartReducer({items:cart}, {type:'CLEANUP_PURCHASE', payload}).items; }}; }
   export const Fragment = 'Fragment';
   export function jsx(type, props) { return {type, props}; }
   export const jsxs = jsx;
@@ -37,6 +37,7 @@ const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
   ['../hooks/useSession', runtimeUrl],
+  ['../hooks/useBranch', dataUrl('export function useBranch() {return {selectedBranchId:"san_jose",branches:[{id:"san_jose",name:"San José",available:true}]}}')],
   ['../services/analytics', analyticsUrl],
 ])
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
@@ -77,7 +78,8 @@ const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quant
 function order() {
   return { termsAcceptance:{accepted:true,version:'2026-10-lab4-v1',acceptedAt:'2026-10-12T00:00:00.000Z'}, id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
     items:[{productId:'p', name:'Producto', image:'', unitPrice:10000, quantity:1, lineSubtotal:10000}],
-    totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING' }
+    totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING', contractVersion:2,
+    commercial:{userId:'test-user', customerRole:'B2C', branchId:'san_jose', pricingType:'RETAIL', policyVersion:'CIBERNOVA-COMMERCIAL-V1'} }
 }
 /** Recorre el árbol JSX simulado y devuelve sus nodos para inspeccionar propiedades. */
 function nodes(tree) {
@@ -126,7 +128,7 @@ async function paymentFlow(t, scenario = 'PAYMENT_DECLINED', Page = CheckoutPage
     assert.equal(typeof payload.idempotencyKey, 'string')
     assert.ok(payload.idempotencyKey.length > 0)
     requests.push({url, payload})
-    if (url === '/api/orders') return Response.json({ ...order(), id: orderId }, {status:201})
+    if (url === '/api/v2/orders') return Response.json({ ...order(), id: orderId }, {status:201})
     assert.equal(url, '/api/orders/' + orderId + '/payment')
     assert.deepEqual(Object.keys(payload).sort(), ['idempotencyKey', 'scenario'])
     return respond(payload)
@@ -320,7 +322,7 @@ test('F2 fallo de red conserva Order, escenario y key incluso ante callback de s
   await flow.payment().onProcessPayment(); flow.render()
   assert.equal(flow.transactions.at(-1), 'known')
   assert.deepEqual(flow.requests[1], flow.requests[2])
-  assert.equal(flow.requests.filter(r => r.url === '/api/orders').length, 1)
+  assert.equal(flow.requests.filter(r => r.url === '/api/v2/orders').length, 1)
 })
 
 for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR']) {

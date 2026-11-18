@@ -30,7 +30,7 @@ const runtimeUrl = dataUrl(`
     return [state, action => setState(current => reducer(current, action))];
   }
   export function dispatch(action) { cart = cartReducer({items:cart}, action).items; }
-  export function useCart() { return {items:cart, cleanupPurchase: payload => { cleanupCount++; dispatch({type:'CLEANUP_PURCHASE', payload}); }}; }
+  export function useCart() { return {items:cart, ownerId:'test-user', cleanupPurchase: payload => { cleanupCount++; dispatch({type:'CLEANUP_PURCHASE', payload}); }}; }
   export const Fragment = 'Fragment';
   export function jsx(type, props) { return {type, props}; }
   export const jsxs = jsx;
@@ -41,6 +41,7 @@ const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
   ['../hooks/useSession', dataUrl('export function useSession() {return {user:{id:"test-user",role:"B2C"},epoch:0}}')],
+  ['../hooks/useBranch', dataUrl('export function useBranch() {return {selectedBranchId:"san_jose",branches:[{id:"san_jose",name:"San José",available:true}]}}')],
   ['../services/analytics', analyticsUrl],
 ])
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
@@ -80,7 +81,8 @@ const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quant
 function order() {
   return { termsAcceptance:{accepted:true,version:'2026-10-lab4-v1',acceptedAt:'2026-10-12T00:00:00.000Z'}, id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
     items:[{productId:'p', name:'Producto', image:'', unitPrice:10000, quantity:1, lineSubtotal:10000}],
-    totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING' }
+    totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING', contractVersion:2,
+    commercial:{userId:'test-user', customerRole:'B2C', branchId:'san_jose', pricingType:'RETAIL', policyVersion:'CIBERNOVA-COMMERCIAL-V1'} }
 }
 /** Recorre el árbol JSX simulado y devuelve sus nodos para inspeccionar propiedades. */
 function nodes(tree) {
@@ -127,7 +129,7 @@ async function paymentFlow(t, scenario = 'PAYMENT_DECLINED') {
     assert.equal(typeof payload.idempotencyKey, 'string')
     assert.ok(payload.idempotencyKey.length > 0)
     requests.push({url, payload})
-    if (url === '/api/orders') return Response.json(order(), {status:201})
+    if (url === '/api/v2/orders') return Response.json(order(), {status:201})
     assert.equal(url, '/api/orders/order-1/payment')
     assert.deepEqual(Object.keys(payload).sort(), ['idempotencyKey', 'scenario'])
     return respond(payload)
@@ -276,7 +278,7 @@ test('confirmed creation replay preserves a new Cart and never pays', async t =>
   let calls=0
   globalThis.fetch = async url => {
     calls++
-    assert.equal(url, '/api/orders')
+    assert.equal(url, '/api/v2/orders')
     return Response.json(result('PAYMENT_APPROVED').order, {status:201})
   }
   const flow = checkout()

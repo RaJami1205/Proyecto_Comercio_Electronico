@@ -1,5 +1,8 @@
 /** Define solicitudes de creación y snapshots de Order con productos, importes y estados transaccionales. */
 import type { BuyerInfo, DeliveryInfo } from './checkout'
+import type { BranchId } from './branch'
+import type { PricingType } from './commercial'
+import type { Company } from './user'
 
 export interface CreateOrderItemRequest {
   productId: string
@@ -12,13 +15,19 @@ export interface TermsAcceptanceRequest {
   readonly version: string
 }
 
-/** Solicitud del navegador con datos, referencias y consentimiento; no aporta precios ni estados confiables. */
+/** Importes estimados por el Client; el Server los compara y rechaza el intento si no coinciden. */
+export type OrderFinancialExpectation = Readonly<OrderTotals>
+
+/** Solicitud del navegador con datos, referencias y consentimiento; no aporta rol, precios ni estados confiables. */
 export interface CreateOrderRequest {
   buyer: BuyerInfo
   delivery: DeliveryInfo
   items: CreateOrderItemRequest[]
   idempotencyKey: string
   termsAcceptance: TermsAcceptanceRequest
+  /** Requerido por Orders V2: una única sucursal para todos los productos. */
+  branchId?: BranchId
+  financialExpectation?: OrderFinancialExpectation
 }
 
 /** Snapshot de producto con precio y subtotal determinados por el Server. */
@@ -29,6 +38,8 @@ export interface OrderItem {
   unitPrice: number
   quantity: number
   lineSubtotal: number
+  /** Condición comercial histórica por producto; ausente en Orders V1. */
+  minOrderQuantity?: number
 }
 
 export interface OrderTotals {
@@ -68,4 +79,16 @@ export interface Order {
   orderStatus: OrderStatus
   paymentStatus: PaymentStatus
   termsAcceptance: OrderTermsAcceptance
+  contractVersion?: 1 | 2
+  commercial?: OrderCommercialSnapshot
+}
+
+/** Contexto comercial confirmado por el Server al crear la Order V2; no se recalcula con el catálogo actual. */
+export interface OrderCommercialSnapshot {
+  userId: string
+  customerRole: 'B2C' | 'B2B'
+  company?: Company
+  branchId: BranchId
+  pricingType: PricingType
+  policyVersion: string
 }

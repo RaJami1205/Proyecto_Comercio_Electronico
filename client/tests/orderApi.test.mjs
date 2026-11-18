@@ -15,7 +15,7 @@ const request = {
   delivery: { province: 'San José', canton: 'San José', address: 'Dirección ficticia' },
   items: [{ productId: 'product-1', quantity: 2, unitPrice: 1, lineSubtotal: 2 }],
   termsAcceptance: { accepted: true, version: '2026-10-lab4-v1', acceptedAt: 'forged' },
-  idempotencyKey: 'same-attempt', totals: { total: 1 },
+  idempotencyKey: 'same-attempt', totals: { total: 1 }, branchId: 'san_jose', role: 'B2B',
 }
 const order = {
   termsAcceptance: {accepted:true, version:'2026-10-lab4-v1', acceptedAt:'2026-10-12T12:00:00.000Z'},
@@ -23,14 +23,15 @@ const order = {
   buyer: request.buyer, delivery: request.delivery,
   items: [{ productId: 'product-1', name: 'Producto', image: '', unitPrice: 5000, quantity: 2, lineSubtotal: 10000 }],
   totals: { subtotal: 10000, tax: 1300, shipping: 3500, total: 14800 },
-  currency: 'CRC', orderStatus: 'PENDING', paymentStatus: 'PENDING',
+  currency: 'CRC', orderStatus: 'PENDING', paymentStatus: 'PENDING', contractVersion: 2,
+  commercial: { userId: 'test-user', customerRole: 'B2C', branchId: 'san_jose', pricingType: 'RETAIL', policyVersion: 'CIBERNOVA-COMMERCIAL-V1' },
 }
 
 test('serializa referencias sin importes y conserva el snapshot del servidor', async () => {
   const original = globalThis.fetch
   const sent = []
   globalThis.fetch = async (url, options) => {
-    assert.equal(url, '/api/orders')
+    assert.equal(url, '/api/v2/orders')
     assert.equal(options.method, 'POST')
     assert.equal(options.headers['X-CiberNova-User-Id'], 'test-user')
     sent.push(JSON.parse(options.body))
@@ -39,7 +40,8 @@ test('serializa referencias sin importes y conserva el snapshot del servidor', a
   try {
     assert.deepEqual(await orderApi.createOrder(request, 'test-user'), order)
     await orderApi.createOrder(request, 'test-user')
-    assert.deepEqual(sent[0], { buyer: request.buyer, delivery: request.delivery, items: [{ productId: 'product-1', quantity: 2 }], idempotencyKey: 'same-attempt', termsAcceptance: { accepted: true, version: request.termsAcceptance.version } })
+    // Rol, precios unitarios, subtotales y totales del navegador nunca se transmiten como datos autoritativos.
+    assert.deepEqual(sent[0], { buyer: request.buyer, delivery: request.delivery, items: [{ productId: 'product-1', quantity: 2 }], idempotencyKey: 'same-attempt', termsAcceptance: { accepted: true, version: request.termsAcceptance.version }, branchId: 'san_jose' })
     assert.equal(sent[1].idempotencyKey, sent[0].idempotencyKey)
   } finally { globalThis.fetch = original }
 })

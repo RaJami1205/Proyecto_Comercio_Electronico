@@ -51,7 +51,7 @@ function App() {
 
   // Ajuste antes del commit: nunca se monta Checkout con un Cart vacío.
   if (navigation.view === 'checkout' && !checkoutLocked && !checkoutHasOrder && !isTransactionBlocked()
-    && (items.length === 0 || !session.user || session.user.role !== 'B2C')) {
+    && (items.length === 0 || !session.user || session.user.role === 'ADMIN')) {
     setNavigation({ view: 'cart', emptyCartNotice: items.length === 0, checkoutNotice: session.purchaseBlockReason ?? undefined })
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }

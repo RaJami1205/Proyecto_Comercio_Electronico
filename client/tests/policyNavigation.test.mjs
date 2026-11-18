@@ -32,7 +32,7 @@ const runtimeUrl = dataUrl(`
   }
   export function flush() { const pending=effects; effects=[]; pending.forEach(effect=>effect()); }
   export function useCart() { return {items:cart,totalUnits:cart.length}; }
-  const purchaseReason=()=>conflict?'Conflicto externo':!sessionUser?'Inicia sesión':sessionUser.role!=='B2C'?'Solo B2C':null;
+  const purchaseReason=()=>conflict?'Conflicto externo':!sessionUser?'Inicia sesión':sessionUser.role==='ADMIN'?'ADMIN no compra':null;
   export function useSession() { return {user:sessionUser,epoch:0,dialog:null,purchaseBlockReason:purchaseReason(),transitionBlockReason:null,resolving:false,
     getPurchaseBlockReason:purchaseReason,isTransactionBlocked:()=>transaction==='active'||transaction==='uncertain',
     setCheckoutMounted:()=>{},setTransactionState:state=>{transaction=state},openLogin:()=>{},requestLogout:()=>{}}; }
@@ -247,7 +247,7 @@ test('entrada a Checkout sin productos mantiene reemplazo por Cart', t => {
   assert.equal(nodes(tree).some(n => n.type === 'CheckoutPage'), false)
 })
 
-for (const user of [null, {id:'b',displayName:'Empresa',role:'B2B',company:{id:'co',name:'Empresa'}}, {id:'a',displayName:'Admin',role:'ADMIN'}]) {
+for (const user of [null, {id:'a',displayName:'Admin',role:'ADMIN'}]) {
   test('CN-53 bloquea acceso directo, callbacks e historial de Checkout para ' + (user?.role ?? 'sin sesión'), t => {
     const app = environment(t, '#checkout')
     runtime.setSession(user)
@@ -275,6 +275,15 @@ for (const user of [null, {id:'b',displayName:'Empresa',role:'B2B',company:{id:'
     assert.equal(nodes(tree).some(node => node.type === 'CheckoutPage'), false)
   })
 }
+
+test('Checkout V2 permite acceso directo a B2B con carrito propio', t => {
+  const app = environment(t, '#checkout')
+  runtime.setSession({id:'b',displayName:'Empresa',role:'B2B',company:{id:'co',name:'Empresa'}})
+  app.render()
+  const tree = app.render()
+  assert.ok(nodes(tree).find(node => node.type === 'CheckoutPage'))
+  assert.equal(app.window.location.hash, '#checkout')
+})
 
 test('CN-53 incertidumbre bloquea callbacks, hash, Back y reload aunque navegación indique false', t => {
   const app = environment(t, '#cart-page')

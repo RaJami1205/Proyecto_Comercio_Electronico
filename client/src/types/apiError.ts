@@ -17,11 +17,20 @@ export type ApiErrorCode =
   | 'INVALID_B2B_DATA'
   | 'USER_SERVICE_UNAVAILABLE'
   | 'UNEXPECTED_ERROR'
+  | 'INVALID_BRANCH_ID'
+  | 'INVALID_PRODUCT_PRICE'
+  | 'B2B_NOT_AVAILABLE'
+  | 'INVALID_MOQ'
+  | 'INVALID_QUANTITY'
+  | 'INVENTORY_UNAVAILABLE'
+  | 'INSUFFICIENT_INVENTORY'
+  | 'ORDER_CONTRACT_DEPRECATED'
 
 export interface ApiErrorResponse {
   error: {
     code: ApiErrorCode
     message: string
     fieldErrors?: Record<string, string>
+    outcome?: 'unknown'
   }
 }
