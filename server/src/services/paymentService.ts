@@ -8,15 +8,17 @@ import { InMemoryPaymentStore, type PaymentStore } from '../stores/paymentStore.
 import type { PaymentResult } from '../types/payment.js'
 import type { PaymentStatus } from '../types/order.js'
 import { PaymentSandboxService, type PaymentSandbox } from './paymentSandboxService.js'
+import { orderIndexNotifier, type OrderIndexNotifier } from './orderIndexing.js'
 
 export class PaymentService {
   private readonly persistence: PaymentStore
 
-  /** Recibe el store de Orders y el Sandbox que resolverá los intentos de pago. */
+  /** Recibe el store de Orders, el Sandbox y el notifier que proyecta los estados confirmados hacia Algolia. */
   constructor(
     private readonly store: OrderStore = commerceStores.orders,
     private readonly sandbox: PaymentSandbox = new PaymentSandboxService(),
     persistence?: PaymentStore,
+    private readonly indexer: OrderIndexNotifier = orderIndexNotifier,
   ) {
     this.persistence = persistence ?? (store === commerceStores.orders ? commerceStores.payments : new InMemoryPaymentStore(store))
     if (!this.persistence.isFor(store)) throw new DatabaseError('configuration')
@@ -26,7 +28,7 @@ export class PaymentService {
   async process(orderId: string, value: unknown, ownerId: string): Promise<PaymentResult> {
     const request = validateProcessPaymentRequest(value)
     if (!this.persistence.isFor(this.store)) throw new DatabaseError('configuration')
-    return this.persistence.processOrReplay({ ...request, orderId, ownerId }, async order => {
+    const payment = await this.persistence.processOrReplay({ ...request, orderId, ownerId }, async order => {
       if (order.orderStatus === 'CONFIRMED' || order.paymentStatus === 'APPROVED') {
         throw new OrderError(409, 'ORDER_ALREADY_CONFIRMED', 'La orden ya fue confirmada y no admite otro pago.')
       }
@@ -44,6 +46,9 @@ export class PaymentService {
         orderStatus: result.result === 'PAYMENT_APPROVED' ? 'CONFIRMED' : 'PENDING',
       } }
     })
+    // Después del commit: la sincronización lee el estado persistido, nunca el resultado recibido aquí.
+    this.indexer.notify(payment.order.id)
+    return payment
   }
 }
 

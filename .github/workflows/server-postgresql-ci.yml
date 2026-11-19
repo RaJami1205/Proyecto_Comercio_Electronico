@@ -69,13 +69,14 @@ jobs:
           psql --no-psqlrc --set ON_ERROR_STOP=1 --single-transaction \
             --file supabase/migrations/20261109000100_commerce_foundation.sql \
             --file supabase/migrations/20261110025043_cibernova_runtime_login.sql \
-            --file supabase/migrations/20261117000100_order_creation_v2.sql
+            --file supabase/migrations/20261117000100_order_creation_v2.sql \
+            --file supabase/migrations/20261118000100_order_search_index.sql
           psql --no-psqlrc --set ON_ERROR_STOP=1 --set "runtime_password=$CN59_RUNTIME_PASSWORD" <<'SQL'
           ALTER ROLE cibernova_app PASSWORD :'runtime_password';
           SQL
-      - name: Integration y E2E Tests CN-57 / CN-58 / CN-59 / CN-69 con Runtime separado
+      - name: Integration y E2E Tests CN-57 / CN-58 / CN-59 / CN-65 / CN-69 con Runtime separado
         env:
           RUN_DATABASE_INTEGRATION_TESTS: '1'
           DATABASE_TEST_URL: postgresql://cn_test_admin:ci-admin-ephemeral-only@127.0.0.1:5432/cibernova_test
           DATABASE_RUNTIME_TEST_URL: postgresql://cibernova_app:ci-runtime-ephemeral-only@127.0.0.1:5432/cibernova_test
-        run: node --test tests/database.integration.test.mjs tests/commerce.integration.test.mjs tests/e2e.integration.test.mjs
+        run: node --test tests/database.integration.test.mjs tests/commerce.integration.test.mjs tests/e2e.integration.test.mjs tests/orderIndex.integration.test.mjs

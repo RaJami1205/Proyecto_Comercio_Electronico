@@ -896,6 +896,7 @@ El backend requiere las variables de configuración correspondientes a:
 
 - aplicación de Algolia;
 - índice de productos (`ALGOLIA_INDEX_NAME`) e índice independiente de usuarios (`ALGOLIA_USERS_INDEX_NAME`);
+- índice de Orders (`ALGOLIA_ORDERS_INDEX_NAME`) con su clave restringida (`ALGOLIA_ORDERS_API_KEY`), descritos en `server/docs/orders-search-index.md`;
 - credencial autorizada del servidor;
 - puerto de ejecución;
 - configuración permitida por el entorno.

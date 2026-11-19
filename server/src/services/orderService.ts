@@ -16,12 +16,15 @@ import { getProductById } from './productService.js'
 import { resolvePricing, validateCommercialQuantity } from '../domain/pricing.js'
 import { validateBranchQuantity } from '../domain/inventory.js'
 import { CatalogError } from '../domain/catalogError.js'
+import { orderIndexNotifier, type OrderIndexNotifier } from './orderIndexing.js'
 
 type ProductLookup = (id: string) => Promise<ProductRecord | undefined>
 
 export class OrderService {
   private readonly pending = new Map<string, { ownerId: string; identity: string; task: Promise<Order> }>()
-  constructor(private readonly store: OrderStore = commerceStores.orders, private readonly lookup: ProductLookup = getProductById) {}
+  /** El notifier proyecta la Order hacia Algolia después del commit; sus fallos nunca alteran la respuesta. */
+  constructor(private readonly store: OrderStore = commerceStores.orders, private readonly lookup: ProductLookup = getProductById,
+    private readonly indexer: OrderIndexNotifier = orderIndexNotifier) {}
 
   /** La identidad procede de CN-54, no del body. Promise Sharing no sustituye la unicidad del store. */
   async create(value: unknown, user: ResolvedUser, { replayOnly = false }: { replayOnly?: boolean } = {}): Promise<Order> {
@@ -46,7 +49,7 @@ export class OrderService {
       return this.buildOrder(request, id, currentTermsAccepted, signal)
     }))
     this.pending.set(request.idempotencyKey, { ownerId, identity: fingerprint, task })
-    try { return structuredClone(await task) }
+    try { return structuredClone(this.indexed(await task)) }
     finally { this.pending.delete(request.idempotencyKey) }
   }
 
@@ -68,8 +71,14 @@ export class OrderService {
     const task = Promise.resolve().then(() => this.store.createOrReplay(context,
       (id, signal) => this.buildOrderV2(request, user, id, currentTermsAccepted, signal)))
     this.pending.set(storageKey, { ownerId: user.id, identity: fingerprint, task })
-    try { return structuredClone(await task) }
+    try { return structuredClone(this.indexed(await task)) }
     finally { this.pending.delete(storageKey) }
+  }
+
+  /** Solicita la proyección de una Order ya persistida; un Replay sin revisión pendiente no escribe en Algolia. */
+  private indexed(order: Order): Order {
+    this.indexer.notify(order.id)
+    return order
   }
 
   /** Compatibilidad interna previa al CN-63: lectura acotada a un propietario ya conocido. */
