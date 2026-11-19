@@ -14,6 +14,7 @@ import {
 } from '../utils/adminProductFormat'
 import { INITIAL_ADMIN_FILTERS, withFilter } from '../utils/adminProductFilters'
 import { hashForAdminProduct, isSameTabNavigation } from '../utils/appNavigation'
+import { EMPTY_SIMULATION, simulationsFor, type InventorySimulationEntry, type InventorySimulationState } from '../utils/inventorySimulation'
 import { BRANCH_LABELS } from '../utils/orderHistoryFormat'
 import styles from '../styles/admin/AdminProducts.module.css'
 
@@ -35,7 +36,9 @@ type ListState =
 
 const errorKind = (error: unknown): AdminProductErrorKind => error instanceof AdminProductApiError ? error.kind : 'unavailable'
 
-function ProductCard({ product, branchId, onOpenProduct }: { product: AdminProduct; branchId: BranchId | ''; onOpenProduct: (id: string) => void }) {
+function ProductCard({ product, branchId, onOpenProduct, simulated }: {
+  product: AdminProduct; branchId: BranchId | ''; onOpenProduct: (id: string) => void; simulated: InventorySimulationEntry[]
+}) {
   function open(event: MouseEvent<HTMLAnchorElement>) {
     if (!isSameTabNavigation(event)) return
     event.preventDefault()
@@ -55,6 +58,7 @@ function ProductCard({ product, branchId, onOpenProduct }: { product: AdminProdu
         <Badge tone={AVAILABILITY_TONES[inventory.availability]}>{AVAILABILITY_LABELS[inventory.availability]}</Badge>
         <Badge tone={B2B_STATUS_TONES[pricing.b2bStatus]}>{B2B_STATUS_LABELS[pricing.b2bStatus]}</Badge>
         {inventory.insufficientForMoq ? <Badge tone="warning">Ninguna sucursal alcanza el MOQ</Badge> : null}
+        {simulated.length ? <Badge tone="warning">Simulación activa</Badge> : null}
         {product.issues.length ? <Badge tone="danger">{product.issues.length === 1 ? '1 inconsistencia' : `${product.issues.length} inconsistencias`}</Badge> : null}
       </span>
       <dl className={styles.facts}>
@@ -63,7 +67,7 @@ function ProductCard({ product, branchId, onOpenProduct }: { product: AdminProdu
         <div><dt>MOQ B2B</dt><dd>{pricing.minOrderQuantity === null ? 'No definido' : formatUnits(pricing.minOrderQuantity)}</dd></div>
         <div><dt>Stock global</dt><dd>{formatUnits(inventory.globalStock)}</dd></div>
       </dl>
-      <BranchInventoryTable branches={inventory.branches} highlight={branchId || undefined} caption={`Existencias por sucursal de ${product.title}`} />
+      <BranchInventoryTable branches={inventory.branches} highlight={branchId || undefined} simulated={simulated} caption={`Existencias por sucursal de ${product.title}`} />
       <a className={styles.detailLink} href={hashForAdminProduct(product.id)} onClick={open}
         aria-label={`Ver detalle administrativo de ${product.title}`}>Ver detalle</a>
     </li>
@@ -78,7 +82,7 @@ function facetOptions(facets: Record<string, number>, selected: string): string[
 }
 
 /** Consulta las páginas del usuario recibido; un cambio de filtros aborta la solicitud anterior. */
-function AdminProductCatalog({ userId, onOpenProduct }: { userId: string; onOpenProduct: (id: string) => void }) {
+function AdminProductCatalog({ userId, onOpenProduct, simulation }: { userId: string; onOpenProduct: (id: string) => void; simulation: InventorySimulationState }) {
   const [filters, setFilters] = useState<AdminProductFilters>(INITIAL_ADMIN_FILTERS)
   const [draft, setDraft] = useState('')
   const [state, setState] = useState<ListState>({ status: 'loading' })
@@ -145,7 +149,8 @@ function AdminProductCatalog({ userId, onOpenProduct }: { userId: string; onOpen
           {filters.branchId ? ` · estado evaluado en ${BRANCH_LABELS[filters.branchId]}` : ''}
         </p>
         <ul className={styles.list}>
-          {result.products.map(product => <ProductCard key={product.id} product={product} branchId={filters.branchId} onOpenProduct={onOpenProduct} />)}
+          {result.products.map(product => <ProductCard key={product.id} product={product} branchId={filters.branchId} onOpenProduct={onOpenProduct}
+            simulated={simulationsFor(simulation, userId, product.id)} />)}
         </ul>
         <nav className={styles.pagination} aria-label="Paginación de productos">
           <button type="button" className={styles.secondaryButton} disabled={result.page <= 1} onClick={() => update({ page: result.page - 1 })}>Anterior</button>
@@ -209,12 +214,16 @@ function AdminProductCatalog({ userId, onOpenProduct }: { userId: string; onOpen
   )
 }
 
-export default function AdminProductsPage({ onOpenProduct, ...shell }: AdminShellProps & { onOpenProduct: (productId: string) => void }) {
+export default function AdminProductsPage({ onOpenProduct, simulation = EMPTY_SIMULATION, ...shell }: AdminShellProps & {
+  onOpenProduct: (productId: string) => void
+  /** CN-68: estado demostrativo en memoria de App; solo se presenta, nunca se envía al Server. */
+  simulation?: InventorySimulationState
+}) {
   const { user } = useSession()
   let content: ReactNode
   if (!user) content = <AdminAccessNotice kind="session" />
   else if (user.role !== 'ADMIN') content = <AdminAccessNotice kind="forbidden" />
-  else content = <AdminProductCatalog key={user.id} userId={user.id} onOpenProduct={onOpenProduct} />
+  else content = <AdminProductCatalog key={user.id} userId={user.id} onOpenProduct={onOpenProduct} simulation={simulation} />
   return (
     <AdminShell {...shell} title="Productos e inventario"
       introduction="Consulta precios Retail y Wholesale, condiciones B2B y existencias de San José, Alajuela, Cartago y Heredia. Esta vista no modifica productos, precios ni inventario.">

@@ -1,5 +1,5 @@
 /** Coordina Catalog, Cart, Checkout y políticas/FAQ mediante History API, conservando el catálogo montado. */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import ProductListingPage, { type CartFeedback } from './pages/ProductListingPage'
 import CartPage from './pages/CartPage'
 import CheckoutPage from './pages/CheckoutPage'
@@ -24,6 +24,7 @@ import OrderDetailPage from './pages/OrderDetailPage'
 import AdminProductsPage from './pages/AdminProductsPage'
 import AdminProductDetailPage from './pages/AdminProductDetailPage'
 import { trackEvent } from './services/analytics'
+import { EMPTY_SIMULATION, inventorySimulationReducer } from './utils/inventorySimulation'
 
 interface NavigationState {
   view: AppView
@@ -80,9 +81,13 @@ function App() {
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }
   const { view, emptyCartNotice } = navigation
+  // CN-68: simulación de inventario solo en memoria; nunca se pasa a catálogo, Cart, Checkout ni Orders.
+  const [inventorySimulation, dispatchInventorySimulation] = useReducer(inventorySimulationReducer, EMPTY_SIMULATION)
   const [sessionEpoch, setSessionEpoch] = useState(session.epoch)
   if (sessionEpoch !== session.epoch) {
     setSessionEpoch(session.epoch)
+    // Un cambio de identidad o Logout descarta las simulaciones; otra Session nunca las hereda.
+    dispatchInventorySimulation({ type: 'reset-all' })
     setFeedback(null)
     setIsCartPreviewOpen(false)
     if (navigation.checkoutNotice) setNavigation({ ...navigation, checkoutNotice: undefined })
@@ -302,6 +307,7 @@ function App() {
         <AdminProductsPage
           key={`admin-products:${session.user?.id ?? 'none'}:${session.epoch}`}
           onOpenProduct={openAdminProduct}
+          simulation={inventorySimulation}
           onCatalogClick={(hash) => navigate('catalog', hash)}
           onPolicyNavigate={navigate}
           onCartClick={openCartPreview}
@@ -312,6 +318,8 @@ function App() {
           key={`admin-product:${session.user?.id ?? 'none'}:${session.epoch}:${navigation.productId}`}
           productId={navigation.productId}
           onBack={() => navigate('admin-products')}
+          simulation={inventorySimulation}
+          onSimulationChange={dispatchInventorySimulation}
           onCatalogClick={(hash) => navigate('catalog', hash)}
           onPolicyNavigate={navigate}
           onCartClick={openCartPreview}

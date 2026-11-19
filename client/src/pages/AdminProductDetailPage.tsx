@@ -2,17 +2,25 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { AdminAccessNotice, AdminShell, Badge, type AdminShellProps } from '../components/admin/AdminShell'
 import BranchInventoryTable from '../components/admin/BranchInventoryTable'
+import InventorySimulationPanel from '../components/admin/InventorySimulationPanel'
 import { useSession } from '../hooks/useSession'
 import { adminProductApi, AdminProductApiError, type AdminProductErrorKind } from '../services/adminProductApi'
 import type { AdminProduct } from '../types/adminProduct'
 import {
   AVAILABILITY_LABELS, AVAILABILITY_TONES, B2B_STATUS_LABELS, B2B_STATUS_TONES, formatAdminMoney, formatUnits, ISSUE_LABELS,
 } from '../utils/adminProductFormat'
+import { EMPTY_SIMULATION, simulationsFor, type InventorySimulationAction, type InventorySimulationState } from '../utils/inventorySimulation'
 import styles from '../styles/admin/AdminProducts.module.css'
 
 type DetailState = { status: 'loading' } | { status: 'error'; kind: AdminProductErrorKind } | { status: 'ready'; product: AdminProduct }
 
-function ProductDetail({ product }: { product: AdminProduct }) {
+interface SimulationProps {
+  simulation: InventorySimulationState
+  onSimulationChange: (action: InventorySimulationAction) => void
+}
+
+function ProductDetail({ product, userId, simulation, onSimulationChange }: { product: AdminProduct; userId: string } & SimulationProps) {
+  const simulated = simulationsFor(simulation, userId, product.id)
   const { pricing, inventory } = product
   return (
     <>
@@ -65,13 +73,14 @@ function ProductDetail({ product }: { product: AdminProduct }) {
       </div>
       <section className={styles.panel} aria-labelledby="admin-product-branches">
         <h2 id="admin-product-branches">Existencias por sucursal</h2>
-        <BranchInventoryTable branches={inventory.branches} caption={`Existencias por sucursal de ${product.title}`} />
+        <BranchInventoryTable branches={inventory.branches} simulated={simulated} caption={`Existencias por sucursal de ${product.title}`} />
       </section>
+      <InventorySimulationPanel product={product} ownerId={userId} entries={simulated} onSimulationChange={onSimulationChange} />
     </>
   )
 }
 
-function AdminProductLoader({ userId, productId, onBack }: { userId: string; productId: string; onBack: () => void }) {
+function AdminProductLoader({ userId, productId, onBack, simulation, onSimulationChange }: { userId: string; productId: string; onBack: () => void } & SimulationProps) {
   const [state, setState] = useState<DetailState>({ status: 'loading' })
   const [reload, setReload] = useState(0)
 
@@ -86,7 +95,7 @@ function AdminProductLoader({ userId, productId, onBack }: { userId: string; pro
 
   let content: ReactNode
   if (state.status === 'loading') content = <p className={styles.status} role="status" aria-busy="true">Cargando producto…</p>
-  else if (state.status === 'ready') content = <ProductDetail product={state.product} />
+  else if (state.status === 'ready') content = <ProductDetail product={state.product} userId={userId} simulation={simulation} onSimulationChange={onSimulationChange} />
   else if (state.kind === 'session' || state.kind === 'forbidden') content = <AdminAccessNotice kind={state.kind} />
   else if (state.kind === 'not-found') {
     content = (
@@ -113,11 +122,13 @@ function AdminProductLoader({ userId, productId, onBack }: { userId: string; pro
   )
 }
 
-export default function AdminProductDetailPage({ productId, onBack, ...shell }: AdminShellProps & { productId: string; onBack: () => void }) {
+export default function AdminProductDetailPage({ productId, onBack, simulation = EMPTY_SIMULATION, onSimulationChange = () => {}, ...shell }:
+  AdminShellProps & { productId: string; onBack: () => void } & Partial<SimulationProps>) {
   const { user } = useSession()
   let content: ReactNode
   if (!user) content = <AdminAccessNotice kind="session" />
   else if (user.role !== 'ADMIN') content = <AdminAccessNotice kind="forbidden" />
-  else content = <AdminProductLoader key={user.id + ':' + productId} userId={user.id} productId={productId} onBack={onBack} />
+  else content = <AdminProductLoader key={user.id + ':' + productId} userId={user.id} productId={productId} onBack={onBack}
+    simulation={simulation} onSimulationChange={onSimulationChange} />
   return <AdminShell {...shell} title="Detalle del producto">{content}</AdminShell>
 }
