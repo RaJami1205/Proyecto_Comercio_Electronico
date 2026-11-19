@@ -9,6 +9,7 @@ export interface HighlightedValue {
 export interface ProductRecord {
   objectID: string
   title: string
+  sku?: string
   price?: number
   image_url?: string
   categories?: string[]

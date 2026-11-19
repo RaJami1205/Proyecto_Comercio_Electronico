@@ -8,6 +8,7 @@ import ordersRouter, { ordersV2Router } from './routes/orders.js'
 import usersRouter from './routes/users.js'
 import sessionRouter from './routes/session.js'
 import branchesRouter from './routes/branches.js'
+import adminProductsRouter from './routes/adminProducts.js'
 import { CatalogError } from './domain/catalogError.js'
 import { OrderError } from './domain/orderError.js'
 import { OrderPersistenceError } from './domain/orderPersistenceError.js'
@@ -30,12 +31,26 @@ app.use('/api/products', productsRouter)
 app.use('/api/branches', branchesRouter)
 app.use('/api/orders', authorizeRoles('B2C', 'B2B'), express.json(), ordersRouter)
 app.use('/api/v2/orders', authorizeIdentity(), ordersV2Router)
+app.use('/api/v2/admin/products', authorizeIdentity(), adminProductsRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/session', express.json(), sessionRouter)
 
 // Convierte errores de identidad, Orders y del catálogo a sus contratos HTTP sin exponer detalles internos.
 app.use(
   (error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+    if (_request.path === '/api/v2/admin/products' || _request.path.startsWith('/api/v2/admin/products/')) {
+      let body: ApiErrorResponse = { error: { code: 'CATALOG_UNAVAILABLE', message: 'El catálogo no está disponible en este momento.' } }
+      let status = 503
+      if (error instanceof UserError || error instanceof CatalogError) {
+        status = error.status
+        body = { error: { code: error.code, message: error.message } }
+      } else if (!(error instanceof ConfigurationError)) {
+        // Fallos de Algolia u otros inesperados: sin detalles del SDK ni de la configuración.
+        console.error('No se pudo completar la consulta administrativa de productos.')
+      }
+      response.status(status).json(body)
+      return
+    }
     if (_request.path.startsWith('/api/users') || _request.path.startsWith('/api/session')) {
       let status = 500
       let body: ApiErrorResponse = { error: { code: 'UNEXPECTED_ERROR', message: 'No se pudo completar la solicitud.' } }

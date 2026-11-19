@@ -91,8 +91,13 @@ export async function getCatalogPage(
   }
 }
 
-/** Recupera todos los resultados filtrados, aplica precio mayorista y ordena antes de paginar. */
-async function getWholesaleCatalogPage(page: number, productsPerPage: number, filters: CatalogFilters, query: string): Promise<CatalogPageResult> {
+/**
+ * Recupera de forma verificada todos los resultados de Algolia para query, categorías y marcas.
+ * Lo reutilizan el orden B2B y la consulta administrativa (CN-67), que filtran y paginan en Server
+ * atributos no indexados como facets (precio mayorista, stock_by_branch) sin modificar el índice.
+ */
+export async function getCompleteCatalog(query: string, filters: Pick<CatalogFilters, 'categories' | 'brands'> = {}):
+  Promise<{ hits: ProductRecord[]; facets: Record<string, Record<string, number>> }> {
   const { indexName } = getAlgoliaConfig()
   const facetFilters: string[][] = []
   if (filters.categories?.length) filters.categories.forEach(category => facetFilters.push([`categories:${category}`]))
@@ -141,6 +146,12 @@ async function getWholesaleCatalogPage(page: number, productsPerPage: number, fi
     console.error('Error consultando resultados mayoristas en Algolia.')
     throw error
   }
+  return { hits: allHits, facets }
+}
+
+/** Recupera todos los resultados filtrados, aplica precio mayorista y ordena antes de paginar. */
+async function getWholesaleCatalogPage(page: number, productsPerPage: number, filters: CatalogFilters, query: string): Promise<CatalogPageResult> {
+  const { hits: allHits, facets } = await getCompleteCatalog(query, filters)
 
   const filteredHits = allHits.filter(record => {
     const price = resolvePricing(record, 'B2B').price

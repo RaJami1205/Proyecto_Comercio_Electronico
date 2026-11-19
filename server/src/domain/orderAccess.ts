@@ -5,13 +5,16 @@
 import { UserError } from './userError.js'
 import type { ResolvedUser, UserId, UserRole } from '../types/user.js'
 
-/** Permisos de la matriz RBAC. Payment reutiliza checkout:create junto con la propiedad de la Order. */
-export type Permission = 'checkout:create' | 'orders:read:own' | 'orders:read:all'
+/**
+ * Permisos de la matriz RBAC. Payment reutiliza checkout:create junto con la propiedad de la Order.
+ * catalog:read:admin (CN-67) habilita la consulta Read-Only de precios e inventario por sucursal.
+ */
+export type Permission = 'checkout:create' | 'orders:read:own' | 'orders:read:all' | 'catalog:read:admin'
 
 export const ROLE_PERMISSIONS: Readonly<Record<UserRole, readonly Permission[]>> = Object.freeze({
   B2C: Object.freeze(['checkout:create', 'orders:read:own'] as const),
   B2B: Object.freeze(['checkout:create', 'orders:read:own'] as const),
-  ADMIN: Object.freeze(['orders:read:all'] as const),
+  ADMIN: Object.freeze(['orders:read:all', 'catalog:read:admin'] as const),
 })
 
 /** Indica si el rol resuelto por UserService concede el permiso solicitado. */

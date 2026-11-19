@@ -11,13 +11,18 @@ import type { Product } from './types/product'
 import PolicyPlaceholderPage from './pages/PolicyPlaceholderPage'
 import TermsPage from './pages/TermsPage'
 import ReturnsPolicyPage from './pages/ReturnsPolicyPage'
-import { hashForOrder, hashForView, orderIdFromHash, policyDestinations, viewFromHash, type AppView, type CatalogHash } from './utils/appNavigation'
+import {
+  adminProductIdFromHash, hashForAdminProduct, hashForOrder, hashForView, isAdminView, orderIdFromHash, policyDestinations, viewFromHash,
+  type AppView, type CatalogHash,
+} from './utils/appNavigation'
 import { ShippingPolicyPage } from './pages/ShippingPolicyPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import FaqPage from './pages/FaqPage'
 import AnalyticsDashboardPage from './pages/AnalyticsDashboardPage'
 import MyOrdersPage from './pages/MyOrdersPage'
 import OrderDetailPage from './pages/OrderDetailPage'
+import AdminProductsPage from './pages/AdminProductsPage'
+import AdminProductDetailPage from './pages/AdminProductDetailPage'
 import { trackEvent } from './services/analytics'
 
 interface NavigationState {
@@ -26,6 +31,8 @@ interface NavigationState {
   checkoutNotice?: string
   /** Order abierta en #my-orders/<id>. */
   orderId?: string
+  /** Producto abierto en #admin/products/<id> (CN-67). */
+  productId?: string
 }
 
 const isOrdersView = (view: AppView) => view === 'orders' || view === 'order-detail'
@@ -42,12 +49,15 @@ function App() {
   const canViewAnalytics = session.user?.role === 'ADMIN'
   // Sin Session se muestra la invitación a elegir identidad; ADMIN no usa My Orders.
   const canViewOrders = session.user?.role !== 'ADMIN'
+  // CN-67: la consulta administrativa exige ADMIN también en Client; el Server aplica RBAC por request.
+  const canViewAdmin = session.user?.role === 'ADMIN'
   const { getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState } = session
   const checkoutLockedRef = useRef(false)
   const [checkoutLocked, setCheckoutLocked] = useState(false)
   const [checkoutHasOrder, setCheckoutHasOrder] = useState(false)
   const [navigation, setNavigation] = useState<NavigationState>(() => ({
     view: viewFromLocation(), emptyCartNotice: false, orderId: orderIdFromHash(window.location.hash) ?? undefined,
+    productId: adminProductIdFromHash(window.location.hash) ?? undefined,
   }))
   const initialNavigationRef = useRef(navigation)
   const [isCartPreviewOpen, setIsCartPreviewOpen] = useState(false)
@@ -64,7 +74,8 @@ function App() {
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }
   // Revocar antes del commit evita conservar contenido protegido durante cambios de Session.
-  if ((navigation.view === 'analytics' && !canViewAnalytics) || (isOrdersView(navigation.view) && !canViewOrders)) {
+  if ((navigation.view === 'analytics' && !canViewAnalytics) || (isOrdersView(navigation.view) && !canViewOrders)
+    || (isAdminView(navigation.view) && !canViewAdmin)) {
     setNavigation({ view: 'catalog', emptyCartNotice: false })
     if (isCartPreviewOpen) setIsCartPreviewOpen(false)
   }
@@ -96,6 +107,7 @@ function App() {
       }
       const requested = viewFromLocation()
       const analyticsDenied = (requested === 'analytics' && !canViewAnalytics) || (isOrdersView(requested) && !canViewOrders)
+        || (isAdminView(requested) && !canViewAdmin)
       const reason = requested === 'checkout' ? getPurchaseBlockReason() : null
       const next = analyticsDenied ? 'catalog' : reason ? 'cart' : requested
       if (analyticsDenied) window.history.replaceState({ view: 'catalog' }, '', '#catalog')
@@ -105,7 +117,8 @@ function App() {
       restoreDrawerFocusRef.current = false
       setIsCartPreviewOpen(false)
       setNavigation({ view: next, emptyCartNotice: false, checkoutNotice: reason ?? undefined,
-        orderId: next === 'order-detail' ? orderIdFromHash(window.location.hash) ?? undefined : undefined })
+        orderId: next === 'order-detail' ? orderIdFromHash(window.location.hash) ?? undefined : undefined,
+        productId: next === 'admin-product-detail' ? adminProductIdFromHash(window.location.hash) ?? undefined : undefined })
     }
     window.addEventListener('popstate', syncLocation)
     window.addEventListener('hashchange', syncLocation)
@@ -119,12 +132,13 @@ function App() {
       window.removeEventListener('hashchange', syncLocation)
       window.removeEventListener('beforeunload', protectReload)
     }
-  }, [getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState, canViewAnalytics, canViewOrders])
+  }, [getPurchaseBlockReason, isTransactionBlocked, setCheckoutMounted, setTransactionState, canViewAnalytics, canViewOrders, canViewAdmin])
 
   useEffect(() => setCheckoutMounted(view === 'checkout'), [view, setCheckoutMounted])
 
   useEffect(() => {
-    if ((!canViewAnalytics && window.location.hash === '#analytics') || (!canViewOrders && isOrdersView(viewFromLocation()))) {
+    if ((!canViewAnalytics && window.location.hash === '#analytics') || (!canViewOrders && isOrdersView(viewFromLocation()))
+      || (!canViewAdmin && isAdminView(viewFromLocation()))) {
       window.history.replaceState({ view: 'catalog' }, '', '#catalog')
     }
     if ((emptyCartNotice || navigation.checkoutNotice) && window.location.hash === '#checkout') {
@@ -142,7 +156,7 @@ function App() {
       heading?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
-  }, [navigation, view, emptyCartNotice, canViewAnalytics, canViewOrders])
+  }, [navigation, view, emptyCartNotice, canViewAnalytics, canViewOrders, canViewAdmin])
 
   useEffect(() => () => {
     if (feedbackTimeoutRef.current !== null) clearTimeout(feedbackTimeoutRef.current)
@@ -168,6 +182,7 @@ function App() {
     setIsCartPreviewOpen(false)
     const reason = requestedView === 'checkout' ? getPurchaseBlockReason() : null
     const analyticsDenied = (requestedView === 'analytics' && !canViewAnalytics) || (isOrdersView(requestedView) && !canViewOrders)
+      || (isAdminView(requestedView) && !canViewAdmin)
     const denied = requestedView === 'checkout' && (items.length === 0 || Boolean(reason))
     const nextView = analyticsDenied ? 'catalog' : denied ? 'cart' : requestedView
     const nextCatalogHash = analyticsDenied ? '#catalog' : catalogHash
@@ -196,6 +211,19 @@ function App() {
     if (window.location.hash !== destination) window.history.pushState({ view: 'order-detail' }, '', destination)
     setCheckoutMounted(false)
     setNavigation({ view: 'order-detail', emptyCartNotice: false, orderId })
+  }
+
+  /** Abre el detalle administrativo de un producto con hash directo; solo ADMIN (CN-67). */
+  function openAdminProduct(productId: string) {
+    if (checkoutLockedRef.current || isTransactionBlocked() || !canViewAdmin) return
+    setCheckoutHasOrder(false)
+    setTransactionState('idle')
+    restoreDrawerFocusRef.current = false
+    setIsCartPreviewOpen(false)
+    const destination = hashForAdminProduct(productId)
+    if (window.location.hash !== destination) window.history.pushState({ view: 'admin-product-detail' }, '', destination)
+    setCheckoutMounted(false)
+    setNavigation({ view: 'admin-product-detail', emptyCartNotice: false, productId })
   }
 
   /** Abre el preview cuando la navegación está permitida y habilita el retorno del foco al trigger. */
@@ -264,6 +292,26 @@ function App() {
           key={`order:${session.user?.id ?? 'none'}:${session.epoch}:${navigation.orderId}`}
           orderId={navigation.orderId}
           onBackToOrders={() => navigate('orders')}
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'admin-products' && canViewAdmin ? (
+        // Key por usuario y epoch: un cambio de Session descarta filtros, resultados y requests previos.
+        <AdminProductsPage
+          key={`admin-products:${session.user?.id ?? 'none'}:${session.epoch}`}
+          onOpenProduct={openAdminProduct}
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'admin-product-detail' && canViewAdmin && navigation.productId ? (
+        <AdminProductDetailPage
+          key={`admin-product:${session.user?.id ?? 'none'}:${session.epoch}:${navigation.productId}`}
+          productId={navigation.productId}
+          onBack={() => navigate('admin-products')}
           onCatalogClick={(hash) => navigate('catalog', hash)}
           onPolicyNavigate={navigate}
           onCartClick={openCartPreview}
