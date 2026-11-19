@@ -19,6 +19,7 @@ const runtimeUrl = dataUrl(`
     return [slots[index], value => { slots[index]=typeof value==='function'?value(slots[index]):value; }];
   }
   export function useRef(initial) { const [ref]=useState(()=>({current:initial})); return ref; }
+  export function useReducer(reducer, initial) { const [state,set]=useState(initial); return [state, action=>set(value=>reducer(value,action))]; }
   export function useCallback(callback) { return callback; }
   export function useEffect(effect, deps) {
     const index=cursor++, previous=slots[index];
@@ -52,6 +53,8 @@ function compile(file) {
   }))
 }
 modules.set('./utils/appNavigation', compile('utils/appNavigation.ts'))
+// CN-68: la simulación de inventario no participa en Confirmation; se aísla como estado vacío.
+modules.set('./utils/inventorySimulation', dataUrl('export const EMPTY_SIMULATION={ownerId:null,entries:{}}; export function inventorySimulationReducer(state){return state}'))
 const {default:Confirmation}=await import(compile('pages/OrderConfirmationPage.tsx'))
 const {default:App}=await import(compile('App.tsx'))
 /** Recorre el árbol JSX simulado y devuelve sus nodos para inspeccionar propiedades. */
