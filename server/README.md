@@ -212,3 +212,41 @@ Verificación sin requests a Algolia:
 npm run build
 node --test tests/users.test.mjs
 ```
+
+## Admin Products & Inventory (CN-67)
+
+Consulta administrativa **Read-Only** de productos, precios e inventario por sucursal. Solo ADMIN, mediante el permiso RBAC `catalog:read:admin`; la identidad se resuelve por request con `X-CiberNova-User-Id`.
+
+| Endpoint | Respuesta |
+| --- | --- |
+| `GET /api/v2/admin/products` | `{ products, page, pageSize, total, totalPages, facets: { categories, brands } }` |
+| `GET /api/v2/admin/products/:productId` | `AdminProductDto` |
+
+Query parameters del listado, validados en Server (un valor desconocido responde 400 `INVALID_PRODUCT_FILTER`):
+
+| Parámetro | Valores |
+| --- | --- |
+| `q` | Texto de búsqueda (máx. 120). Si tiene forma de SKU (`SAM-DIS-0214`) también busca por `sku`. |
+| `categories`, `brands` | Facets de Algolia; admiten valores repetidos. |
+| `branchId` | `san_jose`, `alajuela`, `cartago`, `heredia` (inválido: 400 `INVALID_BRANCH_ID`). |
+| `availability` | Sin sucursal: `available`, `limited`, `out-of-stock`, `below-moq`, `invalid`. Con sucursal: `available`, `below-moq`, `out-of-stock`, `invalid`. |
+| `b2b` | `eligible`, `not-available`, `invalid`. |
+| `sort` | `relevance` (default), `title`, `retail_asc`, `retail_desc`, `stock_asc`, `stock_desc` (con sucursal ordena por sus unidades). |
+| `page`, `pageSize` | Enteros positivos; `pageSize` por defecto 12, máximo 48. Una página mayor que el total devuelve la última. |
+
+`AdminProductDto` conserva los valores originales:
+
+- **Precios:** `retailPrice` proviene de `price`; `wholesalePrice`, de `b2b.wholesale_price` aunque el producto no sea elegible para B2B. `b2bAvailable`, `minOrderQuantity` y `b2bStatus` (`eligible`, `not-available`, `invalid`) usan `resolvePricing`. No se aplican `discount_tiers`.
+- **Inventario:** `globalStock` es `stock_quantity`; `branchTotal` es la suma de `stock_by_branch`, y cada sucursal muestra solo sus unidades mediante `getBranchInventory`. Nunca se asigna el stock global a una sucursal.
+- **Estado por sucursal:** `available`, `below-moq` (unidades positivas menores al MOQ de un producto B2B elegible), `out-of-stock` o `invalid`.
+- **Disponibilidad del producto**, sin umbrales numéricos nuevos: `available` (stock en las cuatro sucursales), `limited` (stock en alguna y agotado en al menos una), `out-of-stock` (ninguna) o `invalid`. `insufficientForMoq` indica stock positivo sin ninguna sucursal que alcance el MOQ.
+- **Inconsistencias** (`issues`), informadas sin corregir el dataset: `RETAIL_PRICE_INVALID`, `B2B_DATA_INVALID`, `BRANCH_INVENTORY_INVALID`, `STOCK_TOTAL_MISMATCH`, `IN_STOCK_FLAG_MISMATCH`.
+
+Algolia resuelve `q`, categorías y marcas. `stock_by_branch` y `b2b` no son facets del índice y esta Story no modifica sus settings, por lo que sucursal, disponibilidad y B2B se filtran en Server sobre el conjunto completo verificado que entrega `getCompleteCatalog` (la misma recuperación del orden B2B). La paginación se aplica después de filtrar; el Client nunca recibe el catálogo completo.
+
+Errores (`ApiErrorResponse`): 401 `IDENTITY_REQUIRED`, 403 `FORBIDDEN`/`USER_DISABLED`, 404 `USER_NOT_FOUND`/`PRODUCT_NOT_FOUND`, 400 `INVALID_PRODUCT_FILTER`/`INVALID_BRANCH_ID`, 503 `CATALOG_UNAVAILABLE` o `CATALOG_RESULT_LIMIT`. No hay rutas de escritura: POST/PUT/PATCH/DELETE responden 404.
+
+```sh
+npm run build
+node --test tests/adminProducts.test.mjs
+```

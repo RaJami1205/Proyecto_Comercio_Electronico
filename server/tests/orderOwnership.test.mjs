@@ -70,7 +70,8 @@ async function expectError(response, status, code) {
 test('matriz RBAC central: compradores compran y leen lo propio; ADMIN solo consulta global', () => {
   assert.deepEqual(ROLE_PERMISSIONS.B2C, ['checkout:create', 'orders:read:own'])
   assert.deepEqual(ROLE_PERMISSIONS.B2B, ['checkout:create', 'orders:read:own'])
-  assert.deepEqual(ROLE_PERMISSIONS.ADMIN, ['orders:read:all'])
+  // CN-67 agrega la consulta Read-Only de productos e inventario; ADMIN sigue sin permisos de compra.
+  assert.deepEqual(ROLE_PERMISSIONS.ADMIN, ['orders:read:all', 'catalog:read:admin'])
   assert.ok(Object.isFrozen(ROLE_PERMISSIONS) && Object.isFrozen(ROLE_PERMISSIONS.ADMIN))
   assert.equal(hasPermission(users.admin, 'checkout:create'), false)
   assert.deepEqual(orderReadScope(users.buyer), { kind: 'own', ownerId: 'buyer' })
