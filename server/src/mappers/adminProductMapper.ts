@@ -21,7 +21,8 @@ export function toAdminProduct(record: ProductRecord): AdminProductDto {
   const b2bAvailable = typeof conditions?.available === 'boolean' ? conditions.available : null
   const wholesalePrice = validMoney(conditions?.wholesale_price) ? conditions.wholesale_price : null
   const minOrderQuantity = validMoq(conditions?.min_order_quantity) ? conditions.min_order_quantity : null
-  const b2bStatus: AdminB2BStatus = wholesale.eligible ? 'eligible' : wholesale.issue === 'B2B_NOT_AVAILABLE' ? 'not-available' : 'invalid'
+  const b2bStatus: AdminB2BStatus = b2bAvailable === null ? 'invalid'
+    : wholesale.eligible ? 'eligible' : wholesale.issue === 'B2B_NOT_AVAILABLE' ? 'not-available' : 'invalid'
   if (b2bStatus === 'invalid') issues.push('B2B_DATA_INVALID')
 
   // El MOQ solo condiciona la disponibilidad B2B cuando el producto es elegible.
@@ -43,7 +44,9 @@ export function toAdminProduct(record: ProductRecord): AdminProductDto {
 
   const stocked = branches.filter(branch => branch.quantity !== null && branch.quantity > 0).length
   const availability = branchTotal === null ? 'invalid' : stocked === 0 ? 'out-of-stock' : stocked === branches.length ? 'available' : 'limited'
-  const insufficientForMoq = effectiveMoq !== null && stocked > 0 && branches.every(branch => branch.status !== 'available')
+  // Sin cuatro cantidades válidas, la ausencia de una sucursal disponible no demuestra insuficiencia global.
+  const insufficientForMoq = effectiveMoq !== null && branchTotal !== null && stocked > 0
+    && branches.every(branch => branch.status !== 'available')
 
   return {
     id: record.objectID,

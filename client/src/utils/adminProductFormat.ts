@@ -24,7 +24,7 @@ export const B2B_STATUS_TONES: Readonly<Record<AdminB2BStatus, AdminTone>> = {
 }
 export const ISSUE_LABELS: Readonly<Record<AdminProductIssue, string>> = {
   RETAIL_PRICE_INVALID: 'El precio Retail del catálogo no es válido.',
-  B2B_DATA_INVALID: 'Las condiciones B2B (precio mayorista o MOQ) no son válidas.',
+  B2B_DATA_INVALID: 'Las condiciones B2B (disponibilidad, precio mayorista o MOQ) no son válidas.',
   BRANCH_INVENTORY_INVALID: 'Falta o es inválida la cantidad de al menos una sucursal.',
   STOCK_TOTAL_MISMATCH: 'El stock global no coincide con la suma de las sucursales.',
   IN_STOCK_FLAG_MISMATCH: 'El indicador "en stock" no coincide con las existencias por sucursal.',

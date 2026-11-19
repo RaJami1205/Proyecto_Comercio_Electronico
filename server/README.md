@@ -226,7 +226,7 @@ Query parameters del listado, validados en Server (un valor desconocido responde
 
 | Parámetro | Valores |
 | --- | --- |
-| `q` | Texto de búsqueda (máx. 120). Si tiene forma de SKU (`SAM-DIS-0214`) también busca por `sku`. |
+| `q` | Texto de búsqueda (máx. 120). Toda consulta no vacía también busca coincidencias literales parciales en `sku`, sin distinguir mayúsculas ni eliminar puntos, espacios internos o guiones. |
 | `categories`, `brands` | Facets de Algolia; admiten valores repetidos. |
 | `branchId` | `san_jose`, `alajuela`, `cartago`, `heredia` (inválido: 400 `INVALID_BRANCH_ID`). |
 | `availability` | Sin sucursal: `available`, `limited`, `out-of-stock`, `below-moq`, `invalid`. Con sucursal: `available`, `below-moq`, `out-of-stock`, `invalid`. |
@@ -236,13 +236,17 @@ Query parameters del listado, validados en Server (un valor desconocido responde
 
 `AdminProductDto` conserva los valores originales:
 
-- **Precios:** `retailPrice` proviene de `price`; `wholesalePrice`, de `b2b.wholesale_price` aunque el producto no sea elegible para B2B. `b2bAvailable`, `minOrderQuantity` y `b2bStatus` (`eligible`, `not-available`, `invalid`) usan `resolvePricing`. No se aplican `discount_tiers`.
+- **Precios:** `retailPrice` proviene de `price`; `wholesalePrice`, de `b2b.wholesale_price` aunque el producto no sea elegible para B2B. El mapper valida `b2b.available` sin coerción: `false` booleano es `not-available`; un valor ausente, `null` o de otro tipo es `invalid`, con `b2bAvailable: null` y `B2B_DATA_INVALID`. Con `true` booleano, `resolvePricing` determina la elegibilidad según Wholesale Price y MOQ. Los importes y MOQ válidos se conservan y no se aplican `discount_tiers`.
 - **Inventario:** `globalStock` es `stock_quantity`; `branchTotal` es la suma de `stock_by_branch`, y cada sucursal muestra solo sus unidades mediante `getBranchInventory`. Nunca se asigna el stock global a una sucursal.
 - **Estado por sucursal:** `available`, `below-moq` (unidades positivas menores al MOQ de un producto B2B elegible), `out-of-stock` o `invalid`.
-- **Disponibilidad del producto**, sin umbrales numéricos nuevos: `available` (stock en las cuatro sucursales), `limited` (stock en alguna y agotado en al menos una), `out-of-stock` (ninguna) o `invalid`. `insufficientForMoq` indica stock positivo sin ninguna sucursal que alcance el MOQ.
+- **Disponibilidad del producto**, sin umbrales numéricos nuevos: `available` (stock en las cuatro sucursales), `limited` (stock en alguna y agotado en al menos una), `out-of-stock` (ninguna) o `invalid`. `insufficientForMoq` requiere un producto B2B elegible, MOQ válido, cuatro cantidades conocidas y stock positivo sin ninguna sucursal que alcance el mínimo. Con inventario desconocido permanece `false` y se conserva el aviso separado de inventario inválido; todas las cantidades en cero siguen representándose como agotado.
 - **Inconsistencias** (`issues`), informadas sin corregir el dataset: `RETAIL_PRICE_INVALID`, `B2B_DATA_INVALID`, `BRANCH_INVENTORY_INVALID`, `STOCK_TOTAL_MISMATCH`, `IN_STOCK_FLAG_MISMATCH`.
 
 Algolia resuelve `q`, categorías y marcas. `stock_by_branch` y `b2b` no son facets del índice y esta Story no modifica sus settings, por lo que sucursal, disponibilidad y B2B se filtran en Server sobre el conjunto completo verificado que entrega `getCompleteCatalog` (la misma recuperación del orden B2B). La paginación se aplica después de filtrar; el Client nunca recibe el catálogo completo.
+
+`getCompleteCatalog`, compartido por Admin y B2B, exige en cada página un `true` booleano explícito en `exhaustive.nbHits` o `exhaustiveNbHits` (legacy). Si ambos indicadores están presentes, ambos deben ser `true`. Un `false`, un valor mal formado, una contradicción o la ausencia de ambos producen 503 `CATALOG_RESULT_LIMIT`: la ausencia de metadatos no acredita completitud, aunque el SDK los declare opcionales. Una respuesta vacía se acepta con ese mismo requisito y paginación coherente. Se mantienen los límites de 100 páginas de 1000 hits y se rechazan IDs repetidos, páginas incompletas o metadatos incoherentes. No hay fallback parcial ni reintentos automáticos. Si la configuración remota oculta estos campos mediante `responseFields`, no podrá verificarse un catálogo completo; no se modifican settings automáticamente. Las consultas paginadas B2C no utilizan esta guarda.
+
+Los facets administrativos de categoría y marca se calculan sobre la unión de coincidencias textuales y SKU, deduplicada por Product ID y después de aplicar todos los filtros. Cuentan productos una sola vez por categoría/marca y abarcan todas las páginas del resultado filtrado; no se suman los conteos de Algolia ni se limitan a la página visible.
 
 Errores (`ApiErrorResponse`): 401 `IDENTITY_REQUIRED`, 403 `FORBIDDEN`/`USER_DISABLED`, 404 `USER_NOT_FOUND`/`PRODUCT_NOT_FOUND`, 400 `INVALID_PRODUCT_FILTER`/`INVALID_BRANCH_ID`, 503 `CATALOG_UNAVAILABLE` o `CATALOG_RESULT_LIMIT`. No hay rutas de escritura: POST/PUT/PATCH/DELETE responden 404.
 

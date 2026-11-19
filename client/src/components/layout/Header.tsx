@@ -97,11 +97,6 @@ function Header({ cartView = false, checkoutView = false, policyView = false, an
                   </a>
                 </li>
                 <li>
-                  <span className={styles.pending} title="Disponible próximamente">
-                    Ofertas
-                  </span>
-                </li>
-                <li>
                   <a href="#about" onClick={handleAnchorNavigation}>
                     Nosotros
                   </a>

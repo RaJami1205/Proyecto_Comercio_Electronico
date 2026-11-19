@@ -18,7 +18,6 @@ const PRODUCT_AVAILABILITY = ['available', 'limited', 'out-of-stock', 'invalid',
 const BRANCH_AVAILABILITY = ['available', 'below-moq', 'out-of-stock', 'invalid'] as const
 const B2B_FILTERS = ['eligible', 'not-available', 'invalid'] as const
 const SORTS = ['relevance', 'title', 'retail_asc', 'retail_desc', 'stock_asc', 'stock_desc'] as const
-const SKU_QUERY = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$/
 
 export interface AdminProductQuery {
   q: string
@@ -123,19 +122,36 @@ function sortProducts(products: AdminProductDto[], query: AdminProductQuery): Ad
   return sorted
 }
 
-/** Consultas con forma de SKU incluyen coincidencias exactas o parciales de sku, que el índice no busca por texto. */
-async function searchRecords(query: AdminProductQuery): Promise<{ hits: ProductRecord[]; facets: Record<string, Record<string, number>> }> {
+/** Complementa cada consulta no vacía con coincidencias literales de SKU, sin alterar espacios ni puntuación. */
+async function searchRecords(query: AdminProductQuery): Promise<ProductRecord[]> {
   const filters = { categories: query.categories, brands: query.brands }
   const result = await getCompleteCatalog(query.q, filters)
-  if (!query.q || !SKU_QUERY.test(query.q)) return result
+  if (!query.q) return result.hits
   const needle = query.q.toLowerCase()
-  const bySku = (await getCompleteCatalog('', filters)).hits.filter(record => record.sku?.toLowerCase().includes(needle))
-  const known = new Set(bySku.map(record => record.objectID))
-  return { hits: [...bySku, ...result.hits.filter(record => !known.has(record.objectID))], facets: result.facets }
+  const bySku = (await getCompleteCatalog('', filters)).hits.filter(record =>
+    typeof record.sku === 'string' && record.sku.toLowerCase().includes(needle))
+  const matches = new Map<string, ProductRecord>()
+  for (const record of [...bySku, ...result.hits]) {
+    if (!matches.has(record.objectID)) matches.set(record.objectID, record)
+  }
+  return [...matches.values()]
+}
+
+/** Cuenta cada producto una sola vez por categoría/marca, después de filtrar y antes de paginar. */
+function productFacets(products: AdminProductDto[]): AdminProductPage['facets'] {
+  const categories = new Map<string, number>()
+  const brands = new Map<string, number>()
+  for (const product of products) {
+    for (const category of new Set(product.categories)) {
+      if (category.trim()) categories.set(category, (categories.get(category) ?? 0) + 1)
+    }
+    if (product.brand !== null) brands.set(product.brand, (brands.get(product.brand) ?? 0) + 1)
+  }
+  return { categories: Object.fromEntries(categories), brands: Object.fromEntries(brands) }
 }
 
 export async function listAdminProducts(query: AdminProductQuery): Promise<AdminProductPage> {
-  const { hits, facets } = await searchRecords(query)
+  const hits = await searchRecords(query)
   const products = sortProducts(hits.map(toAdminProduct).filter(product =>
     matchesAvailability(product, query) && (query.b2b === null || product.pricing.b2bStatus === query.b2b)), query)
   const total = products.length
@@ -144,7 +160,7 @@ export async function listAdminProducts(query: AdminProductQuery): Promise<Admin
   const start = (page - 1) * query.pageSize
   return {
     products: products.slice(start, start + query.pageSize), page, pageSize: query.pageSize, total, totalPages,
-    facets: { categories: facets.categories ?? {}, brands: facets.brand ?? {} },
+    facets: productFacets(products),
   }
 }
 

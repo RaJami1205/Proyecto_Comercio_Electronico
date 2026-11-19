@@ -249,6 +249,38 @@ test('detalle: identificación, precios, MOQ, inventario global vs sucursales, i
   assert.match(textOf(view.content), /Producto no encontrado/)
 })
 
+test('detalle B2B distingue habilitado, deshabilitado y disponibilidad inválida con su advertencia', async t => {
+  for (const [name, available, status, label, invalid] of [
+    ['habilitado', true, 'eligible', 'B2B habilitado', false],
+    ['deshabilitado', false, 'not-available', 'B2B no disponible', false],
+    ['disponibilidad inválida', null, 'invalid', 'Condiciones B2B inválidas', true],
+  ]) {
+    await t.test(name, async child => {
+      const h = await setup(child)
+      const calls = deferredFetch(child)
+      const record = product('b2b-detail')
+      record.pricing = { ...record.pricing, b2bAvailable: available, b2bStatus: status }
+      if (status !== 'eligible') record.inventory.branches = branches([20, 2, 0, 8], null)
+      record.issues = invalid ? ['B2B_DATA_INVALID'] : []
+      h.detail(record.id)
+      calls[0].resolve(ok(record))
+      await flush()
+      const text = textOf(deep(h.detail(record.id).content))
+      assert.match(text, new RegExp(label))
+      assert.match(text, /45\s?000/)
+      assert.match(text, /39\s?000/)
+      assert.match(text, /MOQ B2B\s+3 unidades/)
+      if (invalid) {
+        assert.match(text, /Disponibilidad B2B\s+No registrada/)
+        assert.match(text, /Las condiciones B2B \(disponibilidad, precio mayorista o MOQ\) no son válidas/)
+      } else {
+        assert.doesNotMatch(text, /Las condiciones B2B.*no son válidas/)
+        assert.match(text, available ? /Disponibilidad B2B\s+Habilitado/ : /Disponibilidad B2B\s+Deshabilitado/)
+      }
+    })
+  }
+})
+
 /** App real con páginas aisladas: guards por hash, navegación interna e invalidación por Session. */
 async function setupApp(t, user, hash) {
   const h = await reactHarness()
