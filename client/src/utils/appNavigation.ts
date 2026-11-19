@@ -18,11 +18,32 @@ const destinations = [
   { view: 'checkout', hash: '#checkout' },
   { view: 'analytics', hash: '#analytics' },
   { view: 'orders', hash: '#my-orders' },
+  { view: 'admin-products', hash: '#admin/products' },
   ...policyDestinations,
 ] as const
-export type AppView = 'catalog' | 'order-detail' | typeof destinations[number]['view']
+export type AppView = 'catalog' | 'order-detail' | 'admin-product-detail' | typeof destinations[number]['view']
 
 const ORDER_DETAIL_PREFIX = '#my-orders/'
+const ADMIN_PRODUCT_PREFIX = '#admin/products/'
+
+/** Vistas administrativas (CN-67); App las revoca si la Session activa no es ADMIN. */
+export const isAdminView = (view: AppView) => view === 'admin-products' || view === 'admin-product-detail'
+
+/** Extrae el Product ID de #admin/products/<id> con las mismas reglas que el detalle de Orders. */
+export function adminProductIdFromHash(hash: string): string | null {
+  if (!hash.startsWith(ADMIN_PRODUCT_PREFIX)) return null
+  const encoded = hash.slice(ADMIN_PRODUCT_PREFIX.length)
+  if (encoded.includes('/')) return null
+  try {
+    const id = decodeURIComponent(encoded)
+    return id.trim() ? id : null
+  } catch { return null }
+}
+
+/** Hash directo al detalle administrativo, compatible con recarga y Back/Forward. */
+export function hashForAdminProduct(productId: string): string {
+  return ADMIN_PRODUCT_PREFIX + encodeURIComponent(productId)
+}
 
 /** Extrae el Order ID de #my-orders/<id>; un ID vacío o mal codificado no abre ningún detalle. */
 export function orderIdFromHash(hash: string): string | null {
@@ -44,6 +65,7 @@ export function hashForOrder(orderId: string): string {
 /** Resuelve destinos explícitos; las anclas del catálogo y hashes desconocidos conservan el fallback actual. */
 export function viewFromHash(hash: string): AppView {
   if (orderIdFromHash(hash)) return 'order-detail'
+  if (adminProductIdFromHash(hash)) return 'admin-product-detail'
   return destinations.find(destination => destination.hash === hash)?.view ?? 'catalog'
 }
 

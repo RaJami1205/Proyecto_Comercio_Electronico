@@ -127,7 +127,6 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
               ? 'Vista administrativa de precios públicos; las compras están deshabilitadas.'
               : 'Catálogo público a precios Retail. Inicia una sesión B2C o B2B para comprar.'}
         </p>
-        <BranchSelector />
         <CatalogHero />
 
         <section className={styles.catalog} id="catalog" aria-labelledby="catalog-title">
@@ -142,6 +141,9 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
                 accesorios con claridad.
               </p>
             </header>
+
+            {/* La sucursal se elige antes de buscar: condiciona existencias y disponibilidad de los resultados. */}
+            <BranchSelector />
 
             {/* Pasamos el estado del panel activo y la función para cambiarlo */}
             <CatalogToolbar

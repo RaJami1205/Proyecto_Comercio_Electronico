@@ -196,3 +196,16 @@ comercial nueva, sin caché persistente. Las respuestas antiguas se descartan al
 
 Las pruebas usan componentes/servicios reales con storage, fetch y catálogo aislados; los tests HTTP del
 controller usan Express y el mapper real en loopback. No prueban Algolia ni despliegues remotos.
+
+## Admin Products & Inventory (CN-67)
+
+ADMIN ve en el Header el enlace **Productos** (`#admin/products`). La página consulta `GET /api/v2/admin/products` mediante `adminProductApi`, que envía la identidad activa, valida cada respuesta desde `unknown` y no persiste datos en el navegador.
+
+- **Listado:** búsqueda por nombre, marca o SKU; filtros de categoría, marca, sucursal, disponibilidad y condición B2B; orden y paginación resueltos por el Server. Cada tarjeta muestra precio Retail, Wholesale, MOQ, stock global y las cuatro sucursales.
+- **Detalle:** `#admin/products/<id>` (compatible con recarga y Back/Forward) presenta identificación, precios y condiciones, stock global frente a la suma de sucursales, existencias por sucursal e inconsistencias del catálogo.
+- **Solo consulta:** no hay controles de edición; la modificación simulada corresponde a otra Story.
+- **Acceso:** App revoca las vistas si la Session no es ADMIN y las monta con una key por usuario y epoch, de modo que un cambio de identidad descarta filtros, resultados y requests anteriores. Las páginas también muestran un aviso si se renderizan sin Session o con otro rol; el Server aplica RBAC en cada request.
+- **Estados:** Loading, Empty, Error con Reintentar, filtro inválido con Limpiar filtros y producto no encontrado.
+- **Responsive:** dos columnas de tarjetas en Desktop, una en Tablet (≤ 960 px) y, en Mobile (≤ 600 px), la tabla de sucursales se presenta como filas etiquetadas.
+
+Validación: `npm run lint`, `npm run build` y `node --test tests/adminProducts.test.mjs`.

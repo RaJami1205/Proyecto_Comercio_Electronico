@@ -9,6 +9,18 @@ import { resolvePricing } from '../domain/pricing.js'
 const B2B_HITS_PER_PAGE = 1000
 const MAX_COMPLETE_SEARCH_PAGES = 100
 
+/** Los indicadores opcionales del SDK no prueban exactitud si faltan, son inválidos o se contradicen. */
+function hasExhaustiveHitCount(response: { exhaustive?: unknown; exhaustiveNbHits?: unknown }): boolean {
+  const current = response.exhaustive
+  let currentFlag: unknown
+  if (current !== undefined) {
+    if (current === null || typeof current !== 'object' || Array.isArray(current)) return false
+    currentFlag = 'nbHits' in current ? current.nbHits : undefined
+  }
+  const flags = [currentFlag, response.exhaustiveNbHits].filter(flag => flag !== undefined)
+  return flags.length > 0 && flags.every(flag => flag === true)
+}
+
 export interface CatalogFilters {
   categories?: string[]
   brands?: string[]
@@ -91,13 +103,19 @@ export async function getCatalogPage(
   }
 }
 
-/** Recupera todos los resultados filtrados, aplica precio mayorista y ordena antes de paginar. */
-async function getWholesaleCatalogPage(page: number, productsPerPage: number, filters: CatalogFilters, query: string): Promise<CatalogPageResult> {
+/**
+ * Recupera de forma verificada todos los resultados de Algolia para query, categorías y marcas.
+ * Lo reutilizan el orden B2B y la consulta administrativa (CN-67), que filtran y paginan en Server
+ * atributos no indexados como facets (precio mayorista, stock_by_branch) sin modificar el índice.
+ */
+export async function getCompleteCatalog(query: string, filters: Pick<CatalogFilters, 'categories' | 'brands'> = {}):
+  Promise<{ hits: ProductRecord[]; facets: Record<string, Record<string, number>> }> {
   const { indexName } = getAlgoliaConfig()
   const facetFilters: string[][] = []
   if (filters.categories?.length) filters.categories.forEach(category => facetFilters.push([`categories:${category}`]))
   if (filters.brands?.length) facetFilters.push(filters.brands.map(brand => `brand:${brand}`))
   const allHits: ProductRecord[] = []
+  const objectIds = new Set<string>()
   let totalHits = 0
   let pageCount = 0
   let facets: Record<string, Record<string, number>> = {}
@@ -114,6 +132,9 @@ async function getWholesaleCatalogPage(page: number, productsPerPage: number, fi
       })
       const nbHits = response.nbHits
       const nbPages = response.nbPages
+      if (!hasExhaustiveHitCount(response)) {
+        throw new CatalogError(503, 'CATALOG_RESULT_LIMIT', 'No se pudo verificar un conteo exhaustivo del catálogo.')
+      }
       if (typeof nbHits !== 'number' || !Number.isSafeInteger(nbHits) || nbHits < 0
         || typeof nbPages !== 'number' || !Number.isSafeInteger(nbPages) || nbPages < 0
         || response.page !== requestedPage || response.hitsPerPage !== B2B_HITS_PER_PAGE
@@ -134,6 +155,13 @@ async function getWholesaleCatalogPage(page: number, productsPerPage: number, fi
       if (response.hits.length !== expectedHits) {
         throw new CatalogError(503, 'CATALOG_RESULT_LIMIT', 'El índice devolvió una página incompleta para el orden B2B.')
       }
+      for (const hit of response.hits) {
+        const id: unknown = hit?.objectID
+        if (typeof id !== 'string' || !id.length || objectIds.has(id)) {
+          throw new CatalogError(503, 'CATALOG_RESULT_LIMIT', 'El catálogo devolvió identificadores repetidos o inválidos.')
+        }
+        objectIds.add(id)
+      }
       allHits.push(...response.hits)
     }
   } catch (error) {
@@ -141,6 +169,12 @@ async function getWholesaleCatalogPage(page: number, productsPerPage: number, fi
     console.error('Error consultando resultados mayoristas en Algolia.')
     throw error
   }
+  return { hits: allHits, facets }
+}
+
+/** Recupera todos los resultados filtrados, aplica precio mayorista y ordena antes de paginar. */
+async function getWholesaleCatalogPage(page: number, productsPerPage: number, filters: CatalogFilters, query: string): Promise<CatalogPageResult> {
+  const { hits: allHits, facets } = await getCompleteCatalog(query, filters)
 
   const filteredHits = allHits.filter(record => {
     const price = resolvePricing(record, 'B2B').price

@@ -13,15 +13,16 @@ interface HeaderProps {
   policyView?: boolean
   analyticsView?: boolean
   ordersView?: boolean
+  adminProductsView?: boolean
   onCartClick?: () => void
   onCatalogClick?: () => void
 }
 
 /** Presenta los accesos según la vista activa usando totalUnits de useCart. */
-function Header({ cartView = false, checkoutView = false, policyView = false, analyticsView = false, ordersView = false, onCartClick, onCatalogClick }: HeaderProps) {
+function Header({ cartView = false, checkoutView = false, policyView = false, analyticsView = false, ordersView = false, adminProductsView = false, onCartClick, onCatalogClick }: HeaderProps) {
   const { totalUnits } = useCart()
   const session = useSession()
-  const outsideCatalog = cartView || checkoutView || policyView || analyticsView || ordersView
+  const outsideCatalog = cartView || checkoutView || policyView || analyticsView || ordersView || adminProductsView
 
   /** Permite regresar al catálogo mediante el callback de navegación o un ancla. */
   function handleCatalogNavigation(event: MouseEvent<HTMLAnchorElement>) {
@@ -37,11 +38,19 @@ function Header({ cartView = false, checkoutView = false, policyView = false, an
 
   // Hash nativo: App resuelve #analytics con su listener de History/hashchange, incluido Back/Forward.
   const activityLink = session.user?.role === 'ADMIN' ? (
-    <li>
-      <a href="#analytics" aria-current={analyticsView ? 'page' : undefined}>
-        Analytics
-      </a>
-    </li>
+    <>
+      <li>
+        <a href="#analytics" aria-current={analyticsView ? 'page' : undefined}>
+          Analytics
+        </a>
+      </li>
+      {/* CN-67: consulta Read-Only de productos e inventario; App revoca la vista si la Session deja de ser ADMIN. */}
+      <li>
+        <a href="#admin/products" aria-current={adminProductsView ? 'page' : undefined}>
+          Productos
+        </a>
+      </li>
+    </>
   ) : session.user ? (
     // CN-64: compradores B2C/B2B acceden a su historial; App resuelve #my-orders igual que #analytics.
     <li>
@@ -86,11 +95,6 @@ function Header({ cartView = false, checkoutView = false, policyView = false, an
                   <a href="#catalog" aria-current="page" onClick={handleAnchorNavigation}>
                     Catálogo
                   </a>
-                </li>
-                <li>
-                  <span className={styles.pending} title="Disponible próximamente">
-                    Ofertas
-                  </span>
                 </li>
                 <li>
                   <a href="#about" onClick={handleAnchorNavigation}>
