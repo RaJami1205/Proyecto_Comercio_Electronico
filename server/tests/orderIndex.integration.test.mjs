@@ -33,6 +33,7 @@ function memoryWriter() {
       records.set(record.objectID, structuredClone(record))
     },
     async readVersions(ids) { return new Map(ids.filter(id => records.has(id)).map(id => [id, records.get(id).indexVersion])) },
+    async readRecords(ids) { return new Map(ids.filter(id => records.has(id)).map(id => [id, structuredClone(records.get(id))])) },
   }
   return { writer, records }
 }

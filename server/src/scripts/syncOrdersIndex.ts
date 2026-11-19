@@ -3,6 +3,7 @@
  * Por defecto es dry-run: valida los registros pendientes sin escribir en Algolia ni en PostgreSQL.
  */
 import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 
 /** Identifica fallos controlados cuyo mensaje puede mostrarse sin revelar detalles internos. */
 class SyncError extends Error {}
@@ -43,9 +44,12 @@ async function main() {
     return
   }
 
-  // Carga configuración solo después de validar los argumentos.
+  // Carga la ruta explícita o, en mantenimiento manual, server/.env. El import posterior de dotenv/config
+  // debe usar la misma ruta y no intentar además el .env del directorio de trabajo.
+  const environmentPath = resolve(process.env.DOTENV_CONFIG_PATH ?? fileURLToPath(new URL('../../.env', import.meta.url)))
+  process.env.DOTENV_CONFIG_PATH = environmentPath
   const { config } = await import('dotenv')
-  config({ path: fileURLToPath(new URL('../../.env', import.meta.url)), quiet: true })
+  config({ path: environmentPath, quiet: true })
   const { getAlgoliaOrdersConfig } = await import('../config/env.js')
 
   let indexName: string | undefined
@@ -79,7 +83,8 @@ async function main() {
   const { createAlgoliaOrderIndexWriter, OrderIndexSyncService } = await import('../services/orderIndexSyncService.js')
   const database = new Database()
   // El dry-run sin --verify-remote nunca crea un cliente Algolia.
-  const unusedWriter = { save: async () => { throw new SyncError('Escritura no autorizada.') }, readVersions: async () => new Map<string, number>() }
+  const unusedWriter = { save: async () => { throw new SyncError('Escritura no autorizada.') },
+    readRecords: async () => new Map<string, Record<string, unknown>>(), readVersions: async () => new Map<string, number>() }
   const service = new OrderIndexSyncService(new PostgreSQLOrderIndexStore(database),
     options.write || options.verifyRemote ? createAlgoliaOrderIndexWriter() : unusedWriter,
     { log: message => console.error(message.replace(/Order \S+/, 'Order')) })
@@ -89,6 +94,7 @@ async function main() {
       const report = await service.verifyRemote({ limit: options.limit, dryRun: !options.write })
       console.log(`Verificadas: ${report.checked}; ausentes u obsoletas: ${report.drift}; reparadas: ${report.repaired}; fallidas: ${report.failed}.`)
       console.log(options.write ? 'Mode: WRITE.' : 'Mode: DRY RUN; Algolia writes = 0; PostgreSQL writes = 0.')
+      if (report.failed > 0) process.exitCode = 1
       return
     }
     const report = await service.reconcile({ limit: options.limit, dryRun: !options.write })

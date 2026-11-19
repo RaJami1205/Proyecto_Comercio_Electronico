@@ -21,6 +21,10 @@ export interface OrderIndexStore {
   release(orderId: string, token: string, failure: OrderIndexFailure): Promise<void>
   listPending(afterId: string | undefined, limit: number): Promise<OrderIndexEntry[]>
   listSynced(afterId: string | undefined, limit: number): Promise<Array<{ id: string; indexVersion: number }>>
+  /** Relectura autoritativa, sin claims ni cambios, para descartar un avance concurrente legítimo. */
+  readVersion(orderId: string): Promise<number | undefined>
+  /** Snapshot vigente para verificar toda la proyección, sin tomar lease ni modificar datos. */
+  readSource(orderId: string): Promise<OrderIndexSource | undefined>
   /** Vuelve a marcar como pendiente una Order cuya copia en Algolia falta o es anterior. */
   markStale(orderId: string, remoteVersion: number): Promise<boolean>
 }
@@ -112,6 +116,21 @@ export class PostgreSQLOrderIndexStore implements OrderIndexStore {
       WHERE indexed_version = index_version AND ($1::text IS NULL OR id > $1)
       ORDER BY id LIMIT $2`, [afterId ?? null, limit])
     return rows.map(row => ({ id: String(row.id), indexVersion: version(row.index_version) }))
+  }
+
+  async readVersion(orderId: string): Promise<number | undefined> {
+    const rows = await this.run('SELECT index_version FROM commerce.orders WHERE id = $1', [orderId])
+    if (!rows.length) return undefined
+    const current = version(rows[0].index_version)
+    if (current < 1) throw new OrderIndexError('persistence')
+    return current
+  }
+
+  async readSource(orderId: string): Promise<OrderIndexSource | undefined> {
+    const rows = await this.run('SELECT * FROM commerce.orders WHERE id = $1', [orderId])
+    if (!rows.length) return undefined
+    try { return toSource(rows[0]) }
+    catch { throw new OrderIndexError('invalid-record') }
   }
 
   async markStale(orderId: string, remoteVersion: number): Promise<boolean> {

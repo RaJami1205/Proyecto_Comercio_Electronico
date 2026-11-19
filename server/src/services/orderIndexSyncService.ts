@@ -2,6 +2,7 @@
  * Proyecta Orders persistidas hacia el índice Algolia orders. No contiene reglas de Pricing, Inventory,
  * creación de Orders ni aprobación de pagos: solo lee revisiones de PostgreSQL y escribe su representación.
  */
+import { isDeepStrictEqual } from 'node:util'
 import { getAlgoliaOrdersClient } from '../config/algolia.js'
 import { ConfigurationError, getAlgoliaOrdersConfig } from '../config/env.js'
 import { OrderIndexError } from '../domain/orderIndexError.js'
@@ -9,13 +10,15 @@ import { toOrderIndexRecord } from '../domain/orderIndexMapper.js'
 import type { OrderIndexStore } from '../stores/postgreSQLOrderIndexStore.js'
 import type { OrderIndexRecord } from '../types/orderIndex.js'
 
-type OrdersIndexClient = Pick<ReturnType<typeof getAlgoliaOrdersClient>, 'addOrUpdateObject' | 'waitForTask' | 'getObjects'>
+type OrdersIndexClient = Pick<ReturnType<typeof getAlgoliaOrdersClient>, 'partialUpdateObject' | 'waitForTask' | 'getObjects'>
 
 export interface OrderIndexWriter {
-  /** Agrega o reemplaza el registro por objectID; repetirlo nunca crea duplicados. */
+  /** Publica solo revisiones superiores y resuelve únicamente tras verificar todos los atributos esperados. */
   save(record: OrderIndexRecord): Promise<void>
-  /** Devuelve indexVersion de los registros presentes en Algolia; los ausentes no aparecen en el Map. */
-  readVersions(orderIds: string[]): Promise<Map<string, number>>
+  /** Proyección remota completa, sin metadatos de búsqueda; solo los registros ausentes se omiten. */
+  readRecords(orderIds: string[]): Promise<Map<string, Record<string, unknown>>>
+  /** Revisión positiva válida; null significa versión inválida. Solo los registros ausentes se omiten del Map. */
+  readVersions(orderIds: string[]): Promise<Map<string, number | null>>
 }
 
 export type OrderIndexSyncOutcome = 'synced' | 'up-to-date' | 'busy' | 'not-found' | 'pending'
@@ -24,6 +27,46 @@ export interface OrderIndexReconcileReport { pending: number; valid: number; inv
 export interface OrderIndexVerifyReport { checked: number; drift: number; repaired: number; failed: number }
 
 const GET_OBJECTS_BATCH = 1000
+const ORDER_INDEX_ATTRIBUTES = Object.keys({
+  objectID: true, orderNumber: true, userId: true, customerRole: true, branchId: true,
+  createdAt: true, createdAtTimestamp: true, orderStatus: true, paymentStatus: true,
+  total: true, currency: true, indexVersion: true, contractVersion: true, company: true,
+} satisfies Record<keyof OrderIndexRecord, boolean>)
+
+/** Misma comparación para publicación y mantenimiento: ausencia opcional no equivale a null. */
+function matchesProjection(expected: OrderIndexRecord, actual: Record<string, unknown> | undefined): boolean {
+  if (!actual) return false
+  const projection = Object.fromEntries(ORDER_INDEX_ATTRIBUTES.map(field => [field, actual[field]]))
+  const company = actual.company
+  if (company !== null && typeof company === 'object' && !Array.isArray(company)) {
+    // Solo id/name forman parte de Company; los metadatos ajenos al DTO no participan.
+    projection.company = { id: 'id' in company ? company.id : undefined, name: 'name' in company ? company.name : undefined }
+  }
+  return isDeepStrictEqual(projection, { ...expected, company: expected.company })
+}
+
+function remoteVersion(record: Record<string, unknown>): number | null {
+  const value = record.indexVersion
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+/** Lectura compartida sin caché; una respuesta incompleta nunca se interpreta como ausencia. */
+async function readOrderIndexRecords(client: OrdersIndexClient, indexName: string, orderIds: string[]): Promise<Map<string, Record<string, unknown>>> {
+  const records = new Map<string, Record<string, unknown>>()
+  for (let start = 0; start < orderIds.length; start += GET_OBJECTS_BATCH) {
+    const ids = orderIds.slice(start, start + GET_OBJECTS_BATCH)
+    const response = await client.getObjects<Record<string, unknown>>({
+      requests: ids.map(objectID => ({ indexName, objectID, attributesToRetrieve: ORDER_INDEX_ATTRIBUTES })),
+    }, { cacheable: false })
+    if (!Array.isArray(response.results) || response.results.length !== ids.length) throw new OrderIndexError('unavailable')
+    for (const [position, result] of response.results.entries()) {
+      if (result === null) continue
+      if (!result || typeof result !== 'object' || Array.isArray(result)) throw new OrderIndexError('unavailable')
+      records.set(ids[position], result)
+    }
+  }
+  return records
+}
 
 /** Traduce errores del SDK y de configuración a categorías sin mensajes, URLs ni credenciales. */
 export function toOrderIndexError(error: unknown): OrderIndexError {
@@ -46,26 +89,29 @@ export function createAlgoliaOrderIndexWriter(
     async save(record) {
       const indexName = getIndexName()
       const client = getClient()
-      const response = await client.addOrUpdateObject({ indexName, objectID: record.objectID, body: record })
-      // Confirma que el registro es consultable antes de marcar la revisión como sincronizada.
-      if (response.taskID !== undefined) await client.waitForTask({ indexName, taskID: response.taskID, maxRetries: 20 })
+      const { objectID, indexVersion, ...attributes } = record
+      // IncrementSet condiciona TODA la actualización: una revisión inferior o igual no cambia ningún atributo.
+      // https://www.algolia.com/doc/guides/sending-and-managing-data/send-and-update-your-data/in-depth/handling-concurrency-with-versioning
+      const response = await client.partialUpdateObject({ indexName, objectID, createIfNotExists: true,
+        attributesToUpdate: { ...attributes, indexVersion: { _operation: 'IncrementSet', value: indexVersion } } })
+      const taskID = response.taskID
+      if (taskID !== undefined) {
+        if (typeof taskID !== 'number' || !Number.isSafeInteger(taskID) || taskID < 0) throw new OrderIndexError('unavailable')
+        try { await client.waitForTask({ indexName, taskID, maxRetries: 20 }) }
+        catch {
+          // Una operación descartada puede no publicarse; un timeout tampoco demuestra que la escritura falló.
+        }
+      }
+      // Con o sin taskID, solo la lectura posterior aporta evidencia de los atributos efectivamente publicados.
+      const published = await readOrderIndexRecords(client, indexName, [objectID])
+      if (!matchesProjection(record, published.get(objectID))) throw new OrderIndexError('unavailable')
+    },
+    async readRecords(orderIds) {
+      return readOrderIndexRecords(getClient(), getIndexName(), orderIds)
     },
     async readVersions(orderIds) {
-      const indexName = getIndexName()
-      const client = getClient()
-      const versions = new Map<string, number>()
-      for (let start = 0; start < orderIds.length; start += GET_OBJECTS_BATCH) {
-        const ids = orderIds.slice(start, start + GET_OBJECTS_BATCH)
-        const response = await client.getObjects<Record<string, unknown>>({
-          requests: ids.map(objectID => ({ indexName, objectID, attributesToRetrieve: ['indexVersion'] })),
-        })
-        response.results.forEach((result, position) => {
-          const value = result?.indexVersion
-          if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) versions.set(ids[position], value)
-          // Un registro sin indexVersion válido se trata como ausente para forzar su reescritura.
-        })
-      }
-      return versions
+      const records = await readOrderIndexRecords(getClient(), getIndexName(), orderIds)
+      return new Map([...records].map(([id, record]) => [id, remoteVersion(record)]))
     },
   }
 }
@@ -86,7 +132,7 @@ export class OrderIndexSyncService {
 
   /** Recibe el registro de revisiones de PostgreSQL y el escritor del índice. */
   constructor(private readonly store: OrderIndexStore, private readonly writer: OrderIndexWriter, options: OrderIndexSyncOptions = {}) {
-    // El lease supera los timeouts del cliente y la espera de la tarea para no solapar escrituras de la misma Order.
+    // El lease coordina workers; IncrementSet protege Algolia incluso si un worker continúa después de su vencimiento.
     this.leaseMs = options.leaseMs ?? 120_000
     this.retryDelaysMs = options.retryDelaysMs ?? [500, 2000]
     this.maxPasses = options.maxPasses ?? 3
@@ -166,7 +212,7 @@ export class OrderIndexSyncService {
     return report
   }
 
-  /** Compara indexVersion en Algolia con PostgreSQL; con dryRun false vuelve a sincronizar ausentes y obsoletas. */
+  /** Repara ausentes/anteriores; las versiones inválidas o superiores no reconocidas se reportan sin escrituras. */
   async verifyRemote({ limit = 1000, dryRun = true }: { limit?: number; dryRun?: boolean } = {}): Promise<OrderIndexVerifyReport> {
     const report: OrderIndexVerifyReport = { checked: 0, drift: 0, repaired: 0, failed: 0 }
     let afterId: string | undefined
@@ -175,15 +221,39 @@ export class OrderIndexSyncService {
       if (!page.length) break
       afterId = page[page.length - 1].id
       report.checked += page.length
-      let remote: Map<string, number>
-      try { remote = await this.writer.readVersions(page.map(entry => entry.id)) }
+      let remote: Map<string, Record<string, unknown>>
+      try { remote = await this.writer.readRecords(page.map(entry => entry.id)) }
       catch (error) { throw toOrderIndexError(error) }
       for (const entry of page) {
-        const remoteVersion = remote.get(entry.id) ?? 0
-        if (remoteVersion >= entry.indexVersion) continue
+        const record = remote.get(entry.id)
+        const revision = record ? remoteVersion(record) : undefined
+        if (revision === null) {
+          report.drift++
+          report.failed++
+          this.log(`Inconsistencia del índice orders para la Order ${entry.id}: versión remota inválida; requiere intervención controlada.`)
+          continue
+        }
+        if (record && revision !== undefined) {
+          // La página es solo un cursor: la revisión y los atributos se contrastan con una lectura vigente.
+          const current = await this.store.readSource(entry.id)
+          if (current === undefined) throw new OrderIndexError('persistence')
+          if (revision > current.indexVersion) {
+            report.drift++
+            report.failed++
+            this.log(`Inconsistencia del índice orders para la Order ${entry.id}: versión remota ${revision} superior a PostgreSQL ${current.indexVersion}; requiere intervención controlada.`)
+            continue
+          }
+          if (revision === current.indexVersion) {
+            if (matchesProjection(toOrderIndexRecord(current), record)) continue
+            report.drift++
+            report.failed++
+            this.log(`Inconsistencia del índice orders para la Order ${entry.id}: contenido remoto incompatible con la revisión autoritativa; requiere intervención controlada.`)
+            continue
+          }
+        }
         report.drift++
         if (dryRun) continue
-        await this.store.markStale(entry.id, remoteVersion)
+        await this.store.markStale(entry.id, revision ?? 0)
         const outcome = await this.syncWithRetry(entry.id)
         if (outcome === 'synced' || outcome === 'up-to-date') report.repaired++
         else report.failed++

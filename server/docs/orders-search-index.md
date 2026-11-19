@@ -34,7 +34,7 @@ La proyección solo se activa con `COMMERCE_STORE_MODE=postgresql`. Con el almac
 }
 ```
 
-- `objectID` es el `id` de PostgreSQL; las escrituras usan `addOrUpdateObject`, que reemplaza por `objectID`, por lo que los reintentos nunca duplican registros.
+- `objectID` es el `id` de PostgreSQL. Una única `partialUpdateObject` envía los atributos proyectados y `IncrementSet` sobre `indexVersion`: solo una revisión superior puede actualizar el registro completo. Una inferior o igual no modifica ningún atributo. `createIfNotExists: true` permite crear un registro ausente con una revisión positiva, sin duplicados.
 - `company` aparece solo en Orders B2B. `branchId` es `null` en Orders V1, que no registraban sucursal.
 - `createdAtTimestamp` (segundos Unix) permite filtros por rango de fechas.
 - **No se indexan** Buyer, Delivery, productos, Terms Acceptance, intentos de pago ni datos de tarjeta.
@@ -47,7 +47,7 @@ La migración `20261118000100_order_search_index.sql` agrega a `commerce.orders`
 |---|---|
 | `index_version` | Revisión autoritativa. Empieza en 1 y aumenta en el mismo `UPDATE` que cambia `order_status`/`payment_status`. Un Replay de pago no la incrementa. |
 | `indexed_version` | Última revisión confirmada en Algolia. `indexed_version < index_version` significa pendiente. |
-| `index_lease_token`, `index_lease_expires_at` | Lease breve por Order que impide dos escrituras simultáneas. Expira si el proceso se detiene. |
+| `index_lease_token`, `index_lease_expires_at` | Lease breve por Order que coordina los claims y condiciona su confirmación. Puede vencer aunque el worker continúe; la operación condicional en Algolia impide que ese worker sobrescriba una revisión superior. |
 | `index_synced_at`, `index_attempted_at`, `index_failure_count`, `index_last_error` | Resultado de la última sincronización. El error solo guarda una categoría: `configuration`, `unavailable`, `rejected` o `invalid-record`. |
 
 Las Orders existentes quedan pendientes (`1 > 0`) al aplicar la migración, listas para la indexación inicial.
@@ -60,11 +60,13 @@ Las Orders existentes quedan pendientes (`1 > 0`) al aplicar la migración, list
 
 1. `OrderService` y `PaymentService` llaman al notifier **después** del commit. La llamada no espera a Algolia ni altera la respuesta.
 2. El servicio toma el lease solo si hay una revisión pendiente, lee la fila autoritativa y la transforma con el mapper.
-3. Escribe el registro y espera la tarea de Algolia.
-4. Marca `indexed_version` con la revisión escrita, solo si conserva el lease y la revisión no es anterior a la ya sincronizada.
+3. Envía la actualización condicional, espera de forma acotada la tarea y consulta el registro sin caché. Compara todos los atributos proyectados con la misma regla usada por `verifyRemote`; el acuse de escritura o la publicación de la tarea no bastan por sí solos.
+4. Solo tras comprobar el contenido esperado intenta marcar `indexed_version`, con el mismo token de lease. Una revisión remota diferente o atributos incompatibles dejan el intento sin confirmar. Un reintento de la misma revisión puede confirmarse si la lectura demuestra que ya está publicada íntegramente.
 5. Si mientras tanto se registró otra revisión (por ejemplo, un pago), repite con la versión nueva.
 
 Ningún lock de PostgreSQL se mantiene durante la llamada a Algolia, por lo que la sincronización no bloquea pagos.
+
+La garantía condicional y la necesidad de leer después de una operación descartada se describen en [Handling concurrency with versioning](https://www.algolia.com/doc/guides/sending-and-managing-data/send-and-update-your-data/in-depth/handling-concurrency-with-versioning). Si la respuesta de escritura o la lectura de comprobación falla, no se confirma la revisión. Si solo falla la espera de la tarea, una lectura íntegramente coincidente sí aporta evidencia de publicación. No se utiliza una lectura seguida de un reemplazo incondicional.
 
 **Fallos.** Los fallos temporales (red, timeout, 429, 5xx) se reintentan dos veces en el proceso. Los rechazos (403, 404, 400) y la configuración inválida no se reintentan. En todos los casos la revisión sigue pendiente en PostgreSQL y se registra solo la categoría del error, sin mensajes del SDK, credenciales ni datos personales. Una respuesta incierta de Algolia se trata como fallo: el reintento reescribe el mismo `objectID`.
 
@@ -81,7 +83,7 @@ Sin `ALGOLIA_ORDERS_INDEX_NAME` o `ALGOLIA_ORDERS_API_KEY`, el Server funciona i
 
 ## Procedimientos de mantenimiento
 
-Todos los comandos se ejecutan desde `server/`. Leen `server/.env`; el modo de escritura requiere `--write` y la confirmación exacta del índice. **No ejecutar `--write` sobre producción sin autorización explícita.**
+Todos los comandos se ejecutan desde `server/`. Por defecto leen `server/.env`, resuelto respecto al script. Si se define `DOTENV_CONFIG_PATH`, utilizan exclusivamente esa ruta, también en la carga posterior de `dotenv/config`; una ruta relativa se resuelve desde el directorio de trabajo. El modo de escritura requiere `--write` y la confirmación exacta del índice. **No ejecutar `--write` sobre producción sin autorización explícita.**
 
 ### 1. Aplicar la migración
 
@@ -112,12 +114,33 @@ npm run orders:index -- --verify-remote
 npm run orders:index -- --verify-remote --write --confirm-index=NOMBRE_DEL_INDICE_ORDERS
 ```
 
-Compara `indexVersion` en Algolia con `index_version` en PostgreSQL para las Orders marcadas como sincronizadas. Detecta registros ausentes (por ejemplo, un índice vaciado) u obsoletos. Con `--write` los vuelve a marcar como pendientes y los sincroniza.
+Obtiene los atributos del Index Record desde Algolia sin caché para las Orders marcadas como sincronizadas. Para cada registro presente con revisión válida, relee el snapshot vigente de PostgreSQL mediante `SELECT`, sin lease ni escrituras. El mapper existente construye la proyección histórica autoritativa, sin consultar Products ni Cart.
+
+Con revisiones iguales, compara todos los campos obligatorios, sus tipos y sus valores, incluidos total, moneda, estados y `branchId` (que debe ser `null` en V1, no ausente). Company es opcional en B2C (ausencia no equivale a `null`) y requiere id/name completos en B2B. Se ignoran atributos y metadatos ajenos al DTO, también dentro de Company. `save` reutiliza esta misma comparación.
+
+| Estado remoto | Tratamiento |
+|---|---|
+| Ausente (`null` en la respuesta de Algolia) | Drift; con `--write`, marca pendiente y sincroniza con el protocolo condicional. |
+| Revisión positiva inferior | Drift; con `--write`, vuelve a sincronizar sin reemplazos incondicionales. |
+| Revisión igual y proyección idéntica | Sin drift; no confirma ni modifica el marcador PostgreSQL. |
+| Revisión igual y contenido diferente, incompleto o con tipos incorrectos | `drift` y `failed`, sin reparación automática ni escrituras; requiere intervención controlada. |
+| Revisión superior | Relee la versión vigente en PostgreSQL. Si ya coincide, reconoce el avance concurrente; si PostgreSQL avanzó aún más, trata la copia remota como anterior. |
+| Revisión superior incluso después de releer PostgreSQL | Inconsistencia no resuelta: incrementa `drift` y `failed`, registra un mensaje sanitizado y no modifica ningún registro. |
+| Revisión inválida (ausente dentro del objeto, no numérica, no entera o menor que 1) | Inconsistencia no resuelta: incrementa `drift` y `failed`, sin reparación automática. |
+| Error o respuesta incompleta de Algolia | Error sanitizado; no se interpreta como registro ausente ni autoriza escrituras de reparación. |
+
+La página inicial solo determina el cursor. La relectura del snapshot completo conserva la comprobación de concurrencia de F2-02: si PostgreSQL avanzó, se compara contra esa revisión vigente, evitando atribuir una diferencia legítima al contenido de la revisión anterior. Son lecturas acotadas, no una instantánea atómica entre ambos servicios.
+
+Las inconsistencias se reportan también en Dry-Run y permanecen visibles en verificaciones posteriores. No se cuentan como `repaired`. `indexed_version` conserva su valor histórico; una inconsistencia detectada impide considerar satisfactoria esta verificación, aunque el barrido de pendientes por sí solo informe cero.
+
+**Límite contractual de reparación:** `IncrementSet` no permite sustituir una revisión remota 999 por la revisión autoritativa 2, ni corregir atributos incompatibles reenviando la misma revisión. No se adopta ni incrementa artificialmente la revisión PostgreSQL para superar esa condición. Tampoco se utiliza SaveObject, downgrade ciego o Delete + Recreate. La reparación completa exige aprobar un procedimiento que defina cómo excluir todos los escritores y operaciones en vuelo y cómo restablecer la proyección/versionado. Hasta entonces, se conserva la inconsistencia y se informa como fallo no resuelto. La detección y señalización de F2-03 no equivalen a haber reparado automáticamente la proyección.
+
+El CLI termina con código 1 cuando `verifyRemote` devuelve `failed > 0`, también ante reparaciones parciales o inconsistencias detectadas en Dry-Run. Sin fallos conserva el código 0; un Dry-Run con drift reparable y sin fallos también termina con 0. Las excepciones mantienen el código 1 y los mensajes sanitizados existentes. Se espera el cierre de PostgreSQL en `finally`, sin utilizar `process.exit()`.
 
 ### Verificar
 
 - `npm run orders:index` debe informar `Pendientes: 0` después de la indexación inicial.
-- `--verify-remote` debe informar `ausentes u obsoletas: 0`.
+- `--verify-remote` debe informar cero drift y cero fallidas; revisar también los mensajes de inconsistencias. El código de salida indica si hubo fallos, no si un Dry-Run encontró drift reparable.
 - En el dashboard de Algolia, el índice orders debe tener un registro por Order, sin campos de Buyer ni Delivery.
 
 ## Consultas administrativas futuras
@@ -130,3 +153,5 @@ Compara `indexVersion` en Algolia con `index_version` en PostgreSQL para las Ord
 - `tests/orderIndex.integration.test.mjs`: PostgreSQL real efímero (CI), con revisiones por Payment, leases, revisiones obsoletas, Recovery y permisos del runtime. Algolia se sustituye por un escritor en memoria.
 
 Ninguna prueba contacta Algolia ni bases de producción.
+
+Los subprocesses del CLI usan un directorio temporal, configuración ficticia mediante `DOTENV_CONFIG_PATH` y permisos de lectura de Node.js 24 acotados a módulos públicos y fixtures. Un preload exclusivo de estas pruebas audita las lecturas de dotenv y bloquea sockets/TLS/fetch. El contrato de la ruta manual se prueba redirigiendo su lectura al fixture, sin abrir ni inspeccionar el archivo privado. Los casos del CLI no necesitan excluirse por F3-02.
