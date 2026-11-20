@@ -12,14 +12,16 @@ export interface AdminShellProps {
   onCartClick: () => void
 }
 
-export function AdminShell({ onCatalogClick, onPolicyNavigate, onCartClick, title, introduction, children }: AdminShellProps & {
+export function AdminShell({ onCatalogClick, onPolicyNavigate, onCartClick, title, introduction, children, section = 'products' }: AdminShellProps & {
+  /** Sección administrativa activa en el Header. */
+  section?: 'products' | 'orders'
   title: string
   introduction?: string
   children: ReactNode
 }) {
   return (
     <div className={styles.page}>
-      <Header adminProductsView onCatalogClick={() => onCatalogClick('#catalog')} onCartClick={onCartClick} />
+      <Header adminProductsView={section === 'products'} adminOrdersView={section === 'orders'} onCatalogClick={() => onCatalogClick('#catalog')} onCartClick={onCartClick} />
       <main className={styles.main}>
         <div className={styles.container}>
           <p className={styles.eyebrow}>Administración · Solo consulta</p>
@@ -34,20 +36,21 @@ export function AdminShell({ onCatalogClick, onPolicyNavigate, onCartClick, titl
 }
 
 /** Sin Session se invita a elegir identidad; otros roles reciben acceso no autorizado. */
-export function AdminAccessNotice({ kind }: { kind: 'session' | 'forbidden' }) {
+export function AdminAccessNotice({ kind, subject = 'products' }: { kind: 'session' | 'forbidden'; subject?: 'products' | 'orders' }) {
   const session = useSession()
+  const scope = subject === 'orders' ? 'las órdenes de todos los compradores' : 'productos, precios e inventario por sucursal'
   if (kind === 'forbidden') {
     return (
       <div className={styles.notice} role="alert">
         <h2>Acceso no autorizado</h2>
-        <p>La consulta administrativa de productos e inventario está disponible solo para el rol ADMIN.</p>
+        <p>La consulta administrativa de {scope} está disponible solo para el rol ADMIN.</p>
       </div>
     )
   }
   return (
     <div className={styles.notice} role="status">
       <h2>Selecciona una identidad</h2>
-      <p>Inicia sesión con una identidad ADMIN para consultar productos, precios e inventario por sucursal.</p>
+      <p>Inicia sesión con una identidad ADMIN para consultar {scope}.</p>
       <button type="button" className={styles.primaryButton} onClick={() => session.openLogin()}
         disabled={Boolean(session.transitionBlockReason) || session.resolving}>Iniciar sesión</button>
     </div>

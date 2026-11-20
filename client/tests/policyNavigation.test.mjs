@@ -46,7 +46,7 @@ const runtime = await import(runtimeUrl)
 const modules = new Map()
 // Solo se sustituyen las vistas ajenas al alcance. Las rutas, Footer, Header y políticas son código real.
 for (const name of ['ProductListingPage', 'CartPage', 'CheckoutPage', 'AnalyticsDashboardPage', 'MyOrdersPage', 'OrderDetailPage',
-  'AdminProductsPage', 'AdminProductDetailPage']) {
+  'AdminProductsPage', 'AdminProductDetailPage', 'AdminOrdersPage', 'AdminOrderDetailPage']) {
   modules.set(`pages/${name}`, dataUrl(`export default '${name}'`))
 }
 modules.set('components/cart/CartPreviewDrawer', dataUrl("export default 'CartPreviewDrawer'"))

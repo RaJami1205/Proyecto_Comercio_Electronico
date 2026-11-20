@@ -28,6 +28,9 @@ export type ApiErrorCode =
   | 'CATALOG_UNAVAILABLE'
   | 'INVALID_PRODUCT_FILTER'
   | 'ORDER_CONTRACT_DEPRECATED'
+  | 'INVALID_ORDER_FILTER'
+  | 'ORDER_SEARCH_UNAVAILABLE'
+  | 'ORDER_QUERY_UNAVAILABLE'
 
 export interface ApiErrorResponse {
   error: {

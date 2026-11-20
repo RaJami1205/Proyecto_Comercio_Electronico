@@ -19,15 +19,18 @@ const destinations = [
   { view: 'analytics', hash: '#analytics' },
   { view: 'orders', hash: '#my-orders' },
   { view: 'admin-products', hash: '#admin/products' },
+  { view: 'admin-orders', hash: '#admin/orders' },
   ...policyDestinations,
 ] as const
-export type AppView = 'catalog' | 'order-detail' | 'admin-product-detail' | typeof destinations[number]['view']
+export type AppView = 'catalog' | 'order-detail' | 'admin-product-detail' | 'admin-order-detail' | typeof destinations[number]['view']
 
 const ORDER_DETAIL_PREFIX = '#my-orders/'
 const ADMIN_PRODUCT_PREFIX = '#admin/products/'
+const ADMIN_ORDER_PREFIX = '#admin/orders/'
 
 /** Vistas administrativas (CN-67); App las revoca si la Session activa no es ADMIN. */
 export const isAdminView = (view: AppView) => view === 'admin-products' || view === 'admin-product-detail'
+  || view === 'admin-orders' || view === 'admin-order-detail'
 
 /** Extrae el Product ID de #admin/products/<id> con las mismas reglas que el detalle de Orders. */
 export function adminProductIdFromHash(hash: string): string | null {
@@ -38,6 +41,22 @@ export function adminProductIdFromHash(hash: string): string | null {
     const id = decodeURIComponent(encoded)
     return id.trim() ? id : null
   } catch { return null }
+}
+
+/** Extrae el Order ID de #admin/orders/<id> (CN-66) con las mismas reglas que el detalle del comprador. */
+export function adminOrderIdFromHash(hash: string): string | null {
+  if (!hash.startsWith(ADMIN_ORDER_PREFIX)) return null
+  const encoded = hash.slice(ADMIN_ORDER_PREFIX.length)
+  if (encoded.includes('/')) return null
+  try {
+    const id = decodeURIComponent(encoded)
+    return id.trim() ? id : null
+  } catch { return null }
+}
+
+/** Hash directo al detalle administrativo de una Order, compatible con recarga y Back/Forward. */
+export function hashForAdminOrder(orderId: string): string {
+  return ADMIN_ORDER_PREFIX + encodeURIComponent(orderId)
 }
 
 /** Hash directo al detalle administrativo, compatible con recarga y Back/Forward. */
@@ -66,6 +85,7 @@ export function hashForOrder(orderId: string): string {
 export function viewFromHash(hash: string): AppView {
   if (orderIdFromHash(hash)) return 'order-detail'
   if (adminProductIdFromHash(hash)) return 'admin-product-detail'
+  if (adminOrderIdFromHash(hash)) return 'admin-order-detail'
   return destinations.find(destination => destination.hash === hash)?.view ?? 'catalog'
 }
 

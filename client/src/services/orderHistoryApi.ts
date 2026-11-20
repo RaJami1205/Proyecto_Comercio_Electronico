@@ -45,12 +45,12 @@ function isHistoryPage(value: unknown, page: number, pageSize: number): value is
 }
 
 /** Valida el snapshot histórico; los campos comerciales son opcionales en Orders V1 y nunca se completan. */
-function isOrderDetail(value: unknown, orderId: string, userId: string): value is Order {
+function isOrderDetail(value: unknown, orderId: string, ownerId: string | null): value is Order {
   if (!isRecord(value) || value.id !== orderId || !isRecord(value.buyer) || !isRecord(value.delivery) || !isRecord(value.totals)
     || !isRecord(value.termsAcceptance)) return false
   const { buyer, delivery, totals, termsAcceptance: terms, commercial } = value
   if (commercial !== undefined) {
-    if (!isRecord(commercial) || commercial.userId !== userId || (commercial.customerRole !== 'B2C' && commercial.customerRole !== 'B2B')
+    if (!isRecord(commercial) || (ownerId !== null && commercial.userId !== ownerId) || (commercial.customerRole !== 'B2C' && commercial.customerRole !== 'B2B')
       || typeof commercial.branchId !== 'string' || !BRANCHES.includes(commercial.branchId)
       || (commercial.customerRole === 'B2B' && !(isRecord(commercial.company) && text(commercial.company.name)))) return false
   }
@@ -93,9 +93,10 @@ async function listMine(userId: string, page: number, pageSize: number, signal?:
   return body
 }
 
-async function getOrder(userId: string, orderId: string, signal?: AbortSignal): Promise<Order> {
+/** expectedOwnerId: propietario que debe registrar el contexto comercial; ADMIN (CN-66) indica el del listado administrativo o null. */
+async function getOrder(userId: string, orderId: string, signal?: AbortSignal, expectedOwnerId: string | null = userId): Promise<Order> {
   const body = await request('/api/v2/orders/' + encodeURIComponent(orderId), userId, signal)
-  if (!isOrderDetail(body, orderId, userId)) throw new OrderHistoryApiError('unavailable')
+  if (!isOrderDetail(body, orderId, expectedOwnerId)) throw new OrderHistoryApiError('unavailable')
   return body
 }
 

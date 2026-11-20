@@ -7,7 +7,8 @@ import { OrderError } from '../domain/orderError.js'
 import { OrderPersistenceError } from '../domain/orderPersistenceError.js'
 import { requireCompatible, requireOrderOwner } from '../domain/orderIdentity.js'
 import type { Order } from '../types/order.js'
-import type { OrderBuilder, OrderCreationContext, OrderStore, OwnerOrdersPage } from './orderStore.js'
+import type { AdminOrdersPageResult, OrderBuilder, OrderCreationContext, OrderStore, OwnerOrdersPage } from './orderStore.js'
+import type { AdminOrderEntry, AdminOrderFilters, AdminOrderSort } from '../types/adminOrder.js'
 import { mapOrderRow, orderToRow, ORDER_COLUMNS, rowRecord } from './orderRowMapper.js'
 
 export const ORDER_PERSISTENCE_LIMITS = Object.freeze({ operationMs: 8000, sqlMs: 2000, lockMs: 1000 })
@@ -208,6 +209,67 @@ export class PostgreSQLOrderStore implements OrderStore {
 
   async findByIdempotencyKey(key: string, ownerId: string): Promise<Order | undefined> {
     try { const rows = await this.read(replaySql, [key]); return rows.length ? this.replay(rows[0], ownerId) : undefined }
+    catch (error) { if (error instanceof OrderError) throw error; throw new OrderPersistenceError() }
+  }
+
+  /** Order validada junto con la identidad histórica de user_snapshot, ya validada por mapOrderRow. */
+  private adminEntry(row: unknown): AdminOrderEntry {
+    const order = mapOrderRow(row)
+    const record = rowRecord(row)
+    const user = rowRecord(record.user_snapshot)
+    const company = user.role === 'B2B' ? rowRecord(user.company) : undefined
+    return { order, owner: { userId: String(record.owner_user_id), displayName: String(user.displayName),
+      customerRole: user.role === 'B2B' ? 'B2B' : 'B2C', ...(company ? { company: { id: String(company.id), name: String(company.name) } } : {}) } }
+  }
+
+  /**
+   * CN-66: una sola sentencia READ ONLY con parámetros posicionales obtiene total y página del mismo snapshot.
+   * Los filtros solo usan columnas persistidas; ninguna Order se omite por estar pendiente de indexación.
+   */
+  async listAll(filters: AdminOrderFilters, sort: AdminOrderSort, offset: number, limit: number): Promise<AdminOrdersPageResult> {
+    const where: string[] = []
+    const values: unknown[] = []
+    const add = (sql: string, value: unknown) => { values.push(value); where.push(sql.replace('?', '$' + values.length)) }
+    if (filters.orderId !== undefined) add('id = ?', filters.orderId)
+    if (filters.orderNumber !== undefined) add('upper(order_number) = upper(?)', filters.orderNumber)
+    if (filters.userId !== undefined) add('owner_user_id = ?', filters.userId)
+    if (filters.customerRole !== undefined) add("user_snapshot->>'role' = ?", filters.customerRole)
+    if (filters.branchId !== undefined) add('branch_id = ?', filters.branchId)
+    if (filters.orderStatus !== undefined) add('order_status = ?', filters.orderStatus)
+    if (filters.paymentStatus !== undefined) add('payment_status = ?', filters.paymentStatus)
+    const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
+    const order = sort === 'oldest' ? 'created_at ASC, id ASC' : 'created_at DESC, id ASC'
+    values.push(limit, offset)
+    try {
+      const rows = await this.read(`SELECT counted.total_count, page.*
+        FROM (SELECT count(*)::integer AS total_count FROM commerce.orders ${clause}) counted
+        LEFT JOIN LATERAL (
+          SELECT * FROM commerce.orders ${clause} ORDER BY ${order} LIMIT $${values.length - 1} OFFSET $${values.length}
+        ) page ON TRUE`, values, true)
+      const total = rowRecord(rows[0]).total_count
+      if (typeof total !== 'number' || !Number.isSafeInteger(total) || total < 0) throw new DatabaseError('transaction')
+      return { entries: rows.filter(row => rowRecord(row).id !== null).map(row => this.adminEntry(row)), total }
+    }
+    catch (error) { if (error instanceof OrderError) throw error; throw new OrderPersistenceError() }
+  }
+
+  async findEntriesByIds(ids: string[]): Promise<AdminOrderEntry[]> {
+    if (!ids.length) return []
+    try {
+      const byId = new Map((await this.read('SELECT * FROM commerce.orders WHERE id = ANY($1::text[])', [ids], true))
+        .map(row => [String(rowRecord(row).id), row]))
+      return ids.flatMap(id => byId.has(id) ? [this.adminEntry(byId.get(id))] : [])
+    }
+    catch (error) { if (error instanceof OrderError) throw error; throw new OrderPersistenceError() }
+  }
+
+  async countPendingIndex(): Promise<number | null> {
+    try {
+      const rows = await this.read('SELECT count(*)::integer AS pending FROM commerce.orders WHERE indexed_version < index_version', [], true)
+      const pending = rowRecord(rows[0]).pending
+      if (typeof pending !== 'number' || !Number.isSafeInteger(pending) || pending < 0) throw new DatabaseError('transaction')
+      return pending
+    }
     catch (error) { if (error instanceof OrderError) throw error; throw new OrderPersistenceError() }
   }
 

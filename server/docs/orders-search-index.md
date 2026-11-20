@@ -143,9 +143,11 @@ El CLI termina con código 1 cuando `verifyRemote` devuelve `failed > 0`, tambi�
 - `--verify-remote` debe informar cero drift y cero fallidas; revisar también los mensajes de inconsistencias. El código de salida indica si hubo fallos, no si un Dry-Run encontró drift reparable.
 - En el dashboard de Algolia, el índice orders debe tener un registro por Order, sin campos de Buyer ni Delivery.
 
-## Consultas administrativas futuras
+## Consultas administrativas (CN-66)
 
-[orderIndexQuery](../src/domain/orderIndexQuery.ts) define `buildOrderIndexFilters`, que valida cada valor antes de construir el filtro: todas las Orders, por usuario, por tipo B2C/B2B, por sucursal, por estado y por rango de fechas. La búsqueda por número usa `orderNumber` como atributo buscable. La Story del Admin Panel debe ejecutar estas consultas desde Server, después de RBAC, y recuperar el detalle completo desde PostgreSQL.
+[orderIndexQuery](../src/domain/orderIndexQuery.ts) define `buildOrderIndexFilters`, que valida cada valor antes de construir el filtro: por usuario, por tipo B2C/B2B, por sucursal, por estado y por rango de fechas. La búsqueda por número usa `orderNumber` como atributo buscable.
+
+`GET /api/v2/admin/orders` (ver [README del Server](../README.md#admin-orders-cn-66)) usa el índice solo cuando recibe texto (`q`), siempre desde Server y después de RBAC. Cada coincidencia se relee de PostgreSQL. El listado sin texto consulta directamente PostgreSQL e incluye las Orders pendientes de indexar, y el detalle completo proviene de `GET /api/v2/orders/:orderId`.
 
 ## Pruebas
 

@@ -227,3 +227,18 @@ En **Admin Product Detail** (`#admin/products/<id>`), ADMIN dispone del panel **
 - El catálogo público, Quick View, selección de sucursal, Cart, Checkout, creación de Orders, Payment y el historial de Orders no importan ni reciben este estado; siguen usando únicamente los datos del Server.
 
 Validación: `npm run lint`, `npm run build` y `node --test tests/inventorySimulation.test.mjs`.
+
+## Admin Orders (CN-66)
+
+ADMIN ve en el Header el enlace **Órdenes** (`#admin/orders`). La vista consulta `GET /api/v2/admin/orders` con `adminOrderApi`, que envía la identidad activa, valida cada respuesta desde `unknown` y no persiste Orders en el navegador.
+
+- **Listado:** número, fecha, comprador (nombre y User ID), tipo B2C/B2B, empresa, sucursal, total y estados de pedido y pago, de la más reciente a la más antigua.
+- **Filtros:** tipo de comprador, sucursal, estado del pedido, estado del pago, User ID y número de orden exacto, más orden ascendente o descendente y paginación. Estas consultas van al Store seleccionado en Server e incluyen Orders pendientes de indexar; la vista avisa cuántas hay cuando el Store registra ese dato.
+- **Origen:** el listado distingue `source: "memory"` (memoria del servidor, sin persistencia duradera) de `"postgresql"`. Search conserva `source: "algolia"` para los candidatos del índice y describe su hidratación desde el almacenamiento seleccionado sin inferir un motor de persistencia.
+- **Búsqueda:** el campo de texto busca por número de orden o empresa en el índice de búsqueda. La vista advierte que los resultados pueden omitir Orders pendientes de sincronización, marca las filas con índice desactualizado y muestra siempre el estado actual. Si la búsqueda no está disponible, ofrece volver al listado sin búsqueda.
+- **Detalle:** `#admin/orders/<id>` (compatible con recarga y Back/Forward) combina la identidad del comprador del listado administrativo con el snapshot histórico de `GET /api/v2/orders/:orderId`. La presentación se comparte con My Orders mediante `components/orders/OrderDetailContent.tsx`.
+- **Acceso y Session:** App revoca las vistas para B2C, B2B y visitantes sin Session y las monta con una key por usuario y epoch, de modo que un cambio de identidad descarta resultados y requests anteriores. El Server aplica RBAC en cada request.
+- **Solo consulta:** no hay controles para crear, pagar, cambiar estados ni eliminar Orders.
+- **Responsive:** reutiliza los estilos administrativos: dos columnas de tarjetas en Desktop, una en Tablet y filas apiladas en Mobile.
+
+Validación: `npm run lint`, `npm run build` y `node --test tests/adminOrders.test.mjs`.

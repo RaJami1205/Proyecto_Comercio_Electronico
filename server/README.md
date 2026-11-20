@@ -254,3 +254,48 @@ Errores (`ApiErrorResponse`): 401 `IDENTITY_REQUIRED`, 403 `FORBIDDEN`/`USER_DIS
 npm run build
 node --test tests/adminProducts.test.mjs
 ```
+
+## Admin Orders (CN-66)
+
+Consulta global **Read-Only** de las Orders de compradores B2C y B2B. Solo ADMIN, con el permiso RBAC `orders:read:all`; la identidad se resuelve por request con `X-CiberNova-User-Id`.
+
+| Endpoint | Uso |
+| --- | --- |
+| `GET /api/v2/admin/orders` | Listado paginado: `{ orders, page, pageSize, total, hasMore, source, pendingIndexOrders, missingFromStore? }` |
+| `GET /api/v2/orders/:orderId` | Detalle existente (CN-63), reutilizado por ADMIN: snapshot histórico completo del Store seleccionado |
+
+Cada fila (`AdminOrderSummary`) contiene número, fecha, `userId`, nombre visible, `customerRole`, empresa (solo B2B), sucursal (null en Orders V1), total, moneda y estados. No incluye Buyer, Delivery ni productos.
+
+**Sin `q`, listado del Store** (`source: "memory"` o `"postgresql"`): filtros exactos y combinables `userId`, `customerRole` (`B2C`/`B2B`), `branchId`, `orderStatus`, `paymentStatus`, `orderNumber` (sin distinguir mayúsculas) y `orderId`; `sort=newest` (default) u `oldest`; `page` y `pageSize` (default 20, máximo 50). Incluye Orders pendientes de indexar, y `pendingIndexOrders` informa cuántas hay (null con el almacenamiento In-Memory).
+
+`source` identifica el proveedor de coincidencias: `memory` corresponde a `InMemoryOrderStore`, `postgresql` a `PostgreSQLOrderStore` y `algolia` al índice usado en Search. El listado identifica el Repository utilizado, también mediante inyección; no infiere su origen de `DATABASE_URL`. La composición sigue seleccionándose explícitamente mediante `COMMERCE_STORE_MODE`, con Memory como default y sin fallback. Memory no ofrece persistencia duradera. En Search, `source: "algolia"` no identifica el motor de hidratación ni garantiza durabilidad: las Orders siempre se releen del Store seleccionado, y la UI lo describe sin atribuir PostgreSQL a Memory. No se añade otro metadato de origen.
+
+**Con `q`, búsqueda en el índice Algolia `orders`** (`source: "algolia"`), mediante Server y con la clave del índice: texto sobre número de orden y empresa, más los filtros indexados (usuario, rol, sucursal y estados). Se conserva el orden devuelto por el índice. Cada coincidencia se relee del store autoritativo:
+
+- Se reaplican usuario, rol, sucursal y estados sobre los datos persistidos. Una coincidencia que ya no cumple los filtros se excluye; el texto `q` sigue siendo responsabilidad de Algolia.
+- `indexOutdated: true` cuando el índice tenía otro estado; se muestra el actual del Store seleccionado.
+- `missingFromStore` cuenta solo las coincidencias que ya no existen; no cuenta las excluidas por filtros autoritativos.
+- La búsqueda puede omitir Orders aún no indexadas; el listado sin `q` siempre las incluye.
+
+**Límite de paginación de Search (F2-01):** `total` conserva el conteo de candidatos informado por Algolia; `hasMore` indica si quedan candidatos según ese conteo. Ninguno garantiza cuántas Orders cumplen actualmente los filtros en el Store seleccionado. `page` y `pageSize` identifican la página solicitada al índice; después de hidratar y filtrar puede contener menos Orders o estar vacía, incluso con `hasMore: true`. No se recorren otras páginas para rellenarla ni se recalculan totales globales.
+
+**Exhaustividad de Search (F2-02):** el adaptador requiere `nbHits` entero seguro no negativo y evidencia booleana explícita de exhaustividad mediante `exhaustive.nbHits` o `exhaustiveNbHits` (legacy). Acepta uno en `true` sin el otro, o ambos en `true`; rechaza indicadores `false`, contradictorios, mal formados o ausencia de ambas evidencias con HTTP 503 `ORDER_SEARCH_UNAVAILABLE`. Un objeto `exhaustive` válido sin `nbHits` no acredita el conteo por sí solo; puede acompañar al indicador legacy válido. No se inventa un total ni se convierte el error en listado vacío o fallback.
+
+En Search, el Dashboard etiqueta `total` como coincidencias indexadas y distingue cuántas Orders se muestran en la página tras la hidratación y F2-01. Las páginas y `hasMore` siguen refiriéndose a candidatos del índice, cuyo conteo exhaustivo no garantiza que todas las Orders persistidas estén indexadas ni que todos sus candidatos cumplan los filtros actuales. El listado sin `q` mantiene su conteo filtrado en el Store.
+
+**Páginas vacías (F2-03):** el resumen y la navegación no dependen de `orders.length`. Se permite avanzar cuando `hasMore` es true y retroceder cuando `page > 1`, aunque no haya Orders visibles. La UI distingue una búsqueda sin candidatos de una página sin Orders compatibles; las peticiones siguen siendo explícitas, sin saltos automáticos ni relleno de páginas descartadas por F2-01.
+
+`q` no se combina con `orderId`, `orderNumber` ni `sort=oldest`.
+
+**Orden durante Search (F3-02):** el Client no envía `sort` con `q`. El Server valida su default `newest`, pero Search no ejecuta un ordenamiento cronológico local: mantiene el ranking del índice. Los settings versionados incluyen `customRanking: ['desc(createdAtTimestamp)']`; ese criterio personalizado se aplica junto con los demás criterios de ranking y no acredita por sí solo un orden cronológico global. Los settings remotos no se verificaron durante este fix. Por ello, el selector deshabilitado muestra **Orden de búsqueda**, derivado de la consulta aplicada (`filters.q`), y no del texto pendiente de edición. Limpiar el texto y aplicar, o usar **Ver listado sin búsqueda**, recupera el orden previo del listado; **Limpiar filtros** mantiene su comportamiento de restablecer `newest`. El valor informativo `search` no forma parte del DTO ni se envía al Server.
+
+Errores (`ApiErrorResponse`): 401 `IDENTITY_REQUIRED`, 403 `FORBIDDEN`/`USER_DISABLED`, 404 `USER_NOT_FOUND`, 400 `INVALID_ORDER_FILTER`, 503 `ORDER_SEARCH_UNAVAILABLE` (índice no configurado o Algolia sin respuesta; el listado sin `q` sigue disponible) y 503 `ORDER_QUERY_UNAVAILABLE` (persistencia). Ninguna respuesta incluye detalles del SDK ni de PostgreSQL.
+
+El módulo no crea Orders, no procesa pagos, no cambia estados y no modifica Idempotency. POST/PUT/PATCH/DELETE sobre `/api/v2/admin/orders` responden 404.
+
+```sh
+npm run build
+node --test tests/adminOrders.test.mjs
+# PostgreSQL efímero local con las migrations aplicadas (ver docs/postgresql.md):
+node --test tests/adminOrders.integration.test.mjs
+```

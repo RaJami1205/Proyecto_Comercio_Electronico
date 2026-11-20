@@ -12,7 +12,7 @@ import PolicyPlaceholderPage from './pages/PolicyPlaceholderPage'
 import TermsPage from './pages/TermsPage'
 import ReturnsPolicyPage from './pages/ReturnsPolicyPage'
 import {
-  adminProductIdFromHash, hashForAdminProduct, hashForOrder, hashForView, isAdminView, orderIdFromHash, policyDestinations, viewFromHash,
+  adminOrderIdFromHash, adminProductIdFromHash, hashForAdminOrder, hashForAdminProduct, hashForOrder, hashForView, isAdminView, orderIdFromHash, policyDestinations, viewFromHash,
   type AppView, type CatalogHash,
 } from './utils/appNavigation'
 import { ShippingPolicyPage } from './pages/ShippingPolicyPage';
@@ -23,6 +23,8 @@ import MyOrdersPage from './pages/MyOrdersPage'
 import OrderDetailPage from './pages/OrderDetailPage'
 import AdminProductsPage from './pages/AdminProductsPage'
 import AdminProductDetailPage from './pages/AdminProductDetailPage'
+import AdminOrdersPage from './pages/AdminOrdersPage'
+import AdminOrderDetailPage from './pages/AdminOrderDetailPage'
 import { trackEvent } from './services/analytics'
 import { EMPTY_SIMULATION, inventorySimulationReducer } from './utils/inventorySimulation'
 
@@ -34,6 +36,8 @@ interface NavigationState {
   orderId?: string
   /** Producto abierto en #admin/products/<id> (CN-67). */
   productId?: string
+  /** Order abierta en #admin/orders/<id> (CN-66). */
+  adminOrderId?: string
 }
 
 const isOrdersView = (view: AppView) => view === 'orders' || view === 'order-detail'
@@ -59,6 +63,7 @@ function App() {
   const [navigation, setNavigation] = useState<NavigationState>(() => ({
     view: viewFromLocation(), emptyCartNotice: false, orderId: orderIdFromHash(window.location.hash) ?? undefined,
     productId: adminProductIdFromHash(window.location.hash) ?? undefined,
+    adminOrderId: adminOrderIdFromHash(window.location.hash) ?? undefined,
   }))
   const initialNavigationRef = useRef(navigation)
   const [isCartPreviewOpen, setIsCartPreviewOpen] = useState(false)
@@ -123,7 +128,8 @@ function App() {
       setIsCartPreviewOpen(false)
       setNavigation({ view: next, emptyCartNotice: false, checkoutNotice: reason ?? undefined,
         orderId: next === 'order-detail' ? orderIdFromHash(window.location.hash) ?? undefined : undefined,
-        productId: next === 'admin-product-detail' ? adminProductIdFromHash(window.location.hash) ?? undefined : undefined })
+        productId: next === 'admin-product-detail' ? adminProductIdFromHash(window.location.hash) ?? undefined : undefined,
+        adminOrderId: next === 'admin-order-detail' ? adminOrderIdFromHash(window.location.hash) ?? undefined : undefined })
     }
     window.addEventListener('popstate', syncLocation)
     window.addEventListener('hashchange', syncLocation)
@@ -231,6 +237,19 @@ function App() {
     setNavigation({ view: 'admin-product-detail', emptyCartNotice: false, productId })
   }
 
+  /** Abre el detalle administrativo de una Order con hash directo; solo ADMIN (CN-66). */
+  function openAdminOrder(orderId: string) {
+    if (checkoutLockedRef.current || isTransactionBlocked() || !canViewAdmin) return
+    setCheckoutHasOrder(false)
+    setTransactionState('idle')
+    restoreDrawerFocusRef.current = false
+    setIsCartPreviewOpen(false)
+    const destination = hashForAdminOrder(orderId)
+    if (window.location.hash !== destination) window.history.pushState({ view: 'admin-order-detail' }, '', destination)
+    setCheckoutMounted(false)
+    setNavigation({ view: 'admin-order-detail', emptyCartNotice: false, adminOrderId: orderId })
+  }
+
   /** Abre el preview cuando la navegación está permitida y habilita el retorno del foco al trigger. */
   function openCartPreview() {
     if (checkoutLockedRef.current || isTransactionBlocked()) return
@@ -320,6 +339,26 @@ function App() {
           onBack={() => navigate('admin-products')}
           simulation={inventorySimulation}
           onSimulationChange={dispatchInventorySimulation}
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'admin-orders' && canViewAdmin ? (
+        // CN-66: key por usuario y epoch; un cambio de Session descarta filtros, resultados y requests previos.
+        <AdminOrdersPage
+          key={`admin-orders:${session.user?.id ?? 'none'}:${session.epoch}`}
+          onOpenOrder={openAdminOrder}
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'admin-order-detail' && canViewAdmin && navigation.adminOrderId ? (
+        <AdminOrderDetailPage
+          key={`admin-order:${session.user?.id ?? 'none'}:${session.epoch}:${navigation.adminOrderId}`}
+          orderId={navigation.adminOrderId}
+          onBack={() => navigate('admin-orders')}
           onCatalogClick={(hash) => navigate('catalog', hash)}
           onPolicyNavigate={navigate}
           onCartClick={openCartPreview}
