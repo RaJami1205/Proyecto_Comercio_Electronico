@@ -159,3 +159,58 @@ test('fallo de persistencia: 503 ORDER_QUERY_UNAVAILABLE sin detalles internos',
   assert.equal(response.body.error.code, 'ORDER_QUERY_UNAVAILABLE')
   assert.ok(!JSON.stringify(response.body).includes('PRIVATE'))
 })
+
+const { adminOrderService, createAlgoliaOrderSearch } = await import('../dist/services/adminOrderService.js')
+
+/** Índice orders simulado: registra cada búsqueda y devuelve coincidencias con estados indexados. */
+function fakeIndex(hitsFor) {
+  const calls = []
+  return { calls, search: async (q, filters, page, pageSize) => { calls.push({ q, filters, page, pageSize }); return hitsFor(q, filters, page, pageSize) } }
+}
+
+test('búsqueda en Algolia: IDs del índice, estado actual del store, índice desactualizado y Orders faltantes', async t => {
+  const get = await http(t)
+  const index = fakeIndex(() => ({ total: 3, hits: [
+    // El índice todavía tiene la Order como pendiente; el store ya la tiene confirmada.
+    { id: seeded.b2bAlajuela.id, orderStatus: 'PENDING', paymentStatus: 'PENDING' },
+    { id: 'deleted-from-store', orderStatus: 'PENDING', paymentStatus: 'PENDING' },
+    { id: seeded.b2bHeredia.id, orderStatus: 'PENDING', paymentStatus: 'PENDING' },
+  ] }))
+  t.mock.method(adminOrderService.search, 'search', index.search)
+  const { status, body } = await get('/api/v2/admin/orders?q=Distribuidora&customerRole=B2B&branchId=heredia&pageSize=3')
+  assert.equal(status, 200)
+  assert.deepEqual(index.calls, [{ q: 'Distribuidora', filters: { customerRole: 'B2B', branchId: 'heredia' }, page: 1, pageSize: 3 }])
+  assert.deepEqual(body.orders.map(order => [order.id, order.orderStatus, order.indexOutdated ?? false]),
+    [[seeded.b2bAlajuela.id, 'CONFIRMED', true], [seeded.b2bHeredia.id, 'PENDING', false]])
+  assert.deepEqual([body.source, body.total, body.missingFromStore, body.hasMore, body.pendingIndexOrders], ['algolia', 3, 1, false, null])
+  assert.deepEqual(body.orders[0].company, { id: 'qa-company', name: 'Distribuidora QA' })
+})
+
+test('búsqueda: combinaciones no soportadas, índice no disponible y fallo temporal sin detalles internos', async t => {
+  const get = await http(t)
+  for (const query of ['q=CN&orderNumber=CN-1', 'q=CN&orderId=x', 'q=CN&sort=oldest']) {
+    const response = await get('/api/v2/admin/orders?' + query)
+    assert.deepEqual([response.status, response.body.error.code], [400, 'INVALID_ORDER_FILTER'], query)
+  }
+  // Sin variables del índice orders: la búsqueda informa que no está disponible.
+  const unconfigured = createAlgoliaOrderSearch(() => { throw new Error('No debe crear el cliente') }, () => 'orders', () => false)
+  await assert.rejects(unconfigured.search('CN', {}, 1, 20), { status: 503, code: 'ORDER_SEARCH_UNAVAILABLE' })
+  const failing = createAlgoliaOrderSearch(() => ({ searchSingleIndex: async () => { throw Object.assign(new Error('PRIVATE key host'), { status: 500 }) } }), () => 'orders', () => true)
+  await assert.rejects(failing.search('CN', {}, 1, 20), error => error.code === 'ORDER_SEARCH_UNAVAILABLE' && !error.message.includes('PRIVATE'))
+  t.mock.method(adminOrderService.search, 'search', failing.search)
+  const response = await get('/api/v2/admin/orders?q=CN')
+  assert.deepEqual([response.status, response.body.error.code], [503, 'ORDER_SEARCH_UNAVAILABLE'])
+  assert.ok(!JSON.stringify(response.body).includes('PRIVATE'))
+  // El listado general sigue disponible desde la persistencia durante el fallo del índice.
+  assert.equal((await get('/api/v2/admin/orders')).body.total, 5)
+})
+
+test('adaptador Algolia: índice orders, filtros validados, paginación base cero y solo lectura', async () => {
+  const calls = []
+  const search = createAlgoliaOrderSearch(() => ({ searchSingleIndex: async request => { calls.push(request); return { hits: [{ objectID: 'o1', orderStatus: 'PENDING', paymentStatus: 'PENDING' }], nbHits: 41 } } }),
+    () => 'orders-test', () => true)
+  assert.deepEqual(await search.search('CN-2026', { userId: 'qa-b2b', orderStatus: 'PENDING' }, 3, 20),
+    { hits: [{ id: 'o1', orderStatus: 'PENDING', paymentStatus: 'PENDING' }], total: 41 })
+  assert.deepEqual(calls, [{ indexName: 'orders-test', searchParams: { query: 'CN-2026', page: 2, hitsPerPage: 20,
+    filters: 'userId:"qa-b2b" AND orderStatus:"PENDING"', attributesToRetrieve: ['orderStatus', 'paymentStatus'], attributesToHighlight: [] } }])
+})
