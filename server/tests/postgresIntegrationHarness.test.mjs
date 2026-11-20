@@ -1,4 +1,4 @@
-/** CN-69: 48 guardas puras y regresiones con dotenv real en subprocesses sin red y con fixtures ficticios. */
+/** CN-69: guardas puras y regresiones con dotenv real en subprocesses sin red y con fixtures ficticios. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -123,6 +123,38 @@ for (const [name, patch] of Object.entries({ version16: { version: 160011 }, ver
   login: { login_name: 'postgres' }, address: { server_address: '172.18.0.3' }, port: { server_port: 5433 },
   privileges: { restricted: false } })) test('rechaza sesión inesperada antes de fixtures: ' + name, () => {
   assert.throws(() => validateSessionIdentity({ ...identity(), ...patch }, 'runtime', target), /SESSION_IDENTITY/)
+})
+
+test('la consulta de identidad PG17 extrae host sin netmask para comparar la IP exacta del contenedor', () => {
+  // PostgreSQL documenta que inet::text incluye /32; host(inet) devuelve solo la dirección.
+  assert.match(sessionIdentitySql, /host\(inet_server_addr\(\)\) AS server_address/)
+  assert.doesNotMatch(sessionIdentitySql, /inet_server_addr\(\)::text/)
+  const resource = validateIntegrationEnvironment(environment())
+  assert.equal(new URL(input().DATABASE_TEST_URL).hostname, '127.0.0.1')
+  assert.equal(resource.serverAddress, '172.18.0.2', 'La IP Docker procede del recurso inspeccionado, no del endpoint del Runner.')
+  for (const role of ['admin', 'runtime']) validateSessionIdentity(identity(role), role, resource)
+})
+
+test('la comparación de IP sigue siendo exacta y bloquea escrituras ante otro host, netmask o NULL', async () => {
+  for (const server_address of ['127.0.0.1', '172.18.0.3', '172.18.0.2/32', '172.18.0.0/16', null]) {
+    const db = fakeDatabase({ ...identity('admin'), server_address })
+    guardIntegrationDatabase(db, 'admin', environment())
+    await assert.rejects(db.query('synthetic write'), /SESSION_IDENTITY/)
+    assert.equal(db.operations.some(value => Array.isArray(value) && value[0] === 'business query'), false)
+    assert.deepEqual(db.operations.at(-1), ['release', false])
+  }
+})
+
+test('conserva identidades iniciales administrativa/runtime y rechaza SET ROLE inesperado o tipos inválidos', () => {
+  for (const role of ['admin', 'runtime']) {
+    for (const patch of [{ user_name: 'commerce_runtime' }, { login_name: 'unexpected' }, { user_name: null },
+      { version: null }, { server_port: '5432' }]) {
+      assert.throws(() => validateSessionIdentity({ ...identity(role), ...patch }, role, target), /SESSION_IDENTITY/)
+    }
+  }
+  for (const restricted of [null, undefined, false]) {
+    assert.throws(() => validateSessionIdentity({ ...identity(), restricted }, 'runtime', target), /SESSION_IDENTITY/)
+  }
 })
 
 function fakeDatabase(row = identity(), { rollbackFails = false, selectFails = false } = {}) {

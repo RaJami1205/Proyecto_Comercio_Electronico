@@ -83,9 +83,10 @@ export function assertIntegrationModule(specifier) {
   if (/(?:src|dist)[/\\]scripts[/\\]/i.test(specifier)) throw failure('MAINTENANCE_BLOCKED')
 }
 
+// inet::text añade la máscara (/32 en IPv4); host() permite comparar la IP exacta de docker inspect.
 export const sessionIdentitySql = `SELECT current_user AS user_name, session_user AS login_name,
   current_database() AS database_name, current_setting('server_version_num')::integer AS version,
-  inet_server_addr()::text AS server_address, inet_server_port() AS server_port,
+  host(inet_server_addr()) AS server_address, inet_server_port() AS server_port,
   NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AS restricted
   FROM pg_roles WHERE rolname = current_user`
 
