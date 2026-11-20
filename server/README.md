@@ -254,3 +254,35 @@ Errores (`ApiErrorResponse`): 401 `IDENTITY_REQUIRED`, 403 `FORBIDDEN`/`USER_DIS
 npm run build
 node --test tests/adminProducts.test.mjs
 ```
+
+## Admin Orders (CN-66)
+
+Consulta global **Read-Only** de las Orders de compradores B2C y B2B. Solo ADMIN, con el permiso RBAC `orders:read:all`; la identidad se resuelve por request con `X-CiberNova-User-Id`.
+
+| Endpoint | Uso |
+| --- | --- |
+| `GET /api/v2/admin/orders` | Listado paginado: `{ orders, page, pageSize, total, hasMore, source, pendingIndexOrders, missingFromStore? }` |
+| `GET /api/v2/orders/:orderId` | Detalle existente (CN-63), reutilizado por ADMIN: snapshot histórico completo de PostgreSQL |
+
+Cada fila (`AdminOrderSummary`) contiene número, fecha, `userId`, nombre visible, `customerRole`, empresa (solo B2B), sucursal (null en Orders V1), total, moneda y estados. No incluye Buyer, Delivery ni productos.
+
+**Sin `q`, listado autoritativo** (`source: "postgresql"`): filtros exactos y combinables `userId`, `customerRole` (`B2C`/`B2B`), `branchId`, `orderStatus`, `paymentStatus`, `orderNumber` (sin distinguir mayúsculas) y `orderId`; `sort=newest` (default) u `oldest`; `page` y `pageSize` (default 20, máximo 50). Incluye Orders pendientes de indexar, y `pendingIndexOrders` informa cuántas hay (null con el almacenamiento In-Memory).
+
+**Con `q`, búsqueda en el índice Algolia `orders`** (`source: "algolia"`), mediante Server y con la clave del índice: texto sobre número de orden y empresa, más los filtros indexados (usuario, rol, sucursal y estados), siempre de la más reciente a la más antigua. Cada coincidencia se relee del store autoritativo:
+
+- `indexOutdated: true` cuando el índice tenía otro estado; se muestra el actual de PostgreSQL.
+- `missingFromStore` cuenta las coincidencias que ya no existen y se omitieron.
+- La búsqueda puede omitir Orders aún no indexadas; el listado sin `q` siempre las incluye.
+
+`q` no se combina con `orderId`, `orderNumber` ni `sort=oldest`.
+
+Errores (`ApiErrorResponse`): 401 `IDENTITY_REQUIRED`, 403 `FORBIDDEN`/`USER_DISABLED`, 404 `USER_NOT_FOUND`, 400 `INVALID_ORDER_FILTER`, 503 `ORDER_SEARCH_UNAVAILABLE` (índice no configurado o Algolia sin respuesta; el listado sin `q` sigue disponible) y 503 `ORDER_QUERY_UNAVAILABLE` (persistencia). Ninguna respuesta incluye detalles del SDK ni de PostgreSQL.
+
+El módulo no crea Orders, no procesa pagos, no cambia estados y no modifica Idempotency. POST/PUT/PATCH/DELETE sobre `/api/v2/admin/orders` responden 404.
+
+```sh
+npm run build
+node --test tests/adminOrders.test.mjs
+# PostgreSQL efímero local con las migrations aplicadas (ver docs/postgresql.md):
+node --test tests/adminOrders.integration.test.mjs
+```
