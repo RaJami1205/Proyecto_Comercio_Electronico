@@ -12,6 +12,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { QA_ALGOLIA_ENV, QA_PRODUCTS, QA_USERS, createFakeAlgoliaCatalog } from './helpers/fakeAlgoliaCatalog.mjs'
 import { guardIntegrationDatabase, verifyIntegrationDatabases } from './helpers/postgresIntegrationHarness.mjs'
+import { startIntegrationServer } from './helpers/postgresIntegrationIsolation.mjs'
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION_TESTS === '1'
 // Las variables ficticias de Algolia deben existir antes de cargar la configuración del Server.
@@ -282,7 +283,7 @@ test('CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálo
     assert.deepEqual([paged.page, paged.orders.length, paged.hasMore], [2, 1, true])
   })
 
-  await t.test('E2E-17 Recuperación después de reiniciar: historial, detalle y Replay salen de PostgreSQL', async () => {
+  await t.test('E2E-17 Reconstrucción de Pool/Repositories en el mismo proceso: historial, detalle y Replay', async () => {
     await startPersistence()
     const calls = catalog.calls.length
     const mine = await orderHistoryApi.listMine(id('b2b'), 1, 10)
@@ -299,6 +300,69 @@ test('CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálo
     assert.deepEqual([replayed.id, replayed.totals], [created.replayed.id, created.replayed.totals])
     assert.equal((await ordersOf(id('b2c'))).filter(row => row.id === replayed.id).length, 1)
     assert.equal(catalog.calls.length, calls, 'La recuperación no reconstruye precios desde el catálogo')
+  })
+
+  await t.test('E2E-20 Reinicio real Node A → Node B: Order V2 y Attempts históricos durables', { timeout: 60000 }, async t => {
+    const run = randomUUID()
+    const owner = 'qa-b2b-' + run
+    const stranger = 'qa-b2c-' + run
+    const request = checkout([['qa-ssd-1tb', 3]], 'B2B', 'san_jose')
+    const declinedRequest = { scenario: 'PAYMENT_DECLINED', idempotencyKey: randomUUID() }
+    const approvedRequest = { scenario: 'PAYMENT_APPROVED', idempotencyKey: randomUUID() }
+    const call = async (base, route, userId, body, status = 200) => {
+      const response = await fetch(base + route, { method: body === undefined ? 'GET' : 'POST',
+        signal: AbortSignal.timeout(8000), headers: { 'X-CiberNova-User-Id': userId,
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+      assert.equal(response.status, status, 'HTTP del Server hijo')
+      return response.json()
+    }
+    const rows = async () => ({
+      orders: (await admin.query('SELECT id FROM commerce.orders WHERE owner_user_id = $1', [owner])).rows,
+      requests: (await admin.query('SELECT order_id FROM commerce.order_creation_requests WHERE idempotency_key = $1', [request.idempotencyKey])).rows,
+      attempts: (await admin.query('SELECT idempotency_key, result, order_snapshot FROM commerce.payment_attempts WHERE order_id IN (SELECT id FROM commerce.orders WHERE owner_user_id = $1) ORDER BY idempotency_key', [owner])).rows,
+    })
+    const a = startIntegrationServer(run)
+    t.after(() => a.stop())
+    const serverA = await a.ready
+    assert.notEqual(serverA.pid, process.pid, 'Server A es otro proceso Node')
+    const order = await call(serverA.base, '/api/v2/orders', owner, request, 201)
+    assert.deepEqual(order.commercial.company, { id: 'qa-company', name: 'Distribuidora QA' })
+    assert.equal(order.commercial.customerRole, 'B2B')
+    const paymentPath = '/api/orders/' + order.id + '/payment'
+    const declined = await call(serverA.base, paymentPath, owner, declinedRequest)
+    const approved = await call(serverA.base, paymentPath, owner, approvedRequest)
+    assert.deepEqual([declined.order.orderStatus, declined.order.paymentStatus], ['PENDING', 'DECLINED'])
+    assert.deepEqual([approved.order.orderStatus, approved.order.paymentStatus], ['CONFIRMED', 'APPROVED'])
+    const before = await rows()
+    assert.deepEqual([before.orders.length, before.requests.length, before.attempts.length], [1, 1, 2])
+    const countsA = await a.counts()
+    assert.ok(countsA.catalog > 0)
+    assert.equal(countsA.payments, 2)
+    await a.stop()
+    assert.equal(a.terminated, true, 'Exit de A observado antes de arrancar B')
+
+    const b = startIntegrationServer(run)
+    t.after(() => b.stop())
+    const serverB = await b.ready
+    assert.notEqual(serverB.pid, process.pid)
+    assert.notEqual(serverB.pid, serverA.pid, 'B es un proceso independiente')
+    const detail = await call(serverB.base, '/api/v2/orders/' + order.id, owner)
+    assert.deepEqual(detail, approved.order, 'Incluye UUID, Order Number, Terms, timestamps y todos los snapshots/importes')
+    const history = await call(serverB.base, '/api/v2/orders/mine', owner)
+    assert.deepEqual(history.orders.map(entry => entry.id), [order.id])
+    assert.equal((await call(serverB.base, '/api/v2/orders/' + order.id, stranger, undefined, 404)).error.code, 'ORDER_NOT_FOUND')
+    // Un DECLINED conserva su Order PENDING original aunque otro intento haya confirmado la Order.
+    assert.deepEqual(await call(serverB.base, paymentPath, owner, declinedRequest), declined)
+    assert.deepEqual(await call(serverB.base, paymentPath, owner, { ...declinedRequest, scenario: 'PAYMENT_ERROR' }), declined)
+    assert.deepEqual(await call(serverB.base, paymentPath, owner, approvedRequest), approved)
+    const replayed = await call(serverB.base, '/api/v2/orders', owner, request, 201)
+    assert.equal(replayed.id, order.id)
+    assert.deepEqual(replayed.totals, order.totals)
+    assert.deepEqual(await b.counts(), { catalog: 0, payments: 0 }, 'Replay no reconstruye comercio ni ejecuta Sandbox')
+    assert.deepEqual(await rows(), before, 'Una Order, un Creation Request y los dos Attempts originales sin cambios')
+    await b.stop()
+    assert.equal(b.terminated, true)
   })
 
   await t.test('E2E-19 Regresión de búsqueda, filtros, ordenamiento y paginación del catálogo', async () => {

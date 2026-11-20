@@ -1,237 +1,354 @@
-/**
- * CN-69 QA. Recorridos E2E en Chrome real contra el stack de stack.mjs.
- * Uso node ui-e2e.mjs b2c, luego b2b, reiniciar stack.mjs y finalmente restart. Ver README.md.
- */
-import puppeteer from 'puppeteer-core'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+/** CN-69 Browser QA. Solo consola y memoria: sin capturas, videos, trazas ni archivos de resultados. */
+import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { existsSync } from 'node:fs'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { API, BASE, CLIENT, operatingEnvironment, localBrowserUrl, stackEnvironment } from './isolation.mjs'
 
-const BASE = 'http://127.0.0.1:4173/Proyecto_Comercio_Electronico/'
-const SHOTS = process.env.QA_SHOTS ?? './capturas/'
-const RESULTS = process.env.QA_RESULTS ?? './ui-results.json'
-await mkdir(SHOTS, { recursive: true })
-const VIEWPORTS = { desktop: { width: 1440, height: 900 }, tablet: { width: 820, height: 1180 }, mobile: { width: 390, height: 844 } }
-const phase = process.argv[2]
-
-const results = JSON.parse(await readFile(RESULTS, 'utf8').catch(() => '{}'))
-const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
-const page = await browser.newPage()
-const consoleErrors = []
-page.on('pageerror', error => consoleErrors.push(String(error)))
-page.on('console', message => { if (message.type() === 'error' && !/Failed to load resource/.test(message.text())) consoleErrors.push(message.text()) })
-page.setDefaultTimeout(10000)
-await page.setViewport(VIEWPORTS.desktop)
-
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
-const text = () => page.evaluate(() => document.body.innerText)
-async function waitText(pattern, timeout = 10000) {
-  const start = Date.now()
-  while (Date.now() - start < timeout) { if (pattern.test(await text())) return; await sleep(150) }
-  throw new Error('No apareció ' + pattern)
+const modulePath = process.env.QA_BROWSER_MODULE
+const chromePath = process.env.CHROME_PATH ?? ['C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/google-chrome'].find(existsSync)
+if (!chromePath) throw new Error('CN69_BROWSER_CHROME_UNAVAILABLE')
+stackEnvironment(process.env)
+const clean = operatingEnvironment(process.env)
+for (const key of Object.keys(process.env)) delete process.env[key]
+Object.assign(process.env, clean)
+const browserModule = modulePath ? await import(pathToFileURL(modulePath).href) : await import(createRequire(import.meta.url).resolve('playwright'))
+const playwright = browserModule.default ?? browserModule
+const results = [], apiCalls = [], errors = [], blocked = []
+let child, browser, page, ready, droppedPayment = false, losePayment = false, catalogFault = false
+let firstOrderHash, b2bOrderHash, adminProductHash
+const wait = ms => new Promise(done => setTimeout(done, ms))
+async function scenario(group, name, run, level = 'Browser UI + Express / memory') {
+  try { await run(); results.push({ group, name, status: 'PASS', level }); console.log('PASS ' + group + ' | ' + name) }
+  catch (error) { const message = error.message.slice(0, 350); results.push({ group, name, status: 'FAIL', level, message }); console.log('FAIL ' + group + ' | ' + name + ' | ' + message) }
 }
-/** Hace clic en el primer elemento visible: el catálogo permanece montado y oculto con su propio Header. */
-async function click(selector, timeout = 10000) {
-  const start = Date.now()
-  while (Date.now() - start < timeout) {
-    for (const handle of await page.$$(selector)) {
-      const visible = await handle.evaluate(element => element.getClientRects().length > 0 && !element.closest('[hidden], [inert]')
-        && getComputedStyle(element).visibility !== 'hidden')
-      if (visible) { await handle.click(); return }
-    }
-    await sleep(150)
-  }
-  throw new Error('No hay elemento visible para ' + selector)
+async function text(pattern) { await page.getByText(pattern).filter({ visible: true }).first().waitFor({ state: 'visible' }) }
+async function button(name) { await page.getByRole('button', { name, exact: typeof name === 'string' }).filter({ visible: true }).first().click() }
+async function hash(value) { await page.evaluate(value => { location.hash = value }, value); await wait(350) }
+async function branch(id) {
+  await page.locator('select:visible').filter({ has: page.locator('option[value="san_jose"]') }).first().selectOption(id)
+  await wait(500)
 }
-async function shot(name, viewports = ['desktop'], fullPage = true) {
-  for (const viewport of viewports) {
-    await page.setViewport(VIEWPORTS[viewport]); await sleep(400)
-    await page.screenshot({ path: SHOTS + name + '-' + viewport + '.png', fullPage })
-  }
-  await page.setViewport(VIEWPORTS.desktop); await sleep(200)
+async function login(id, label) {
+  await button(/^(Iniciar sesión|Cambiar usuario)$/)
+  await page.locator('dialog select, [role=dialog] select').selectOption(id)
+  await button('Continuar con esta identidad')
+  await wait(300)
+  const consent = page.getByRole('button', { name: /carrito y continuar/ }).filter({ visible: true })
+  if (await consent.count()) await consent.first().click()
+  await page.locator('header:visible').getByText(label, { exact: false }).first().waitFor()
 }
-async function login(userId, displayName) {
-  await click('header button[aria-label="Iniciar sesión"], header button[aria-label="Cambiar usuario"]')
-  await page.waitForSelector('dialog select, [role="dialog"] select')
-  await page.waitForFunction(id => [...document.querySelectorAll('dialog option, [role="dialog"] option')].some(option => option.value === id), {}, userId)
-  await page.select('dialog select, [role="dialog"] select', userId)
-  await click('button::-p-text(Continuar con esta identidad)')
-  await sleep(500)
-  const consent = await page.$('button::-p-text(carrito y continuar)')
-  if (consent) await consent.click()
-  await page.waitForFunction(name => document.querySelector('header')?.innerText.includes(name), {}, displayName)
-}
-async function selectBranch(id) {
-  await page.waitForFunction(() => [...document.querySelectorAll('select')].some(select => [...select.options].some(option => option.value === 'san_jose')))
-  await page.evaluate(id => {
-    const select = [...document.querySelectorAll('select')].find(element => [...element.options].some(option => option.value === 'san_jose'))
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
-    setter.call(select, id); select.dispatchEvent(new Event('change', { bubbles: true }))
-  }, id)
-  await sleep(700)
-}
-const goHash = async hash => { await page.evaluate(value => { window.location.hash = value }, hash); await sleep(700) }
-const fill = async (label, value) => { await page.locator(`::-p-aria(${label})`).fill(value) }
-async function checkoutToReview() {
-  await goHash('#cart-page')
-  await waitText(/Finalizar compra/)
-  await click('button::-p-text(Finalizar compra)')
-  await waitText(/Nombre completo/)
-  await fill('Nombre completo', 'Persona QA'); await fill('Correo electrónico', 'qa@example.com'); await fill('Teléfono', '88888888')
-  await click('button[type="submit"]::-p-text(Continuar)')
-  await waitText(/Provincia/)
-  await fill('Provincia', 'San José'); await fill('Cantón', 'Central'); await fill('Dirección', 'Dirección de prueba QA')
-  await click('button[type="submit"]::-p-text(Continuar)')
-  await waitText(/Confirmar y continuar al pago/)
-}
+async function add(name) { await button('Agregar ' + name + ' al carrito'); await wait(200) }
 async function pay(label) {
-  const cardNumber = await page.$('input[placeholder="1234 5678 9012 3456"]')
-  if (cardNumber && !(await page.$eval('input[placeholder="1234 5678 9012 3456"]', input => input.value))) {
-    // Datos de tarjeta demostrativos: no se transmiten al Server.
-    await page.type('input[placeholder="1234 5678 9012 3456"]', '4111111111111111')
-    await page.type('input[placeholder="Nombre completo"]', 'PERSONA QA')
-    await page.type('input[placeholder="MM/AA"]', '1230')
-    await page.type('input[placeholder="231"]', '123')
+  const card = page.locator('input[placeholder="1234 5678 9012 3456"]:visible')
+  await card.waitFor()
+  if (await card.count()) {
+    await card.fill('4111111111111111')
+    await page.locator('input[placeholder="Nombre completo"]:visible').fill('PERSONA QA')
+    await page.locator('input[placeholder="MM/AA"]:visible').fill('1230')
+    await page.locator('input[placeholder="231"]:visible').fill('123')
   }
-  await click(`label::-p-text(${label})`)
-  await click('button::-p-text(Procesar pago)')
-  await sleep(1200)
+  await page.getByText(label, { exact: false }).filter({ visible: true }).last().click()
+  await button(/Procesar pago/)
 }
-function record(id, title, expected, obtained, status, evidence) {
-  results[id] = { title, expected, obtained, status, evidence, consoleErrors: [...consoleErrors] }
-  consoleErrors.length = 0
-  console.log(status, id, '-', obtained)
+async function retry() { await button(/Intentar|Reintentar|otro pago/i); await wait(250) }
+async function review() {
+  await hash('#cart-page')
+  await button('Finalizar compra')
+  await page.getByLabel('Nombre completo', { exact: true }).fill('Persona QA')
+  await page.getByLabel('Correo electrónico', { exact: true }).fill('qa@example.com')
+  await page.getByLabel('Teléfono', { exact: true }).fill('88888888')
+  await page.locator('button[type=submit]:visible').click()
+  await page.getByLabel('Provincia', { exact: true }).fill('San José')
+  await page.getByLabel('Cantón', { exact: true }).fill('Central')
+  await page.getByLabel('Dirección', { exact: true }).fill('Dirección ficticia QA')
+  await page.locator('button[type=submit]:visible').click()
+  await text(/Confirmar y continuar al pago/)
 }
-async function scenario(id, title, expected, evidence, run) {
-  try { record(id, title, expected, await run(), 'PASS', evidence) }
-  catch (error) {
-    await page.screenshot({ path: SHOTS + id + '-fallo.png', fullPage: true }).catch(() => {})
-    record(id, title, expected, 'Error. ' + error.message, 'FAIL', [id + '-fallo.png'])
+async function responsive(name) {
+  const markers = { 'Confirmación': /Compra confirmada/, 'Order Detail': /Detalle de la orden/,
+    'Admin Products': /Productos e inventario/, 'Admin Inventory': /Nueva cantidad simulada/,
+    'Analytics': /Analytics Dashboard/, 'Carrito': /Tu carrito/, 'Review': /Cuenta y sucursal/, 'Catálogo': /Elige una sucursal/ }
+  for (const [device, size] of Object.entries({ desktop: { width: 1440, height: 900 }, tablet: { width: 820, height: 1180 }, mobile: { width: 390, height: 844 }, mobile320: { width: 320, height: 780 } })) {
+    await scenario('Responsive', name + ' / ' + device, async () => {
+      await page.setViewportSize(size); await wait(150)
+      await text(markers[name])
+      const metrics = await page.evaluate(() => ({ viewport: innerWidth, body: document.documentElement.scrollWidth,
+        visibleHeadings: [...document.querySelectorAll('h1,h2')].some(e => e.getClientRects().length && !e.closest('[hidden],[inert]')) }))
+      assert.ok(metrics.visibleHeadings)
+      assert.ok(metrics.body <= metrics.viewport + 1, 'Desbordamiento horizontal: ' + JSON.stringify(metrics))
+      if (name === 'Catálogo' && device === 'mobile') {
+        await button('Ver detalles de SSD NVMe 1 TB'); await page.getByRole('dialog').waitFor()
+        await page.keyboard.press('Escape'); await page.getByRole('dialog').waitFor({ state: 'hidden' })
+      }
+    }, 'Browser DOM / layout')
   }
+  await page.setViewportSize({ width: 1440, height: 900 })
 }
-
-await page.goto(BASE, { waitUntil: 'networkidle0' })
-
-if (phase === 'b2c') {
-  await scenario('UI-01', 'Simulated Login B2C y catálogo Retail', 'El Header muestra la identidad B2C y el catálogo presenta precios Retail', ['UI-01-catalogo-b2c-*.png'], async () => {
-    await login('qa-b2c', 'Cliente QA')
-    await waitText(/₡\s?45\s?000/)
-    await shot('UI-01-catalogo-b2c', ['desktop', 'tablet', 'mobile'], false)
-    return 'Identidad Cliente QA (B2C) visible y SSD a ₡45 000 (Retail)'
+async function apiRequest(path, userId, body) {
+  return page.evaluate(async ({ url, userId, body }) => {
+    const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST',
+      headers: { ...(userId ? { 'X-CiberNova-User-Id': userId } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+    return { status: response.status, body: await response.json() }
+  }, { url: API + path, userId, body })
+}
+try {
+  child = spawn(process.execPath, [fileURLToPath(new URL('./stack.mjs', import.meta.url))], { env: clean, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
+  child.stdout.on('data', chunk => process.stdout.write(chunk))
+  child.stderr.on('data', chunk => process.stderr.write(chunk))
+  ready = await new Promise((done, reject) => {
+    const timer = setTimeout(() => reject(new Error('CN69_BROWSER_STACK_TIMEOUT')), 45000)
+    child.once('error', error => { clearTimeout(timer); reject(error) })
+    child.once('exit', code => { clearTimeout(timer); reject(new Error('CN69_BROWSER_STACK_EXIT_' + code)) })
+    child.on('message', message => { if (message?.type === 'qa-ready') { clearTimeout(timer); done(message) } })
   })
-  await scenario('UI-02', 'Sucursal, inventario y Shopping Cart', 'Al elegir sucursal se muestra disponibilidad y el carrito conserva las líneas', ['UI-02-carrito-b2c-*.png'], async () => {
-    await selectBranch('san_jose')
-    await waitText(/disponibles|Disponible/i)
-    await click('button[aria-label="Agregar SSD NVMe 1 TB al carrito"]'); await sleep(400)
-    await click('button[aria-label="Agregar Mouse inalámbrico al carrito"]'); await sleep(400)
-    await goHash('#cart-page')
-    await waitText(/SSD NVMe 1 TB/); await waitText(/Mouse inalámbrico/)
-    await shot('UI-02-carrito-b2c', ['desktop', 'tablet', 'mobile'])
-    return 'Carrito B2C con SSD y Mouse validados para San José'
-  })
-  await scenario('UI-03', 'Checkout B2C con Payment DECLINED, Retry y APPROVED', 'Review muestra cuenta y sucursal, el rechazo permite Retry y el pago aprobado confirma la compra', ['UI-03-review-b2c-*.png', 'UI-03-pago-rechazado-desktop.png', 'UI-03-confirmacion-b2c-*.png'], async () => {
-    await checkoutToReview()
-    await waitText(/Cuenta y sucursal/); await waitText(/Retail/)
-    await shot('UI-03-review-b2c', ['desktop', 'mobile'])
-    await click('input[type="checkbox"]')
-    await click('button::-p-text(Confirmar y continuar al pago)')
-    await waitText(/Procesar pago/)
-    await pay('Rechazar pago')
-    await waitText(/rechaz/i)
-    await shot('UI-03-pago-rechazado')
-    const retry = await page.$('button::-p-text(Intentar)') ?? await page.$('button::-p-text(Reintentar)') ?? await page.$('button::-p-text(otro)')
-    if (!retry) throw new Error('No se encontró la acción de Retry')
-    await retry.click(); await sleep(500)
-    await pay('Aprobar pago')
-    await waitText(/Compra confirmada/, 15000)
-    await shot('UI-03-confirmacion-b2c', ['desktop', 'mobile'])
-    const cart = await page.$eval('header button[data-cart-preview-trigger]', button => button.getAttribute('aria-label'))
-    if (!/0 productos/.test(cart)) throw new Error('El carrito no se limpió tras la compra: ' + cart)
-    return 'Rechazo con Retry, aprobación y carrito limpio (Safe Cart Cleanup)'
-  })
-  await scenario('UI-04', 'My Orders y Order Detail B2C', 'El historial lista la compra con sus estados y el detalle muestra el snapshot', ['UI-04-mis-ordenes-*.png', 'UI-04-detalle-*.png'], async () => {
-    await click('header a[href="#my-orders"]')
-    await waitText(/Mis órdenes/); await waitText(/Pago aprobado/)
-    await shot('UI-04-mis-ordenes', ['desktop', 'tablet', 'mobile'])
-    await click('a::-p-text(Ver detalle)')
-    await waitText(/Detalle de la orden/); await waitText(/Productos/); await waitText(/B2C/)
-    await shot('UI-04-detalle', ['desktop', 'tablet', 'mobile'])
-    return 'Listado con Order confirmada y detalle con productos, importes, sucursal y Términos'
-  })
-  await scenario('UI-05', 'Recarga directa del detalle', 'Tras recargar se pide identidad y, al elegirla, el detalle se recupera desde el Server', ['UI-05-recarga-sin-sesion-desktop.png', 'UI-05-recarga-detalle-desktop.png'], async () => {
-    const hash = await page.evaluate(() => window.location.hash)
-    await page.reload({ waitUntil: 'networkidle0' })
-    await waitText(/Selecciona una identidad/)
-    await shot('UI-05-recarga-sin-sesion')
-    await login('qa-b2c', 'Cliente QA')
-    await waitText(/Productos/)
-    if (await page.evaluate(() => window.location.hash) !== hash) throw new Error('Se perdió el hash del detalle')
-    await shot('UI-05-recarga-detalle')
-    return 'Hash ' + hash + ' conservado y detalle recuperado tras elegir identidad'
-  })
-  await scenario('UI-06', 'Inventario insuficiente por sucursal', 'Con existencias insuficientes en la sucursal el carrito bloquea el Checkout', ['UI-06-stock-insuficiente-desktop.png'], async () => {
-    await goHash('#catalog'); await selectBranch('alajuela')
-    for (let index = 0; index < 3; index += 1) {
-      const button = await page.$('button[aria-label="Agregar SSD NVMe 1 TB al carrito"]')
-      if (button && !(await button.evaluate(element => element.disabled))) { await button.click(); await sleep(400) }
+  assert.equal(ready.storage, 'memory')
+  browser = await playwright.chromium.launch({ executablePath: chromePath, headless: true, env: clean,
+    args: ['--disable-background-networking', '--disable-component-update', '--disable-sync', '--no-first-run',
+      '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'] })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' })
+  await context.route('**/*', async route => {
+    const request = route.request(), url = request.url()
+    if (!localBrowserUrl(url)) { blocked.push(new URL(url).origin); await route.abort('blockedbyclient'); return }
+    if (url.startsWith(API)) {
+      const call = { url, method: request.method(), body: request.postDataJSON() }; apiCalls.push(call)
+      if (catalogFault && call.method === 'GET' && new URL(url).pathname === '/api/products') {
+        await wait(1500)
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'QA_UNAVAILABLE', message: 'No se pudieron cargar los productos de QA.' } }) }); return
+      }
+      if (losePayment && call.method === 'POST' && /\/payment$/.test(new URL(url).pathname)) {
+        losePayment = false; const response = await route.fetch(); assert.equal(response.status(), 200)
+        droppedPayment = true; await route.abort('failed'); return
+      }
     }
-    await goHash('#cart-page'); await waitText(/SSD NVMe 1 TB/)
-    const quantity = await page.evaluate(() => document.body.innerText.match(/Cantidad[^\d]*(\d+)/)?.[1])
-    await shot('UI-06-stock-insuficiente')
-    const increase = await page.$('button[aria-label^="Aumentar"]')
-    const blocked = increase ? await increase.evaluate(element => element.disabled) : true
-    if (!blocked) throw new Error('El carrito permite superar las 2 unidades de Alajuela')
-    return 'Alajuela tiene 2 unidades y el carrito no permite superar ese límite (cantidad ' + (quantity ?? '2') + ')'
+    await route.continue()
   })
+  page = await context.newPage()
+  page.setDefaultTimeout(7000)
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('dialog', dialog => dialog.accept())
+  await page.goto(ready.url, { waitUntil: 'networkidle' })
+  await scenario('B2C', 'Login y catálogo Retail', async () => {
+    await login('qa-b2c', 'Cliente QA'); await text(/45\s?000/); await branch('san_jose')
+  })
+  await responsive('Catálogo')
+  await scenario('Regression', 'Pagination, orden por precio y filtro de rango', async () => {
+    await button('Página siguiente'); await wait(400); await button('Página anterior'); await wait(400)
+    await button('Ordenar Por Precio'); await page.getByLabel('Ordenar por', { exact: true }).selectOption('price_asc'); await wait(400)
+    await page.getByLabel('Hasta', { exact: true }).fill('20000'); await button('Aplicar precio'); await wait(400)
+    assert.equal(await page.getByRole('button', { name: 'Agregar Laptop 14 pulgadas al carrito', exact: true }).count(), 0)
+    await button('Limpiar filtros'); await button('Ordenar Por Precio'); await wait(300)
+  })
+  await scenario('Regression', 'Predictive Search, Recent Searches y filtro textual', async () => {
+    const search = page.getByPlaceholder('Buscar laptops, componentes, accesorios...').filter({ visible: true })
+    await search.fill('SSD'); await wait(600)
+    await page.getByRole('listbox', { name: 'Sugerencias de productos' }).getByRole('option').first().waitFor()
+    await search.press('Enter'); await wait(400)
+    await text(/SSD NVMe 1 TB/)
+    await search.fill(''); await wait(500)
+  })
+  await scenario('Regression', 'Quick View, Escape y Recently Viewed', async () => {
+    await button('Ver detalles de SSD NVMe 1 TB')
+    await page.getByRole('dialog').waitFor()
+    await page.keyboard.press('Escape')
+    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    await text(/Vistos recientemente|Visitados recientemente|visto recientemente/i)
+  })
+  await scenario('B2C', 'Agregar productos y ajustar cantidades', async () => {
+    await add('SSD NVMe 1 TB'); await add('Mouse inalámbrico'); await hash('#cart-page')
+    await text(/Mouse inalámbrico/)
+    const increase = page.getByRole('button', { name: /Aumentar/ }).first()
+    await increase.click(); await wait(200)
+    await page.getByRole('button', { name: /Disminuir/ }).first().click()
+  })
+  await responsive('Carrito')
+  await scenario('B2C', 'Reload borra Session y restaura Cart solo para su propietario', async () => {
+    await page.reload({ waitUntil: 'networkidle' }); await text(/Selecciona una identidad|Inicia.*sesión|identidad/i)
+    await login('qa-b2c', 'Cliente QA'); await hash('#cart-page'); await branch('san_jose'); await text(/Mouse inalámbrico/)
+  })
+  await scenario('Checkout', 'Buyer, Delivery, Review y consentimiento obligatorio B2C', async () => {
+    await review()
+    const creations = apiCalls.filter(call => call.method === 'POST' && /\/api\/v2\/orders$/.test(new URL(call.url).pathname)).length
+    await button('Confirmar y continuar al pago')
+    await text(/aceptar.*términos|acepta.*términos/i)
+    assert.equal(apiCalls.filter(call => call.method === 'POST' && /\/api\/v2\/orders$/.test(new URL(call.url).pathname)).length, creations)
+    await text(/68\s?475/)
+    await responsive('Review')
+    await page.locator('input[type=checkbox]:visible').check()
+    await button('Confirmar y continuar al pago'); await text(/Procesar pago/)
+  })
+  await scenario('Checkout', 'DECLINED y ERROR permiten Retry en la misma Order', async () => {
+    await pay('Rechazar pago'); await text(/rechaz/i); await retry()
+    await pay('Error del servicio'); await text(/error/i); await retry()
+  })
+  await scenario('Checkout', 'Respuesta APPROVED perdida y Replay manual con la misma key', async () => {
+    const before = apiCalls.length; losePayment = true
+    await pay('Aprobar pago'); await wait(600)
+    assert.equal(droppedPayment, true)
+    await button(/Procesar pago|Reintentar pago/)
+    await text(/Compra confirmada/)
+    const calls = apiCalls.slice(before).filter(call => /\/payment$/.test(new URL(call.url).pathname))
+    assert.equal(calls.length, 2); assert.deepEqual(calls[0].body, calls[1].body)
+  })
+  await scenario('Checkout', 'Safe Cart Cleanup después de confirmación', async () => {
+    await text(/Compra confirmada/)
+    const label = await page.locator('header:visible button[data-cart-preview-trigger]').getAttribute('aria-label')
+    assert.match(label, /0 productos/)
+  })
+  await responsive('Confirmación')
+  await scenario('Orders', 'History y detalle B2C desde Express', async () => {
+    await page.locator('header:visible a[href="#my-orders"]').click(); await text(/Pago aprobado/)
+    await page.getByRole('link', { name: /Ver detalle/ }).first().click()
+    await text(/Detalle de la orden/); firstOrderHash = await page.evaluate(() => location.hash)
+  })
+  await responsive('Order Detail')
+  await scenario('Orders', 'Reload de detalle requiere identidad y conserva snapshot autorizado', async () => {
+    assert.ok(firstOrderHash); await page.reload({ waitUntil: 'networkidle' })
+    await login('qa-b2c', 'Cliente QA'); await text(/Detalle de la orden/); await text(/Productos/)
+    assert.equal(await page.evaluate(() => location.hash), firstOrderHash)
+  })
+  await scenario('B2B', 'Wholesale, MOQ y bloqueo de producto no elegible', async () => {
+    await hash('#catalog'); await login('qa-b2b', 'Compras Empresa QA'); await branch('san_jose'); await text(/39\s?000/)
+    const mouse = page.getByRole('button', { name: 'Agregar Mouse inalámbrico al carrito', exact: true })
+    assert.equal(await mouse.count() === 0 || await mouse.isDisabled(), true)
+    await add('SSD NVMe 1 TB'); await hash('#cart-page')
+    assert.equal(await page.getByRole('button', { name: /Disminuir/ }).first().isDisabled(), true)
+  })
+  await scenario('B2B', 'Ownership impide ver detalle B2C', async () => {
+    assert.ok(firstOrderHash); await hash(firstOrderHash); await text(/no.*encontr|no.*disponible|no existe/i)
+  })
+  await scenario('Checkout', 'Compra B2B V2 con empresa y Wholesale', async () => {
+    await hash('#cart-page'); await review(); await text(/Distribuidora QA/); await text(/Wholesale|Mayorista/i)
+    await text(/132\s?210/)
+    await page.locator('input[type=checkbox]:visible').check()
+    await button('Confirmar y continuar al pago'); await pay('Aprobar pago'); await text(/Compra confirmada/)
+    await page.locator('header:visible a[href="#my-orders"]').click(); await text(/Pago aprobado/)
+    await page.getByRole('link', { name: /Ver detalle/ }).first().click(); await text(/Distribuidora QA/)
+    b2bOrderHash = await page.evaluate(() => location.hash)
+  })
+  await scenario('B2C', 'Límite de stock en sucursal', async () => {
+    await hash('#catalog'); await login('qa-b2c', 'Cliente QA'); await branch('alajuela')
+    await add('SSD NVMe 1 TB'); await add('SSD NVMe 1 TB'); await hash('#cart-page')
+    assert.equal(await page.getByRole('button', { name: /Aumentar/ }).first().isDisabled(), true)
+  })
+  await scenario('B2C', 'Otro propietario no hereda el Cart y tiene History vacío', async () => {
+    await hash('#catalog'); await login('qa-b2c-2', 'Otra persona QA'); await hash('#my-orders')
+    await text(/Aún no|Todavía no|No tienes|Sin órdenes|no.*órdenes/i)
+    const label = await page.locator('header:visible button[data-cart-preview-trigger]').getAttribute('aria-label')
+    assert.match(label, /0 productos/)
+  })
+  await scenario('Orders', 'Preparación sintética para Pagination administrativa', async () => {
+    for (let index = 0; index < 24; index++) {
+      const result = await apiRequest('/api/v2/orders', 'qa-b2c-2', { buyer: { fullName: 'Persona QA', email: 'qa@example.com', phone: '88888888' },
+        delivery: { province: 'San José', canton: 'Central', address: 'Dirección QA' }, items: [{ productId: 'qa-mouse', quantity: 1 }],
+        branchId: 'san_jose', idempotencyKey: 'browser-qa-pagination-' + index, termsAcceptance: { accepted: true, version: '2026-10-lab4-v1' } })
+      assert.equal(result.status, 201)
+    }
+  }, 'Preparación API local / Memory')
+  await scenario('Regression', 'Identidades inválidas y acceso a Orders ajenas se rechazan', async () => {
+    assert.equal((await apiRequest('/api/session/resolve', undefined, { userId: 'qa-missing' })).status, 404)
+    assert.equal((await apiRequest('/api/v2/orders/mine')).status, 401)
+    assert.equal((await apiRequest('/api/v2/orders/' + decodeURIComponent(firstOrderHash.split('/').at(-1)), 'qa-b2c-2')).status, 404)
+  }, 'API local desde navegador')
+  await scenario('ADMIN', 'Rol administrativo no compra ni accede a My Orders', async () => {
+    await hash('#catalog'); await login('qa-admin', 'Administración QA'); await hash('#my-orders'); await wait(300)
+    assert.notEqual(await page.evaluate(() => location.hash), '#my-orders')
+    await hash('#cart-page'); await text(/ADMIN|administrador|no.*permiso/i)
+  })
+  await scenario('ADMIN', 'Listado global de Orders, filtros y detalle', async () => {
+    await hash('#admin/orders'); await text(/órdenes|Órdenes/); await page.getByRole('link', { name: /Ver detalle/ }).first().waitFor()
+    await page.getByLabel(/Tipo de comprador/).selectOption('B2B')
+    await button(/^Aplicar|^Buscar/); await text(/Distribuidora QA/)
+    await page.getByRole('link', { name: /Ver detalle/ }).first().click(); await text(/Detalle de la orden/)
+  })
+  await scenario('ADMIN', 'Search de Orders con proyección ficticia y Pagination del Store', async () => {
+    await hash('#admin/orders'); await button('Siguiente'); await wait(300); await button('Anterior')
+    const response = page.waitForResponse(value => new URL(value.url()).pathname === '/api/v2/admin/orders' && new URL(value.url()).searchParams.get('q') === 'Distribuidora')
+    await page.getByPlaceholder('Ej. CN-2026 o Distribuidora').fill('Distribuidora'); await button('Aplicar búsqueda')
+    assert.equal((await response).status(), 200)
+    await text(/Distribuidora QA/)
+    const sort = page.locator('select:visible').filter({ has: page.locator('option[value="search"]') })
+    assert.equal(await sort.inputValue(), 'search'); assert.equal(await sort.isDisabled(), true)
+    await button('Limpiar filtros')
+  })
+  await scenario('ADMIN', 'Admin Products busca SKU literal con puntos', async () => {
+    await hash('#admin/products')
+    await page.getByPlaceholder('Ej. SSD, Logitech o SAM-DIS-0214').fill('G.S-MEM-0118')
+    await button(/^Buscar/); await page.getByRole('link', { name: /Ver detalle administrativo de SSD/ }).waitFor()
+  })
+  await responsive('Admin Products')
+  await scenario('ADMIN', 'Detalle de inventario, confirmación, simulación y Reset', async () => {
+    await page.getByRole('link', { name: /Ver detalle administrativo de SSD/ }).click()
+    adminProductHash = await page.evaluate(() => location.hash)
+    const writesBefore = apiCalls.filter(call => call.method !== 'GET').length
+    await page.getByRole('form', { name: 'Nueva cantidad simulada' }).locator('select').selectOption('san_jose')
+    await page.getByRole('form', { name: 'Nueva cantidad simulada' }).locator('input').fill('7')
+    await button(/Revisar simulación/); await text(/Confirmar simulación/)
+    await button('Confirmar simulación'); await text(/Simulación aplicada/)
+    await button('Restablecer simulación del producto'); await text(/Se descartaron las simulaciones/)
+    assert.equal(apiCalls.filter(call => call.method !== 'GET').length, writesBefore, 'La simulación no escribe en el Server.')
+    await page.getByRole('form', { name: 'Nueva cantidad simulada' }).locator('input').fill('9')
+    await button('Revisar simulación'); await button('Confirmar simulación'); await text(/Simulación aplicada/)
+  })
+  await responsive('Admin Inventory')
+  await scenario('Regression', 'ADMIN Analytics Dashboard y actividad local', async () => {
+    await hash('#analytics'); await text(/Analytics Dashboard/)
+    await text(/Visualizaciones|Vistas|Productos vistos/); await text(/Compras completadas|Compras/i)
+    const types = await page.evaluate(() => {
+      const events = []; const visit = value => { if (!value || typeof value !== 'object') return; if (value.schemaVersion === 2 && typeof value.type === 'string') events.push(value.type); for (const item of Object.values(value)) visit(item) }
+      for (const key of Object.keys(localStorage)) { if (!key.includes('analytics')) continue; try { visit(JSON.parse(localStorage.getItem(key))) } catch {} }
+      return events
+    })
+    for (const type of ['SESSION_STARTED', 'SEARCH_PERFORMED', 'PRODUCT_VIEWED', 'CART_ITEM_ADDED', 'CHECKOUT_STARTED', 'PURCHASE_COMPLETED']) assert.ok(types.includes(type), 'Falta ' + type)
+    assert.equal(types.filter(type => type === 'PURCHASE_COMPLETED').length, 2, 'Replay no duplica la compra completada.')
+  })
+  await responsive('Analytics')
+  await scenario('Regression', 'Cambio Session invalida ADMIN y sus simulaciones', async () => {
+    await login('qa-b2c', 'Cliente QA'); await hash('#admin/products'); await wait(300)
+    assert.notEqual(await page.evaluate(() => location.hash), '#admin/products')
+    await hash('#analytics'); assert.notEqual(await page.evaluate(() => location.hash), '#analytics')
+    await login('qa-admin', 'Administración QA'); await hash(adminProductHash); await text(/Simular existencias por sucursal/)
+    assert.equal(await page.getByRole('button', { name: 'Restablecer simulación del producto', exact: true }).count(), 0)
+    await hash('#catalog'); await login('qa-b2c', 'Cliente QA')
+  })
+  await scenario('Regression', 'Teclado y foco visible', async () => {
+    await hash('#catalog'); await page.keyboard.press('Tab')
+    const focused = await page.evaluate(() => {
+      const e = document.activeElement, s = getComputedStyle(e)
+      return { tag: e.tagName, visible: e.getClientRects().length > 0, indicator: s.outlineStyle !== 'none' || s.boxShadow !== 'none' }
+    })
+    assert.notEqual(focused.tag, 'BODY'); assert.ok(focused.visible); assert.ok(focused.indicator)
+  })
+  await scenario('Regression', 'Empty, Loading, Error y recuperación del catálogo', async () => {
+    const search = page.getByPlaceholder('Buscar laptops, componentes, accesorios...').filter({ visible: true })
+    await search.fill('QA-producto-inexistente'); await text(/No encontramos productos/)
+    await search.fill(''); await wait(350)
+    catalogFault = true; await page.reload({ waitUntil: 'domcontentloaded' }); await text(/Cargando productos/)
+    await text(/No se pudieron|Error|ocurrió un error/i)
+    catalogFault = false
+    await page.reload({ waitUntil: 'networkidle' }); await text(/SSD NVMe 1 TB/)
+  }, 'Browser UI con fallo HTTP simulado')
+  await scenario('Regression', 'Sin errores React ni datos de tarjeta transmitidos', async () => {
+    assert.deepEqual(errors, [])
+    assert.ok(apiCalls.every(call => !JSON.stringify(call.body ?? {}).includes('4111111111111111')))
+  })
+  results.push({ group: 'Orders', name: 'Durabilidad tras reiniciar Server / PostgreSQL', status: 'BLOCKED', level: 'Browser E2E PostgreSQL', message: 'Sin recurso PostgreSQL efímero autorizado para Browser QA.' })
+} catch (error) {
+  results.push({ group: 'Environment', name: 'Arranque/ejecución controlada', status: 'FAIL', message: error.message })
+  console.error('CN69_BROWSER_ERROR ' + error.message)
+} finally {
+  try { await browser?.close() } catch { results.push({ group: 'Environment', name: 'Cierre de Chrome', status: 'FAIL' }) }
+  if (child && child.exitCode === null && child.connected) {
+    await new Promise(done => {
+      const timer = setTimeout(() => { child.kill(); results.push({ group: 'Environment', name: 'Cleanup incompleto del stack', status: 'FAIL' }); done() }, 5000)
+      child.once('exit', () => { clearTimeout(timer); done() })
+      child.send('qa-stop')
+    })
+  }
+  if (child && child.exitCode !== 0) results.push({ group: 'Environment', name: 'Salida del stack / auditoría de aislamiento', status: 'FAIL', message: 'exit=' + child.exitCode })
+  console.log('CN69_BROWSER_SUMMARY ' + JSON.stringify({ results, blockedRequests: blocked, pageErrors: errors,
+    apiRequests: apiCalls.length, storage: 'memory', screenshots: false, videos: false }))
+  if (results.some(result => result.status === 'FAIL')) process.exitCode = 1
 }
-
-if (phase === 'b2b') {
-  await scenario('UI-07', 'Simulated Login B2B, Wholesale y MOQ', 'El catálogo muestra precio mayorista y el mínimo de compra B2B', ['UI-07-catalogo-b2b-*.png'], async () => {
-    await login('qa-b2b', 'Compras Empresa QA')
-    await selectBranch('san_jose')
-    await waitText(/₡\s?39\s?000/)
-    await shot('UI-07-catalogo-b2b', ['desktop', 'mobile'], false)
-    const mouse = await page.$('button[aria-label="Agregar Mouse inalámbrico al carrito"]')
-    const mouseBlocked = !mouse || await mouse.evaluate(element => element.disabled)
-    if (!mouseBlocked) throw new Error('El Mouse sin condición B2B se puede agregar')
-    return 'SSD a ₡39 000 Wholesale y Mouse sin condición B2B bloqueado'
-  })
-  await scenario('UI-08', 'Compra B2B completa con MOQ', 'El carrito agrega el mínimo, Review muestra empresa y MOQ y el pago confirma', ['UI-08-review-b2b-desktop.png', 'UI-08-detalle-b2b-*.png'], async () => {
-    await click('button[aria-label="Agregar SSD NVMe 1 TB al carrito"]'); await sleep(500)
-    await checkoutToReview()
-    await waitText(/Distribuidora QA/); await waitText(/MOQ/)
-    await shot('UI-08-review-b2b')
-    await click('input[type="checkbox"]')
-    await click('button::-p-text(Confirmar y continuar al pago)')
-    await waitText(/Procesar pago/)
-    await pay('Aprobar pago')
-    await waitText(/Compra confirmada/, 15000)
-    await click('header a[href="#my-orders"]'); await waitText(/Pago aprobado/)
-    await click('a::-p-text(Ver detalle)'); await waitText(/Distribuidora QA/); await waitText(/Wholesale/)
-    await shot('UI-08-detalle-b2b', ['desktop', 'mobile'])
-    return 'Compra B2B confirmada con empresa, Wholesale y MOQ en el detalle'
-  })
-  await scenario('UI-09', 'ADMIN no usa My Orders ni compra', 'El acceso directo a #my-orders vuelve al catálogo y el Header ofrece Analytics', ['UI-09-admin-*.png'], async () => {
-    await login('qa-admin', 'Administración QA')
-    await goHash('#my-orders'); await sleep(500)
-    const hash = await page.evaluate(() => window.location.hash)
-    if (hash === '#my-orders') throw new Error('ADMIN permanece en #my-orders')
-    const header = await page.$eval('header', element => element.innerText)
-    if (/Mis órdenes/.test(header) || !/Analytics/.test(header)) throw new Error('Header ADMIN incorrecto: ' + header)
-    await goHash('#analytics'); await waitText(/Analytics Dashboard/)
-    await shot('UI-09-admin-analytics', ['desktop', 'mobile'])
-    return 'ADMIN redirigido a ' + hash + ', sin Mis órdenes y con Analytics'
-  })
-}
-
-if (phase === 'restart') {
-  await scenario('UI-10', 'Recuperación de Orders después de reiniciar el Server', 'Tras reiniciar Node.js el historial B2C y B2B sigue disponible desde PostgreSQL', ['UI-10-tras-reinicio-desktop.png'], async () => {
-    await login('qa-b2c', 'Cliente QA')
-    await click('header a[href="#my-orders"]'); await waitText(/Pago aprobado/)
-    await shot('UI-10-tras-reinicio')
-    await login('qa-b2b', 'Compras Empresa QA')
-    await click('header a[href="#my-orders"]'); await waitText(/Pago aprobado/)
-    return 'Historiales B2C y B2B recuperados después de reiniciar el proceso del Server'
-  })
-}
-
-await writeFile(RESULTS, JSON.stringify(results, null, 2))
-await browser.close()

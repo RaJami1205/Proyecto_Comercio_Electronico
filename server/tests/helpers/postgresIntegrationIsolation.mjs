@@ -7,12 +7,22 @@ import childProcess from 'node:child_process'
 import { registerHooks, syncBuiltinESMExports } from 'node:module'
 import { assertIntegrationConnection, assertIntegrationListener, assertIntegrationModule, assertIntegrationRead,
   isolatedIntegrationEnvironment } from './postgresIntegrationHarness.mjs'
+import { manageServerProcess, serverProcessOptions } from './postgresServerProcess.mjs'
+
+// Capacidad privada: el bloqueo global de subprocesses permanece intacto.
+const forkServer = childProcess.fork.bind(childProcess)
 
 const environment = isolatedIntegrationEnvironment(process.env)
 for (const key of Object.keys(process.env)) delete process.env[key]
 Object.assign(process.env, environment)
 const enabled = environment.RUN_DATABASE_INTEGRATION_TESTS === '1'
 const httpPorts = new Set()
+/** Solo el hijo TEST-ONLY fijo y el entorno efímero validado; nunca argumentos/comandos arbitrarios. */
+export function startIntegrationServer(run) {
+  const options = serverProcessOptions(run, process.env)
+  const child = forkServer(new URL('./postgresServerChild.mjs', import.meta.url), [run], options)
+  return manageServerProcess(child, httpPorts)
+}
 let violations = 0
 // Aun si dotenv/SDK captura una excepción, el worker no puede terminar exitosamente.
 const guard = operation => {
