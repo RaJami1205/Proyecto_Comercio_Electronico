@@ -1,4 +1,7 @@
-/** Primer import de CADA suite PG. No importa App, pg ni dotenv y no abre conexiones. */
+/**
+ * Primer import de CADA suite PG y del Server hijo: instala las guardas antes de App, pg y dotenv.
+ * Reemplaza el entorno y captura infracciones aunque el consumidor maneje la excepción; no abre conexiones al importar.
+ */
 import fs from 'node:fs'
 import net from 'node:net'
 import tls from 'node:tls'
@@ -9,7 +12,7 @@ import { assertIntegrationConnection, assertIntegrationListener, assertIntegrati
   isolatedIntegrationEnvironment } from './postgresIntegrationHarness.mjs'
 import { manageServerProcess, serverProcessOptions } from './postgresServerProcess.mjs'
 
-// Capacidad privada: el bloqueo global de subprocesses permanece intacto.
+// Capacidad privada para un entry point fijo; las APIs generales de subprocesses se bloquean más abajo.
 const forkServer = childProcess.fork.bind(childProcess)
 
 const environment = isolatedIntegrationEnvironment(process.env)
@@ -17,7 +20,10 @@ for (const key of Object.keys(process.env)) delete process.env[key]
 Object.assign(process.env, environment)
 const enabled = environment.RUN_DATABASE_INTEGRATION_TESTS === '1'
 const httpPorts = new Set()
-/** Solo el hijo TEST-ONLY fijo y el entorno efímero validado; nunca argumentos/comandos arbitrarios. */
+/**
+ * Lanza únicamente el Server TEST-ONLY con UUID y entorno validados, sin heredar flags Node.
+ * Su puerto HTTP se autoriza al recibir ready verificado y se retira al observar exit; no habilita spawn genérico.
+ */
 export function startIntegrationServer(run) {
   const options = serverProcessOptions(run, process.env)
   const child = forkServer(new URL('./postgresServerChild.mjs', import.meta.url), [run], options)
@@ -73,6 +79,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   guard(() => assertIntegrationModule(result.url))
   return result
 } })
+// Actualiza también los imports con nombre de módulos nativos que App o pg puedan capturar posteriormente.
 syncBuiltinESMExports()
 process.on('exit', () => {
   if (violations) process.exitCode = 1

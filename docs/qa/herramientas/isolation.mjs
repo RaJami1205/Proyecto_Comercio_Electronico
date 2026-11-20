@@ -13,11 +13,13 @@ export const API = 'http://127.0.0.1:3001'
 export const CLIENT = 'http://127.0.0.1:4173'
 export const dotenvPath = resolve(ROOT, 'server/.env.database.example')
 const fail = label => { throw new Error('CN69_BROWSER_' + label) }
+/** Conserva solo variables del sistema necesarias para lanzar procesos; elimina configuración comercial y flags heredados. */
 export function operatingEnvironment(input) {
   const environment = {}
   for (const key of ['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'COMSPEC', 'PATHEXT']) if (input[key] !== undefined) environment[key] = input[key]
   return environment
 }
+/** Fija memory/V2 y datos Algolia ficticios; una URL QA no autoriza habilitar PostgreSQL en este entorno Browser. */
 export function stackEnvironment(input) {
   if (input.QA_DATABASE_URL) fail('DATABASE_NOT_AUTHORIZED')
   return { ...operatingEnvironment(input), NODE_ENV: 'test',
@@ -29,9 +31,11 @@ export function stackEnvironment(input) {
     ALGOLIA_ORDERS_INDEX_NAME: '', ALGOLIA_ORDERS_API_KEY: '', ALGOLIA_ORDERS_SETTINGS_API_KEY: '',
     ALGOLIA_SEED_API_KEY: '', ALGOLIA_ORDERS_RECONCILE_ON_START: 'false', CLIENT_ORIGIN: CLIENT, PORT: '3001' }
 }
+/** Autoriza únicamente los dos orígenes HTTP literales del stack, sin ampliar a otros puertos ni a localhost. */
 export function localBrowserUrl(value) {
   try { return [CLIENT, API].includes(new URL(value).origin) } catch { return false }
 }
+/** Resuelve assets dentro del build temporal tras decodificar la URL; una ruta fuera del directorio no se sirve. */
 export function staticFile(root, requestPath) {
   const pathname = new URL(requestPath, CLIENT).pathname
   if (!pathname.startsWith(BASE)) return undefined
@@ -41,14 +45,20 @@ export function staticFile(root, requestPath) {
   const file = resolve(root, relative || 'index.html')
   return file.startsWith(resolve(root) + sep) ? file : undefined
 }
+/** Admite las formas normalizadas de Socket.connect solo para HTTP local; PostgreSQL, IPC y hosts remotos se rechazan. */
 export function assertLocalSocket(args) {
   const first = Array.isArray(args[0]) ? args[0][0] : args[0]
   const options = typeof first === 'object' && first !== null ? first : { port: first, host: args[1] }
   if (options.path || options.host !== '127.0.0.1' || ![3001, 4173].includes(Number(options.port))) fail('NETWORK_BLOCKED')
 }
+/** Identifica el único sondeo de Vite emulado con respuesta vacía; nunca se ejecuta el comando del sistema. */
 export function compilerMappingProbe(method, args) {
   return method === 'exec' && args[0] === 'net use' && args[1]?.windowsHide === true && typeof args[2] === 'function'
 }
+/**
+ * Instala antes de los imports del stack las guardas de dotenv, red, listeners y mantenimiento.
+ * Omite override/debug de dotenv y fuerza fallo al salir si hubo infracciones, incluso si otra capa capturó el error.
+ */
 export function installStackIsolation() {
   const environment = stackEnvironment(process.env)
   for (const key of Object.keys(process.env)) delete process.env[key]

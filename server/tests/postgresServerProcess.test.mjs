@@ -13,6 +13,7 @@ const input = () => ({ RUN_DATABASE_INTEGRATION_TESTS: '1',
   DATABASE_TEST_URL: 'postgresql://cn_test_admin:fake-admin@127.0.0.1:5432/cibernova_test',
   DATABASE_RUNTIME_TEST_URL: 'postgresql://cibernova_app:fake-runtime@127.0.0.1:5432/cibernova_test',
   CN69_POSTGRES_CONTAINER_ID: 'a'.repeat(64), CN69_POSTGRES_SERVER_ADDRESS: '172.18.0.2' })
+/** Doble de IPC/exit sin proceso real: los timers prueban el controlador, no una conexión ni persistencia PostgreSQL. */
 class Child extends EventEmitter {
   pid = 12345
   connected = true

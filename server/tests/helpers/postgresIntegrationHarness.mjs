@@ -1,4 +1,7 @@
-/** CN-69 TEST-ONLY: destino efímero y sesiones verificadas antes de cualquier operación del harness. */
+/**
+ * CN-69 TEST-ONLY: políticas puras y guardas de sesión para el PostgreSQL efímero de CI.
+ * Importar el módulo no carga dotenv ni abre conexiones; el Workflow acredita el contenedor y aplica las migrations.
+ */
 import { isIPv4 } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { basename, resolve } from 'node:path'
@@ -6,7 +9,11 @@ import { basename, resolve } from 'node:path'
 export const publicDotenv = fileURLToPath(new URL('../../.env.database.example', import.meta.url))
 const failure = reason => new Error('CN69_POSTGRES_' + reason)
 
-/** No incluye valores recibidos en errores: las URLs pueden contener passwords. */
+/**
+ * Exige opt-in, endpoints de loopback, base/roles exactos e ID/IP del recurso declarado por el Job.
+ * La IP interna identifica el servidor esperado; nunca sustituye el endpoint del Runner en las URLs.
+ * La validación de sesión posterior acredita el destino real. Los errores omiten valores que puedan contener secretos.
+ */
 export function validateIntegrationEnvironment(environment) {
   if (environment.RUN_DATABASE_INTEGRATION_TESTS !== '1') throw failure('OPT_IN_REQUIRED')
   const urls = []
@@ -30,7 +37,11 @@ export function validateIntegrationEnvironment(environment) {
   return { serverAddress: environment.CN69_POSTGRES_SERVER_ADDRESS }
 }
 
-/** Lista positiva: ni NODE_OPTIONS, PG*, credenciales, proxies ni dotenv heredados pasan a la aplicación. */
+/**
+ * Construye un entorno por lista positiva: solo conserva opciones del sistema y las referencias explícitas de tests.
+ * Sin opt-in vacía las URLs; la composición global permanece In-Memory y PostgreSQL se inyecta por instancia.
+ * El único dotenv permitido es el ejemplo público; se omiten override/debug, no se les asigna la cadena 'false'.
+ */
 export function isolatedIntegrationEnvironment(input) {
   const environment = {}
   for (const key of ['PATH', 'Path', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'COMSPEC', 'PATHEXT', 'NODE_TEST_CONTEXT']) {
@@ -59,6 +70,7 @@ export function isolatedIntegrationEnvironment(input) {
   return environment
 }
 
+/** Rechaza rutas dotenv privadas antes de abrirlas; admite el ejemplo público y lecturas ordinarias del código. */
 export function assertIntegrationRead(file) {
   const path = file instanceof URL ? fileURLToPath(file)
     : typeof file === 'string' || Buffer.isBuffer(file) ? resolve(String(file)) : undefined
@@ -75,10 +87,12 @@ export function assertIntegrationConnection(args, httpPorts, enabled) {
   }
 }
 
+/** Solo permite listeners HTTP de loopback con puerto asignado por el sistema; el caller registra el puerto resultante. */
 export function assertIntegrationListener(args) {
   if (args[0] !== 0 || args[1] !== '127.0.0.1') throw failure('LISTENER_BLOCKED')
 }
 
+/** Impide cargar entry points de Seeds/mantenimiento, incluso mediante imports que terminen en dist. */
 export function assertIntegrationModule(specifier) {
   if (/(?:src|dist)[/\\]scripts[/\\]/i.test(specifier)) throw failure('MAINTENANCE_BLOCKED')
 }
@@ -90,6 +104,10 @@ export const sessionIdentitySql = `SELECT current_user AS user_name, session_use
   NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AS restricted
   FROM pg_roles WHERE rolname = current_user`
 
+/**
+ * Compara login y rol efectivo, base, versión PG17, IP interna y puerto con el recurso esperado.
+ * Runtime debe carecer de privilegios globales; los permisos de tablas se comprueban en las suites de integración.
+ */
 export function validateSessionIdentity(row, role, target) {
   const user = role === 'admin' ? 'cn_test_admin' : role === 'runtime' ? 'cibernova_app' : undefined
   if (!user || !row || row.user_name !== user || row.login_name !== user || row.database_name !== 'cibernova_test'
@@ -114,7 +132,10 @@ export async function verifyIntegrationSession(connect, role, target) {
   if (damaged) throw failure('SESSION_CLEANUP')
 }
 
-/** Envuelve exclusivamente instancias creadas por los tests, incluidos Pools reconstruidos durante Recovery. */
+/**
+ * Protege connect/query/transaction de una instancia Database con una única verificación lazy compartida.
+ * Un fallo queda memorizado y bloquea operaciones posteriores sin reintentos; cada Pool reconstruido recibe su propia guarda.
+ */
 export function guardIntegrationDatabase(database, role, environment = process.env) {
   const target = validateIntegrationEnvironment(environment)
   const connect = database.connect.bind(database)

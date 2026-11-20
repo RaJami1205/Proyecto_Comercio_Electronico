@@ -1,6 +1,7 @@
 /** CN-69 TEST-ONLY: capacidad limitada a un entry point fijo, sin flags/configuración heredados. */
 import { isolatedIntegrationEnvironment, validateIntegrationEnvironment } from './postgresIntegrationHarness.mjs'
 
+/** Valida el UUID/entorno efímero y excluye execArgv y NODE_TEST_CONTEXT heredados antes de crear un proceso normal. */
 export function serverProcessOptions(run, input) {
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(run)) {
     throw new Error('CN69_POSTGRES_SERVER_RUN')
@@ -11,7 +12,11 @@ export function serverProcessOptions(run, input) {
   return { env, execArgv: [], stdio: ['ignore', 'ignore', 'inherit', 'ipc'] }
 }
 
-/** Registra únicamente el puerto anunciado por ese hijo; lo retira al terminar. Esperas acotadas. */
+/**
+ * Gestiona ready, contadores y cierre de un hijo ya lanzado. Solo ready con PID/composición verificados autoriza HTTP.
+ * Un anuncio tardío no habilita puertos y solo exit acredita la terminación de un proceso que llegó a arrancar.
+ * Los errores y cierres forzados se propagan al Test; ninguna espera ni contador acredita por sí solo durabilidad.
+ */
 export function manageServerProcess(child, httpPorts, timeout = 15000) {
   let port, settled = false, stopping, processError = false, readyState = 'pending'
   let resolveReady, rejectReady
@@ -62,6 +67,7 @@ export function manageServerProcess(child, httpPorts, timeout = 15000) {
   return {
     ready,
     get terminated() { return settled },
+    /** Lee contadores del hijo por IPC sin IO comercial; un timeout, salida o respuesta inválida rechaza la consulta. */
     counts() {
       return new Promise((resolve, reject) => {
         const finish = (error, value) => { clearTimeout(timer); child.off('message', receive); child.off('exit', exit); error ? reject(error) : resolve(value) }
@@ -77,6 +83,7 @@ export function manageServerProcess(child, httpPorts, timeout = 15000) {
         child.send('cn69-server-counts', error => { if (error) finish(new Error('CN69_POSTGRES_SERVER_COUNTS')) })
       })
     },
+    /** Solicita cleanup por IPC y espera exit; SIGKILL es un último recurso acotado que hace fallar el cierre. */
     stop() {
       stopping ??= (async () => {
         clearTimeout(timer)

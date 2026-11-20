@@ -16,6 +16,7 @@ const { build } = await import(pathToFileURL(requireClient.resolve('vite')).href
 const { default: react } = await import(pathToFileURL(requireClient.resolve('@vitejs/plugin-react')).href)
 const temporary = await mkdtemp(join(tmpdir(), 'cn69-browser-build-'))
 let api, web, stopping
+/** Cierra ambos servidores y elimina solo el directorio temporal propio, validado antes del borrado; el cierre es idempotente. */
 async function stop() {
   stopping ??= (async () => {
     await Promise.all([api, web].filter(Boolean).map(server => new Promise(done => { server.close(done); server.closeAllConnections() })))
@@ -30,6 +31,7 @@ process.once('SIGTERM', () => { void stop() })
 process.on('message', message => { if (message === 'qa-stop') void stop() })
 process.once('disconnect', () => { void stop() })
 try {
+  // Vite usa configuración explícita sin cargar archivos dotenv; solo produce assets temporales para este recorrido.
   await build({ root: join(ROOT, 'client'), configFile: false, envDir: false, base: BASE, plugins: [react()],
     define: { 'import.meta.env.VITE_API_BASE_URL': JSON.stringify(API) },
     build: { outDir: temporary, emptyOutDir: false }, logLevel: 'error' })
@@ -50,6 +52,7 @@ try {
   userService.directory.find = async id => QA_USERS.find(user => user.objectID === id)
   userService.directory.list = async () => QA_USERS
   const { adminOrderService } = await import(pathToFileURL(join(ROOT, 'server/dist/services/adminOrderService.js')).href)
+  // Proyección ficticia para ejercitar UI/hidratación; no acredita ranking ni consistencia eventual de Algolia real.
   adminOrderService.search = { async search(q, filters, page, pageSize) {
     const { entries } = await commerceStores.orders.listAll(filters, 'newest', 0, 10000)
     const found = entries.filter(entry => JSON.stringify([entry.order.orderNumber, entry.owner]).toLowerCase().includes(q.toLowerCase()))

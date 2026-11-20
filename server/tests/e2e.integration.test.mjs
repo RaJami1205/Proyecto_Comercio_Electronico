@@ -21,7 +21,7 @@ Object.assign(process.env, QA_ALGOLIA_ENV)
 const ts = createRequire(new URL('../../client/package.json', import.meta.url))('typescript')
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 
-/** Transpila un módulo real del Client y sus dependencias relativas, apuntando sus requests al Server de prueba. */
+/** Transpila servicios HTTP reales del Client en memoria; no monta React ni ejecuta un navegador. */
 function clientModule(base) {
   const cache = new Map()
   const root = new URL('../../client/src/', import.meta.url)
@@ -302,6 +302,8 @@ test('CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálo
     assert.equal(catalog.calls.length, calls, 'La recuperación no reconstruye precios desde el catálogo')
   })
 
+  // A diferencia de E2E-17, aquí se observa exit de Node A antes de lanzar Node B sobre la misma base efímera.
+  // Solo el padre conserva referencias/snapshots en memoria; B debe recuperar la Order y los Attempts desde PostgreSQL.
   await t.test('E2E-20 Reinicio real Node A → Node B: Order V2 y Attempts históricos durables', { timeout: 60000 }, async t => {
     const run = randomUUID()
     const owner = 'qa-b2b-' + run
@@ -317,6 +319,7 @@ test('CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálo
       assert.equal(response.status, status, 'HTTP del Server hijo')
       return response.json()
     }
+    // Lecturas administrativas independientes del estado local de los hijos: una Order, una creación y dos Attempts.
     const rows = async () => ({
       orders: (await admin.query('SELECT id FROM commerce.orders WHERE owner_user_id = $1', [owner])).rows,
       // V2 persiste userId:key; la key externa sola no identifica el Creation Request.
@@ -335,6 +338,7 @@ test('CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálo
     const approved = await call(serverA.base, paymentPath, owner, approvedRequest)
     assert.deepEqual([declined.order.orderStatus, declined.order.paymentStatus], ['PENDING', 'DECLINED'])
     assert.deepEqual([approved.order.orderStatus, approved.order.paymentStatus], ['CONFIRMED', 'APPROVED'])
+    // DECLINED y APPROVED son intentos distintos sobre la misma compra B2B; ambos deben sobrevivir al proceso A.
     const before = await rows()
     assert.deepEqual([before.orders.length, before.requests.length, before.attempts.length], [1, 1, 2])
     const countsA = await a.counts()

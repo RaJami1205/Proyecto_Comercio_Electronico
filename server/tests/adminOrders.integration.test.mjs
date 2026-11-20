@@ -1,5 +1,9 @@
 import './helpers/postgresIntegrationIsolation.mjs'
-/** CN-66 con PostgreSQL real EFÍMERO: listado global, filtros SQL, búsqueda por IDs y pendientes de indexación. */
+/**
+ * CN-66 con PostgreSQL real EFÍMERO: lecturas administrativas de snapshots, filtros SQL y candidatos por ID.
+ * El setup persiste fixtures; Read-Only describe las consultas probadas, no la suite completa.
+ * No ejerce RBAC HTTP ni Search remoto de Algolia; esas rutas tienen cobertura separada.
+ */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'

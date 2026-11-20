@@ -1,5 +1,8 @@
 import './helpers/postgresIntegrationIsolation.mjs'
-/** PostgreSQL real EFÍMERO. Opt-in/loopback; jamás Production. Las pruebas confirman fixtures y cortan sesiones de test. */
+/**
+ * PostgreSQL real EFÍMERO: atomicidad, concurrencia entre Pools, snapshots y Recovery con fixtures sintéticos.
+ * Incluye COMMIT y terminación de backends de test; requiere el recurso verificado y nunca debe apuntar a Production.
+ */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -29,6 +32,7 @@ test('CN-58/CN-59/CN-61 PostgreSQL aislado: Orders + Payment + Recovery', {
   const admin = guardIntegrationDatabase(new Database(() => ({ ...adminConfig, max: 2 })), 'admin')
   const runtime = () => guardIntegrationDatabase(new Database(() => ({ ...runtimeConfig, max: 4 })), 'runtime')
   const db = runtime(), secondDb = runtime()
+  // Se cierran todos los Pools propios; los fixtures confirmados se descartan con el Service Container al terminar el Job.
   t.after(async () => { await Promise.all([admin.close(), db.close(), secondDb.close()]) })
   await verifyIntegrationDatabases(admin, db, secondDb)
   const orders = new PostgreSQLOrderStore(db), otherOrders = new PostgreSQLOrderStore(secondDb)
@@ -167,7 +171,7 @@ test('CN-58/CN-59/CN-61 PostgreSQL aislado: Orders + Payment + Recovery', {
       return ids
     }
     assert.deepEqual(await readAll(orders), expected)
-    // Un Pool y un Store nuevos simulan el reinicio de Node.js: el historial sale de PostgreSQL.
+    // Reconstruye Pool/Store dentro del mismo proceso; el reinicio real de Node.js se comprueba en E2E-20.
     const restartedDb = runtime()
     try {
       const restarted = new PostgreSQLOrderStore(restartedDb)

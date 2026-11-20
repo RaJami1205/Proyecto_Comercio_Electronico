@@ -157,6 +157,7 @@ test('conserva identidades iniciales administrativa/runtime y rechaza SET ROLE i
   }
 })
 
+/** Doble sin sockets: registra si la guarda verifica/libera la sesión antes de permitir cualquier operación comercial. */
 function fakeDatabase(row = identity(), { rollbackFails = false, selectFails = false } = {}) {
   const operations = []
   const client = { async query(sql) {
@@ -298,6 +299,7 @@ function assertDotenvAudit(result) {
   assert.deepEqual(JSON.parse(match[1]), { environmentReads: 1, unexpectedEnvironmentReads: 0, networkAttempts: 0 })
 }
 
+// Ambas cadenas activan opciones Boolean de dotenv/config si se heredan: el harness debe omitirlas por completo.
 for (const inherited of ['true', 'false']) test('dotenv/config real preserva el entorno y neutraliza override/debug heredados: ' + inherited, t => {
   const result = runRealDotenv(t, `console.log('CN69_REAL_DOTENV_PASS')`, inherited)
   assertDotenvAudit(result)

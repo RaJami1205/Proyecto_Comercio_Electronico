@@ -22,7 +22,10 @@ function businessOrder(id) {
       pricingType: 'WHOLESALE', policyVersion: 'CIBERNOVA-COMMERCIAL-V1' } }
 }
 
-/** Escritor en memoria con la semántica de addOrUpdateObject: reemplaza por objectID. */
+/**
+ * Doble que reemplaza proyecciones por objectID y permite inyectar fallos; no reproduce tareas remotas ni IncrementSet.
+ * Esta suite valida revisiones/leases en PostgreSQL, no el comportamiento del motor de Algolia.
+ */
 function memoryWriter() {
   const records = new Map()
   let failures = 0
@@ -126,7 +129,7 @@ test('CN-65 PostgreSQL aislado: proyección orders, revisiones y Recovery', {
     assert.equal(records.size, 0)
     assert.equal((await state(order.id)).indexed_version, 0)
 
-    // Un servicio nuevo simula el reinicio del Server: el estado pendiente vive en PostgreSQL.
+    // Un servicio nuevo recupera pendientes en el mismo proceso; no equivale al reinicio Node A/B de E2E-20.
     const report = await service(writer).reconcile({ limit: 100000, dryRun: false })
     assert.ok(report.synced >= 1)
     assert.equal(records.get(order.id).indexVersion, 1)

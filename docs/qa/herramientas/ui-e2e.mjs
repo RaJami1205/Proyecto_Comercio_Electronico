@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { API, BASE, CLIENT, operatingEnvironment, localBrowserUrl, stackEnvironment } from './isolation.mjs'
 
+// Selección local del runtime Playwright/Chrome; estas referencias se capturan antes de descartar el entorno heredado.
 const modulePath = process.env.QA_BROWSER_MODULE
 const chromePath = process.env.CHROME_PATH ?? ['C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/google-chrome'].find(existsSync)
 if (!chromePath) throw new Error('CN69_BROWSER_CHROME_UNAVAILABLE')
@@ -19,6 +20,7 @@ const results = [], apiCalls = [], errors = [], blocked = []
 let child, browser, page, ready, droppedPayment = false, losePayment = false, catalogFault = false
 let firstOrderHash, b2bOrderHash, adminProductHash
 const wait = ms => new Promise(done => setTimeout(done, ms))
+/** Acumula resultados solo en memoria/consola; level conserva el tipo de comprobación: UI, DOM o preparación API. */
 async function scenario(group, name, run, level = 'Browser UI + Express / memory') {
   try { await run(); results.push({ group, name, status: 'PASS', level }); console.log('PASS ' + group + ' | ' + name) }
   catch (error) { const message = error.message.slice(0, 350); results.push({ group, name, status: 'FAIL', level, message }); console.log('FAIL ' + group + ' | ' + name + ' | ' + message) }
@@ -66,6 +68,7 @@ async function review() {
   await page.locator('button[type=submit]:visible').click()
   await text(/Confirmar y continuar al pago/)
 }
+/** Comprueba marcadores y geometría en cuatro viewports; incluye Escape en Mobile, sin equivaler a revisión visual humana. */
 async function responsive(name) {
   const markers = { 'Confirmación': /Compra confirmada/, 'Order Detail': /Detalle de la orden/,
     'Admin Products': /Productos e inventario/, 'Admin Inventory': /Nueva cantidad simulada/,
@@ -86,6 +89,7 @@ async function responsive(name) {
   }
   await page.setViewportSize({ width: 1440, height: 900 })
 }
+/** Prepara o consulta fixtures mediante HTTP desde la página; se etiqueta aparte de los pasos ejecutados por la UI. */
 async function apiRequest(path, userId, body) {
   return page.evaluate(async ({ url, userId, body }) => {
     const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST',
@@ -118,6 +122,7 @@ try {
         await wait(1500)
         await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'QA_UNAVAILABLE', message: 'No se pudieron cargar los productos de QA.' } }) }); return
       }
+      // Express procesa el pago; solo se pierde la respuesta hacia el navegador para probar Replay manual con la misma key.
       if (losePayment && call.method === 'POST' && /\/payment$/.test(new URL(url).pathname)) {
         losePayment = false; const response = await route.fetch(); assert.equal(response.status(), 200)
         droppedPayment = true; await route.abort('failed'); return
@@ -334,11 +339,13 @@ try {
     assert.deepEqual(errors, [])
     assert.ok(apiCalls.every(call => !JSON.stringify(call.body ?? {}).includes('4111111111111111')))
   })
+  // El E2E-20 de API no convierte este recorrido Browser In-Memory en evidencia de persistencia PostgreSQL.
   results.push({ group: 'Orders', name: 'Durabilidad tras reiniciar Server / PostgreSQL', status: 'BLOCKED', level: 'Browser E2E PostgreSQL', message: 'Sin recurso PostgreSQL efímero autorizado para Browser QA.' })
 } catch (error) {
   results.push({ group: 'Environment', name: 'Arranque/ejecución controlada', status: 'FAIL', message: error.message })
   console.error('CN69_BROWSER_ERROR ' + error.message)
 } finally {
+  // Cierra Chrome y solicita cleanup al stack propio; una salida no exitosa o el vencimiento del plazo se registra como FAIL.
   try { await browser?.close() } catch { results.push({ group: 'Environment', name: 'Cierre de Chrome', status: 'FAIL' }) }
   if (child && child.exitCode === null && child.connected) {
     await new Promise(done => {

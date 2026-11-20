@@ -1,10 +1,14 @@
-/** CN-69 TEST-ONLY. Siempre aislamiento antes de pg, dotenv, servicios y Express. */
+/**
+ * CN-69 TEST-ONLY: Server Express independiente para E2E-20, con PostgreSQL efímero y catálogo/users sintéticos.
+ * Conserva el Sandbox local real; no usa el entry point de producción ni inicia Reconciliation remota.
+ */
 import './postgresIntegrationIsolation.mjs'
 import { serverProcessOptions } from './postgresServerProcess.mjs'
 import { guardIntegrationDatabase, verifyIntegrationDatabases } from './postgresIntegrationHarness.mjs'
 import { QA_USERS, createFakeAlgoliaCatalog } from './fakeAlgoliaCatalog.mjs'
 
 let db, server, stopping, startupDone = false, stopRequested = false
+/** Cierra HTTP y su Pool una sola vez; desconecta IPC incluso si falla el cierre para que el padre observe la salida. */
 async function stop() {
   stopping ??= (async () => {
     try {
@@ -14,6 +18,7 @@ async function stop() {
   })()
   return stopping
 }
+// Durante el arranque se registra la solicitud; al terminar el setup se abandona sin anunciar ready y se limpia.
 const shutdown = () => {
   stopRequested = true
   if (startupDone) void stop().catch(() => { process.exitCode = 1 })
@@ -42,6 +47,7 @@ try {
     import('../../dist/stores/commerceStoreFactory.js'),
     import('../../dist/services/orderService.js'), import('../../dist/services/paymentService.js'),
     import('../../dist/services/userService.js'), import('../../dist/config/algolia.js')])
+  // Inyección exclusiva del hijo: ambos Repositories comparten la Database verificada y el entorno global sigue en memory.
   const { orders, payments } = createCommerceStores('postgresql', db)
   if (!payments.isFor(orders)) throw new Error('CN69_POSTGRES_SERVER_COMPOSITION')
   orderService.store = orders
@@ -64,6 +70,7 @@ try {
   const { default: app } = await import('../../dist/app.js')
   server = app.listen(0, '127.0.0.1')
   await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject) })
+  // Solo contadores de ejecución por IPC; el resultado histórico del pago se recupera mediante la API, no por este canal.
   process.on('message', message => {
     if (message === 'cn69-server-counts' && process.connected) process.send({ type: 'cn69-server-counts',
       catalog: catalog.calls.length, payments: paymentsProcessed })
