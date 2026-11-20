@@ -235,6 +235,8 @@ test('V2 replay devuelve Snapshot histórico sin volver a consultar catálogo', 
   const service = new OrderService(store, async () => { calls++; return v2Product })
   const input = v2Request()
   const created = await service.createV2(input, b2bUser)
+  assert.equal(await store.findByIdempotencyKey(input.idempotencyKey, b2bUser.id), undefined, 'La key externa no es la key persistida de V2')
+  assert.deepEqual(await store.findByIdempotencyKey(`${b2bUser.id}:${input.idempotencyKey}`, b2bUser.id), created, 'V2 conserva la creación bajo userId:key')
   const replay = await new OrderService(store, async () => assert.fail('Replay no consulta catálogo')).createV2(input, b2bUser)
   assert.deepEqual(replay, created)
   assert.equal(calls, 1)

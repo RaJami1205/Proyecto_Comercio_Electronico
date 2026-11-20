@@ -319,7 +319,8 @@ test('CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálo
     }
     const rows = async () => ({
       orders: (await admin.query('SELECT id FROM commerce.orders WHERE owner_user_id = $1', [owner])).rows,
-      requests: (await admin.query('SELECT order_id FROM commerce.order_creation_requests WHERE idempotency_key = $1', [request.idempotencyKey])).rows,
+      // V2 persiste userId:key; la key externa sola no identifica el Creation Request.
+      requests: (await admin.query('SELECT order_id FROM commerce.order_creation_requests WHERE idempotency_key = $1', [`${owner}:${request.idempotencyKey}`])).rows,
       attempts: (await admin.query('SELECT idempotency_key, result, order_snapshot FROM commerce.payment_attempts WHERE order_id IN (SELECT id FROM commerce.orders WHERE owner_user_id = $1) ORDER BY idempotency_key', [owner])).rows,
     })
     const a = startIntegrationServer(run)
