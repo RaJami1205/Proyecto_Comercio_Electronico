@@ -125,7 +125,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
             ? 'Precios mayoristas y condiciones comerciales aplicados. El checkout valida nuevamente precio, mínimo de compra e inventario de tu sucursal.'
             : user?.role === 'ADMIN'
               ? 'Vista administrativa de precios públicos; las compras están deshabilitadas.'
-              : 'Catálogo público a precios Retail. Puedes comprar como invitado o iniciar una sesión B2C o B2B.'}
+              : 'Catálogo público a precios Retail. Inicia una sesión B2C o B2B para comprar.'}
         </p>
         <CatalogHero />
 

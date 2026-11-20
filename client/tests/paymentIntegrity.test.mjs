@@ -43,7 +43,6 @@ const modules = new Map([
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 }
-modules.set('../components/catalog/BranchSelector', dataUrl('export default "BranchSelector"'))
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 /** Transpila el archivo indicado y resuelve únicamente las dependencias aisladas del harness. */
 function compile(file) {
@@ -64,7 +63,6 @@ modules.set('../utils/checkoutValidation', compile('utils/checkoutValidation.ts'
 const differencesUrl = compile('utils/orderReviewDifferences.ts')
 modules.set('../utils/orderReviewDifferences', differencesUrl)
 modules.set('../utils/authorizationErrors', compile('utils/authorizationErrors.ts'))
-modules.set('../utils/guestIdentity', compile('utils/guestIdentity.ts'))
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 const paymentApiUrl = compile('services/paymentApi.ts');

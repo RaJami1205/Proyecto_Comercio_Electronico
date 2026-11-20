@@ -17,7 +17,7 @@ export interface AdminOrderSummary {
   currency: 'CRC'
   orderStatus: OrderStatus
   paymentStatus: PaymentStatus
-  /** Solo en búsquedas: el índice tenía otro estado y se muestra el actual de PostgreSQL. */
+  /** Solo en búsquedas: el índice tenía otro estado y se muestra el actual del Store seleccionado. */
   indexOutdated?: boolean
 }
 
@@ -27,7 +27,8 @@ export interface AdminOrderPage {
   pageSize: number
   total: number
   hasMore: boolean
-  source: 'postgresql' | 'algolia'
+  /** Proveedor de coincidencias; source=algolia no identifica el motor que hidrata las Orders. */
+  source: 'memory' | 'postgresql' | 'algolia'
   pendingIndexOrders: number | null
   missingFromStore?: number
 }

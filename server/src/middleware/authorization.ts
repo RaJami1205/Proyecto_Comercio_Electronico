@@ -26,33 +26,12 @@ export function resolveOptionalIdentity() {
   }
 }
 
-/**
- * Compra como invitado: ID aleatorio generado por el navegador y conservado solo en memoria. Se resuelve como
- * comprador B2C a precio Retail; nunca obtiene permisos B2B ni administrativos.
- */
-const GUEST_ID_PATTERN = /^guest-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-export const GUEST_DISPLAY_NAME = 'Invitado'
-
-const headerCount = (request: Request, name: string) =>
-  (request.rawHeaders ?? []).filter((header, index) => index % 2 === 0 && header.toLowerCase() === name).length
-
-/** Exige un único header sin ambigüedad: identidad de UserService o, sin ella, una identidad de invitado válida. */
+/** Exige un único header sin ambigüedad y obtiene rol/estado exclusivamente desde UserService. */
 async function resolveRequiredIdentity(request: Request): Promise<ResolvedUser> {
-  const users = headerCount(request, 'x-cibernova-user-id')
-  const guests = headerCount(request, 'x-cibernova-guest-id')
-  if (users > 0 && guests > 0) throw new UserError(400, 'INVALID_USER_ID', 'No combines una identidad de usuario con una de invitado.')
-  if (guests > 0) {
-    const guestId = request.headers['x-cibernova-guest-id']
-    if (guests !== 1 || typeof guestId !== 'string' || !GUEST_ID_PATTERN.test(guestId)) {
-      throw new UserError(400, 'INVALID_USER_ID', 'El identificador de invitado no es válido.')
-    }
-    return { id: guestId, displayName: GUEST_DISPLAY_NAME, role: 'B2C' }
-  }
-  if (users === 0) throw new UserError(401, 'IDENTITY_REQUIRED', 'Selecciona una identidad para realizar esta operación.')
+  const headers = (request.rawHeaders ?? []).filter((header, index) => index % 2 === 0 && header.toLowerCase() === 'x-cibernova-user-id')
+  if (headers.length === 0) throw new UserError(401, 'IDENTITY_REQUIRED', 'Selecciona una identidad para realizar esta operación.')
   const userId = request.headers['x-cibernova-user-id']
-  if (users !== 1 || typeof userId !== 'string') throw new UserError(400, 'INVALID_USER_ID', 'El header de identidad no es válido.')
-  // El prefijo guest- queda reservado: una identidad de invitado nunca se resuelve como usuario del directorio.
-  if (userId.startsWith('guest-')) throw new UserError(400, 'INVALID_USER_ID', 'El header de identidad no es válido.')
+  if (headers.length !== 1 || typeof userId !== 'string') throw new UserError(400, 'INVALID_USER_ID', 'El header de identidad no es válido.')
   return userService.resolve(userId)
 }
 

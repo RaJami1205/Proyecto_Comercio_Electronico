@@ -48,13 +48,13 @@ function isSummary(value: unknown): value is AdminOrderSummary {
 function isPage(value: unknown, page: number): value is AdminOrderPage {
   return isRecord(value) && Array.isArray(value.orders) && value.orders.every(isSummary)
     && value.page === page && value.pageSize === ADMIN_ORDERS_PAGE_SIZE && value.orders.length <= ADMIN_ORDERS_PAGE_SIZE
-    && count(value.total) && typeof value.hasMore === 'boolean' && (value.source === 'postgresql' || value.source === 'algolia')
+    && count(value.total) && typeof value.hasMore === 'boolean' && (value.source === 'memory' || value.source === 'postgresql' || value.source === 'algolia')
     && (value.pendingIndexOrders === null || count(value.pendingIndexOrders))
     && (value.missingFromStore === undefined || count(value.missingFromStore))
     && new Set(value.orders.map(order => (order as AdminOrderSummary).id)).size === value.orders.length
 }
 
-/** Omite filtros vacíos; q y orderNumber son excluyentes y la búsqueda por texto siempre es por fecha descendente. */
+/** Omite filtros vacíos; q excluye orderNumber y sort porque Search conserva el orden devuelto por el índice. */
 export function adminOrderQuery(filters: AdminOrderFilters): string {
   const query = new URLSearchParams()
   const q = filters.q.trim()

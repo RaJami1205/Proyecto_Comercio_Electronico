@@ -22,8 +22,6 @@ export interface CartContextValue {
   decrementItem: (productId: string) => void
   removeItem: (productId: string) => void
   clearCart: () => void
-  /** Sin Session: vacía un carrito guardado de otra identidad para comprar como invitado. Requiere confirmación en la UI. */
-  discardForGuest: () => void
   cleanupPurchase: (purchase: CartPurchaseCleanup) => void
   totalUnits: number
 }

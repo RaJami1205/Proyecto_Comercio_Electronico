@@ -27,8 +27,7 @@ const CART_PRODUCT_BATCH_SIZE = 10
 function CartSection({ onContinueShopping, onCheckoutRequested, onProductSelect }: CartSectionProps) {
   const { purchaseBlockReason, openLogin, user, epoch } = useSession()
   const { items, incrementItem, decrementItem, removeItem, totalUnits, ownerId, isActive, hasExternalConflict,
-    hasInvalidStorage, updateProductContext, discardForGuest } = useCart()
-  const [confirmGuestDiscard, setConfirmGuestDiscard] = useState(false)
+    hasInvalidStorage, updateProductContext } = useCart()
   const { selectedBranchId } = useBranch()
   const [productContext, setProductContext] = useState<{ context: { key: string } | null; products: Map<string, Product>; error: string | null }>({ context: null, products: new Map(), error: null })
   // Solo cambia si cambia el conjunto de IDs; cantidades/precios/lineage no provocan nuevas consultas.
@@ -107,15 +106,6 @@ function CartSection({ onContinueShopping, onCheckoutRequested, onProductSelect 
             <h3>Carrito guardado</h3>
             <p>Selecciona la identidad propietaria para volver a ver sus productos.</p>
             <button className={styles.identityButton} type="button" onClick={openLogin}>Seleccionar identidad</button>
-            {!user ? (confirmGuestDiscard ? (
-              <div role="alertdialog" aria-label="Confirmar vaciado del carrito guardado">
-                <p>Se eliminarán de este navegador los productos guardados por otra identidad. ¿Deseas continuar como invitado?</p>
-                <button className={styles.identityButton} type="button" onClick={() => { discardForGuest(); setConfirmGuestDiscard(false) }}>Vaciar y continuar como invitado</button>
-                <button type="button" onClick={() => setConfirmGuestDiscard(false)}>Cancelar</button>
-              </div>
-            ) : (
-              <button type="button" onClick={() => setConfirmGuestDiscard(true)}>Vaciar y comprar como invitado</button>
-            )) : null}
           </div>
         ) : items.length === 0 ? (
           <div className={styles.emptyState}>

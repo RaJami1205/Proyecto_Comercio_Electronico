@@ -25,8 +25,7 @@ function CartProvider({ children }: CartProviderProps) {
   const [state, dispatch] = useReducer(cartReducer, {
     items: identifyItems(envelope.valid ? envelope.items : cartInitialState.items),
   })
-  // Un carrito guardado vacío no tiene nada que proteger: se restaura sin propietario para el visitante actual.
-  const [ownerId, setOwnerId] = useState<string | null>(envelope.valid && envelope.items.length === 0 ? null : envelope.ownerId)
+  const [ownerId, setOwnerId] = useState<string | null>(envelope.ownerId)
   const [activeOwnerId, setActiveOwnerId] = useState<string | null>(null)
   const current = useRef(state)
   const ownerRef = useRef(ownerId)
@@ -53,11 +52,6 @@ function CartProvider({ children }: CartProviderProps) {
     if (nextOwnerId === null) {
       activeOwnerRef.current = null
       setActiveOwnerId(null)
-      // Sin productos, el carrito queda disponible para compras como invitado; con productos conserva su propietario.
-      if (current.current.items.length === 0 && ownerRef.current !== null) {
-        ownerRef.current = null
-        setOwnerId(null)
-      }
       return true
     }
     if (!storageOwnerPattern.test(nextOwnerId)) return false
@@ -110,14 +104,6 @@ function CartProvider({ children }: CartProviderProps) {
     // También guarda vacío si el reducer ya estaba vacío y el conflicto era externo.
     saveCart({ items: [] }, ownerRef.current)
   }, [dispatchCart])
-  /** Solo sin Session: elimina los productos de otra identidad de este navegador y deja un carrito anónimo vacío. */
-  const discardForGuest = useCallback(() => {
-    if (activeOwnerRef.current !== null || ownerRef.current === null) return
-    dispatchCart({ type: 'CLEAR_CART' })
-    ownerRef.current = null
-    setOwnerId(null)
-    saveCart({ items: [] }, null)
-  }, [dispatchCart])
   /** Envía el baseline y las cantidades compradas al reducer para limpiar sobre el Cart vigente. */
   const cleanupPurchase = useCallback((purchase: CartPurchaseCleanup) => {
     if (purchase.ownerId && (purchase.ownerId !== ownerRef.current || purchase.ownerId !== activeOwnerRef.current)) return
@@ -136,7 +122,6 @@ function CartProvider({ children }: CartProviderProps) {
     setCartOwner,
     updateProductContext,
     clearCart,
-    discardForGuest,
     cleanupPurchase,
     addItem: (item) => {
       if (!isActive || ownerRef.current !== ownerId || activeOwnerRef.current !== activeOwnerId) {

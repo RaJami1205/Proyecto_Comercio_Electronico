@@ -127,8 +127,7 @@ test('inicia null, sin restauración ni escrituras de Session', t => {
   t.after(() => { globalThis.window = previous })
   const session = flow(t, [item])
   assert.equal(session.render().user, null)
-  // Sin Session se compra como invitado B2C; no hay bloqueo de compra.
-  assert.equal(session.render().purchaseBlockReason, null)
+  assert.match(session.render().purchaseBlockReason, /Inicia/)
   assert.deepEqual(session.calls, [])
 })
 
@@ -198,7 +197,7 @@ test('Logout y cambio preservan identidad/Cart ante cancelación o error', async
   assert.equal(runtime.clears, 1)
   session.render().requestLogout()
   assert.equal(session.render().user, null)
-  assert.equal(session.render().purchaseBlockReason, null, 'Tras Logout se puede comprar como invitado')
+  assert.match(session.render().purchaseBlockReason, /^Inicia una sesión simulada B2C o B2B/)
   assert.equal(session.render().epoch, 4)
 })
 

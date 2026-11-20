@@ -15,9 +15,7 @@ function clientService(name,base){
   const source=readFileSync(new URL('../../client/src/services/'+name+'.ts',import.meta.url),'utf8').replace('import.meta.env.VITE_API_BASE_URL',JSON.stringify(base))
   const compiled=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText
   const helper=ts.transpileModule(readFileSync(new URL('../../client/src/utils/authorizationErrors.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText
-  const guest=ts.transpileModule(readFileSync(new URL('../../client/src/utils/guestIdentity.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText
   const linked=compiled.replace('../utils/authorizationErrors','data:text/javascript;base64,'+Buffer.from(helper).toString('base64'))
-    .replace('../utils/guestIdentity','data:text/javascript;base64,'+Buffer.from(guest).toString('base64'))
   return import('data:text/javascript;base64,'+Buffer.from(linked).toString('base64'))
 }
 

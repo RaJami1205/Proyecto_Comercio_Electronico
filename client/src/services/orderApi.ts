@@ -2,7 +2,6 @@
 import type { ApiErrorResponse } from '../types/apiError'
 import type { CreateOrderRequest, Order } from '../types/order'
 import { authorizationErrorMessage, identityErrorCodes, isAuthorizationRejection } from '../utils/authorizationErrors'
-import { identityHeaders } from '../utils/guestIdentity'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || '').replace(/\/+$/, '')
 
@@ -131,7 +130,7 @@ async function createOrder(request: CreateOrderRequest, userId: string): Promise
     ...(expectation ? { financialExpectation: { subtotal: expectation.subtotal, tax: expectation.tax, shipping: expectation.shipping, total: expectation.total } } : {}),
   }
   const response = await fetch(API_BASE_URL + '/api/v2/orders', {
-    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...identityHeaders(userId) },
+    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CiberNova-User-Id': userId },
     body: JSON.stringify(payload), signal: AbortSignal.timeout(20000),
   })
   const body: unknown = await response.json().catch(() => null)

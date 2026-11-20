@@ -43,7 +43,6 @@ const modules = new Map([
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 }
-modules.set('../components/catalog/BranchSelector', dataUrl('export default "BranchSelector"'))
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 /** Transpila el archivo indicado y exige que cada dependencia esté aislada por el harness. */
 function compile(file) {
@@ -65,7 +64,6 @@ const validationUrl = compile('utils/checkoutValidation.ts')
 modules.set('../utils/checkoutValidation', validationUrl)
 modules.set('../utils/orderReviewDifferences', compile('utils/orderReviewDifferences.ts'))
 modules.set('../utils/authorizationErrors', compile('utils/authorizationErrors.ts'))
-modules.set('../utils/guestIdentity', compile('utils/guestIdentity.ts'))
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 modules.set('../services/paymentApi', compile('services/paymentApi.ts'))
@@ -136,7 +134,7 @@ function checkout({ user = b2c, items = [retailLine], ownerId = user?.id ?? null
 function mockFetch(t, responder) {
   const requests = []
   t.mock.method(globalThis, 'fetch', async (url, options) => {
-    requests.push({ url, user: options.headers['X-CiberNova-User-Id'], guest: options.headers['X-CiberNova-Guest-Id'], body: JSON.parse(options.body) })
+    requests.push({ url, user: options.headers['X-CiberNova-User-Id'], body: JSON.parse(options.body) })
     return responder(requests.at(-1), requests.length)
   })
   return requests
@@ -195,53 +193,20 @@ test('Review y Payment usan los valores autoritativos y la sucursal de la Order 
   assert.deepEqual(flow.review().totals, authoritative.totals)
 })
 
-test('Checkout ADMIN no envía la Order', async t => {
-  const requests = mockFetch(t, () => Response.json({}, { status: 201 }))
-  const flow = checkout({ user: admin, ownerId: 'client' })
-  await flow.review().onConfirm(); flow.render()
-  assert.equal(requests.length, 0)
-  assert.equal(flow.review().commercial, undefined)
-})
-
-test('Checkout sin Session no compra un carrito asignado a otra identidad', async t => {
-  const requests = mockFetch(t, () => Response.json({}, { status: 201 }))
-  const flow = checkout({ user: null, ownerId: 'client' })
-  await flow.review().onConfirm(); flow.render()
-  assert.equal(requests.length, 0)
-  assert.match(flow.review().error, /otra identidad/)
-})
-
-test('Checkout sin Session compra como invitado B2C: misma identidad temporal para la Order y el pago', async t => {
-  let guestOrder
-  const requests = mockFetch(t, request => {
-    if (request.url === '/api/v2/orders') {
-      guestOrder = serverOrder({ id: request.guest, displayName: 'Invitado', role: 'B2C' }, [retailLine])
-      return Response.json(guestOrder, { status: 201 })
-    }
-    return Response.json(paymentResult(guestOrder, 'PAYMENT_APPROVED'), { status: 200 })
+for (const [label, user] of [['sin Session', null], ['ADMIN', admin]]) {
+  test(`Checkout ${label} no envía la Order`, async t => {
+    const requests = mockFetch(t, () => Response.json({}, { status: 201 }))
+    const flow = checkout({ user, ownerId: 'client' })
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(requests.length, 0)
+    assert.equal(flow.review().commercial, undefined)
   })
-  const flow = checkout({ user: null, ownerId: null })
-  assert.equal(flow.review().commercial.displayName, 'Invitado')
-  assert.equal(flow.review().commercial.customerRole, 'B2C')
-  await flow.review().onConfirm(); flow.render()
-  assert.equal(requests.length, 1)
-  assert.match(requests[0].guest, /^guest-[0-9a-f-]{36}$/)
-  assert.equal(requests[0].user, undefined, 'Sin Session no se envía una identidad de usuario')
-  for (const forbidden of ['role', 'userId', 'pricingType']) assert.equal(forbidden in requests[0].body, false, forbidden)
-  assert.equal(flow.step(), 'payment')
-  flow.payment().onScenarioChange('PAYMENT_APPROVED'); flow.render()
-  await flow.payment().onProcessPayment(); flow.render()
-  assert.equal(requests.length, 2)
-  assert.equal(requests[1].guest, requests[0].guest)
-  assert.equal(requests[1].user, undefined)
-  assert.equal(flow.tree.type, 'OrderConfirmationPage')
-  // El carrito anónimo del invitado se limpia; nunca se asigna a una identidad.
-  assert.equal(runtime.cleanups.length, 1)
-  assert.equal(runtime.cleanups[0].ownerId, undefined)
-})
+}
 
 const blockedCases = [
   ['carrito de otro propietario', { ownerId: 'other-user' }, /otra identidad/],
+  ['sucursal sin seleccionar', { branchId: null }, /Selecciona una sucursal/],
+  ['sucursal no disponible', { branchId: 'heredia' }, /Selecciona una sucursal/],
   ['MOQ inválido', { user: b2b, items: [{ ...wholesaleLine, quantity: 2 }] }, /cantidad mínima es 3/],
   ['stock insuficiente', { items: [{ ...retailLine, quantity: 6 }] }, /existencias suficientes/],
   ['inventario agotado', { items: [{ ...retailLine, inventoryStatus: 'out-of-stock', availableQuantity: 0 }] }, /existencias suficientes/],
@@ -260,29 +225,6 @@ for (const [label, options, message] of blockedCases) {
     assert.equal(typeof flow.review().onAdjustCart, 'function', 'Orienta a corregir en el carrito')
     flow.review().onAdjustCart()
     assert.ok(flow.events.includes('cart'))
-  })
-}
-
-for (const [label, branchId] of [['sin seleccionar', null], ['no disponible', 'heredia']]) {
-  test('Checkout pide la sucursal en la revisión sin volver al carrito ni repetir pasos: ' + label, async t => {
-    const requests = mockFetch(t, () => Response.json(serverOrder(b2c, [retailLine]), { status: 201 }))
-    const flow = checkout({ branchId })
-    assert.ok(flow.find('BranchSelector') !== undefined || nodes(flow.tree).some(node => node.type === 'BranchSelector'), 'El selector forma parte de la revisión')
-    await flow.review().onConfirm(); flow.render()
-    assert.equal(requests.length, 0)
-    assert.equal(flow.step(), 'review')
-    assert.equal(flow.review().onAdjustCart, undefined, 'No envía al carrito')
-    assert.ok(!flow.events.includes('cart'))
-    assert.match(text(nodes(flow.tree).find(node => node.props?.role === 'alert')), /Selecciona una sucursal para confirmar la compra. Tus datos de comprador y entrega se conservan/)
-    runtime.setBranch('san_jose'); flow.render()
-    assert.equal(nodes(flow.tree).some(node => node.props?.role === 'alert' && /Selecciona una sucursal/.test(text(node))), false)
-    await flow.review().onConfirm(); flow.render()
-    assert.equal(requests.length, 1)
-    assert.equal(requests[0].body.branchId, 'san_jose')
-    assert.deepEqual(requests[0].body.buyer, { ...buyer, fullName: buyer.fullName.trim() })
-    assert.equal(flow.step(), 'payment')
-    // Con una Order creada el selector desaparece: la sucursal autoritativa es la de la Order.
-    assert.equal(nodes(flow.tree).some(node => node.type === 'BranchSelector'), false)
   })
 }
 

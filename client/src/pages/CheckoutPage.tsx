@@ -17,7 +17,6 @@ import type { TransactionState } from '../context/SessionContext'
 import type { BranchId } from '../types/branch'
 import { useCart } from '../hooks/useCart'
 import { useBranch } from '../hooks/useBranch'
-import BranchSelector from '../components/catalog/BranchSelector'
 import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalculations'
 import { commercialIssues, normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
 import { classifyOrderFailure, orderApi, OrderApiError, orderErrorMessage, type CheckoutRecovery } from '../services/orderApi'
@@ -29,7 +28,6 @@ import Footer from '../components/layout/Footer'
 import styles from '../styles/pages/CheckoutPage.module.css'
 import { trackEvent } from '../services/analytics'
 import { useSession } from '../hooks/useSession'
-import { createGuestId, GUEST_ID_PREFIX, guestPurchaser, isGuestId } from '../utils/guestIdentity'
 
 interface CheckoutPageProps {
   onBackToCart: () => void
@@ -56,18 +54,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const { items, cleanupPurchase, ownerId: cartOwnerId } = useCart()
   const { user, epoch } = useSession()
   const { branches, selectedBranchId } = useBranch()
-  // Sin Session se compra como invitado B2C con un ID temporal en memoria; ADMIN nunca compra. El Server revalida.
-  // El ID de invitado se crea al confirmar la primera compra y se conserva para el pago y el Retry de este Checkout.
-  const guestIdRef = useRef<string | undefined>(undefined)
-  const purchaser = user ? (user.role !== 'ADMIN' ? user : undefined) : guestPurchaser(GUEST_ID_PREFIX)
-  // En el render solo se presenta 'Invitado'; el ID real se asigna al confirmar con purchaserId.
-  const isGuestPurchase = !user
-  /** Identidad que se envía al Server: la del usuario o, sin Session, el invitado de este Checkout. */
-  function purchaserId(current: NonNullable<typeof purchaser>): string {
-    if (!isGuestPurchase) return current.id
-    guestIdRef.current ??= createGuestId()
-    return guestIdRef.current
-  }
+  // ADMIN y la ausencia de Session nunca habilitan compras; el Server vuelve a validar el rol.
+  const purchaser = user && user.role !== 'ADMIN' ? user : undefined
   const currentSession = useRef({ userId: user?.id, epoch })
   useLayoutEffect(() => { currentSession.current = { userId: user?.id, epoch } }, [user?.id, epoch])
   const originalSession = useRef({ userId: user?.id, epoch })
@@ -89,8 +77,6 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [differences, setDifferences] = useState<string[]>([])
   // Destino sugerido para corregir un rechazo concluyente sin reiniciar el Checkout.
   const [recovery, setRecovery] = useState<CheckoutRecovery>()
-  // Sin sucursal válida se pide elegirla en la revisión, sin volver al carrito ni repetir los pasos anteriores.
-  const [branchRequired, setBranchRequired] = useState(false)
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
   const [selectedPaymentScenario, setSelectedPaymentScenario] = useState<PaymentScenario | null>(null)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
@@ -109,7 +95,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   // Garantiza que el Cart se limpie una sola vez por confirmación (CN-33), incluso si
   // algo disparara un re-render extra del mismo resultado APPROVED.
   const cartClearedRef = useRef(false)
-  const purchaseBaselineRef = useRef<{ orderId: string; ownerId?: string; items: CartItem[] } | undefined>(undefined)
+  const purchaseBaselineRef = useRef<{ orderId: string; ownerId: string; items: CartItem[] } | undefined>(undefined)
   const pageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageChangedRef = useRef(false)
@@ -194,18 +180,17 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     // Un intento existente conserva usuario, sucursal, payload y clave; solo un intento nuevo se prevalida.
     let activeAttempt = attemptRef.current
     if (!activeAttempt) {
-      // El invitado compra el carrito anónimo; nunca un carrito asignado a otra identidad.
-      if (isGuestPurchase ? cartOwnerId !== null : cartOwnerId !== purchaser.id) {
+      if (cartOwnerId !== purchaser.id) {
         setError('Este carrito pertenece a otra identidad. Selecciona su propietario antes de comprar.')
         setRecovery('cart')
         return
       }
       const branchId = selectedBranchId
       if (!branchId || !branches.some(branch => branch.id === branchId && branch.available)) {
-        setBranchRequired(true)
+        setError('Selecciona una sucursal válida en el carrito antes de confirmar la compra.')
+        setRecovery('cart')
         return
       }
-      setBranchRequired(false)
       const issues = commercialIssues(items, purchaser.role, branchId)
       if (issues.length > 0) {
         setError('Ajusta tu carrito antes de continuar. ' + issues.map(issue => issue.message).join(' '))
@@ -213,7 +198,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
         return
       }
       activeAttempt = {
-        userId: purchaserId(purchaser),
+        userId: purchaser.id,
         request: {
           buyer: normalizeBuyer(data.buyer), delivery: normalizeDelivery(data.delivery),
           items: items.map(({ productId, quantity }) => ({ productId, quantity })),
@@ -242,7 +227,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       if (!isCurrentSession()) return
       receivedOrder = true
       const alreadyConfirmed = created.orderStatus === 'CONFIRMED' && created.paymentStatus === 'APPROVED'
-      purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, ownerId: isGuestId(activeAttempt.userId) ? undefined : activeAttempt.userId, items: activeAttempt.items }
+      purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, ownerId: activeAttempt.userId, items: activeAttempt.items }
       const changes = alreadyConfirmed ? [] : orderReviewDifferences(activeAttempt.items, created)
       requiresAcceptance = changes.length > 0
       setDifferences(changes)
@@ -348,7 +333,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
     try {
       const activeAttempt = paymentAttemptRef.current ?? Object.freeze({
-        orderId: order.id, scenario: selectedPaymentScenario, idempotencyKey: crypto.randomUUID(), userId: purchaserId(purchaser),
+        orderId: order.id, scenario: selectedPaymentScenario, idempotencyKey: crypto.randomUUID(), userId: purchaser.id,
       })
       paymentAttemptRef.current = activeAttempt
       setHasPendingPayment(true)
@@ -456,7 +441,6 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     branchName: reviewBranchId ? branches.find(branch => branch.id === reviewBranchId)?.name ?? reviewBranchId : undefined,
     confirmedByServer: Boolean(order?.commercial),
   } : undefined
-  const hasValidBranch = Boolean(selectedBranchId && branches.some(branch => branch.id === selectedBranchId && branch.available))
   const lockNavigation = isCreatingOrder || isProcessingPayment || Boolean(attempt) || differences.length > 0
   return (
     <div className={styles.page}>
@@ -513,12 +497,6 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
               </>
             ) : (
               <>
-                {currentStep === 'review' && !order && !attempt && !isCreatingOrder ? (
-                  <div data-checkout-branch>
-                    <BranchSelector />
-                    {branchRequired && !hasValidBranch ? <p role="alert">Selecciona una sucursal para confirmar la compra. Tus datos de comprador y entrega se conservan.</p> : null}
-                  </div>
-                ) : null}
                 <ReviewStep buyer={order?.buyer ?? data.buyer} delivery={order?.delivery ?? data.delivery}
                   items={displayItems} totals={order?.totals ?? calculateCartTotals(reviewItems)} order={order}
                   busy={isCreatingOrder} retryPending={Boolean(attempt)} invalid={!order && invalid} authorizationRejected={authorizationRejected} error={error}

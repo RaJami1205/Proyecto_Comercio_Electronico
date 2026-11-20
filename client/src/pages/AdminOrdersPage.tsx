@@ -1,6 +1,6 @@
 /**
  * Admin Orders (CN-66): consulta global Read-Only de Orders de compradores B2C/B2B.
- * Sin texto de búsqueda el Server lista desde PostgreSQL (incluye Orders sin indexar); con texto busca en el índice
+ * Sin texto de búsqueda el Server lista desde el Store seleccionado (incluye Orders sin indexar); con texto busca en el índice
  * orders de Algolia y muestra el estado actual persistido. App la monta con una key por usuario y epoch de Session.
  */
 import { useEffect, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
@@ -81,7 +81,7 @@ function AdminOrdersList({ userId, onOpenOrder }: { userId: string; onOpenOrder?
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    // La búsqueda en el índice y el número exacto en PostgreSQL son excluyentes.
+    // La búsqueda en el índice y el número exacto en el Store seleccionado son excluyentes.
     const q = draft.q.trim()
     update({ q, orderNumber: q ? '' : draft.orderNumber.trim(), userId: draft.userId.trim() })
     if (q) setDraft(current => ({ ...current, orderNumber: '' }))
@@ -126,33 +126,52 @@ function AdminOrdersList({ userId, onOpenOrder }: { userId: string; onOpenOrder?
     const { result } = state
     const pending = result.pendingIndexOrders ?? 0
     const pages = Math.max(1, Math.ceil(result.total / result.pageSize))
+    const hasPrevious = result.page > 1
+    const showPagination = hasPrevious || result.hasMore || result.total > 0
+    const pageCountLabel = result.page <= pages ? ` de ${pages}` : ''
     results = (
       <section aria-label="Resultados de órdenes">
         {result.source === 'algolia' ? (
           <p className={styles.notice} role="note">
-            Resultados del índice de búsqueda. El estado mostrado es el actual de PostgreSQL.
+            Resultados del índice de búsqueda. El estado mostrado procede del almacenamiento seleccionado en el servidor.
+            {' El total y las páginas corresponden a coincidencias del índice; las órdenes mostradas cumplen los filtros actuales.'}
             {pending > 0 ? ` Hay ${pending} ${pending === 1 ? 'orden pendiente' : 'órdenes pendientes'} de indexar que esta búsqueda puede omitir; el listado sin búsqueda sí las incluye.` : ''}
             {result.missingFromStore ? ` Se omitieron ${result.missingFromStore} coincidencias del índice que ya no existen.` : ''}
           </p>
         ) : pending > 0 ? (
           <p className={styles.hint} role="note">{pending} {pending === 1 ? 'orden aún no está indexada' : 'órdenes aún no están indexadas'} para búsqueda; este listado sí las incluye.</p>
         ) : null}
+        {result.source !== 'algolia' ? (
+          <p className={styles.hint} role="note">Origen de las órdenes: {result.source === 'memory'
+            ? 'memoria del servidor (sin persistencia duradera)' : 'PostgreSQL'}.</p>
+        ) : null}
+        <p className={styles.summary} role="status">{result.source === 'algolia'
+          ? `${result.total} ${result.total === 1 ? 'coincidencia indexada' : 'coincidencias indexadas'} · ${result.orders.length} ${result.orders.length === 1 ? 'orden mostrada' : 'órdenes mostradas'} en esta página`
+          : `${result.total} ${result.total === 1 ? 'orden' : 'órdenes'}`} · página {result.page}{pageCountLabel}</p>
         {result.orders.length === 0 ? (
           <div className={styles.notice} role="status">
-            <h2>Sin órdenes</h2>
-            <p>{searching ? 'Ninguna orden del índice coincide con la búsqueda.' : 'No hay órdenes que coincidan con los filtros seleccionados.'}</p>
+            <h2>{result.source === 'algolia' && result.total === 0 ? 'Sin coincidencias indexadas'
+              : result.total > 0 || hasPrevious ? 'Sin órdenes en esta página' : 'Sin órdenes'}</h2>
+            <p>{result.source === 'algolia'
+              ? result.total === 0 ? 'El índice de búsqueda no encontró coincidencias para esta consulta.'
+                : 'No hay órdenes disponibles para mostrar en esta página. Las coincidencias indexadas ya no están disponibles o no cumplen los filtros actuales.'
+              : result.total > 0 || hasPrevious ? 'No hay órdenes disponibles para mostrar en esta página.'
+                : 'No hay órdenes que coincidan con los filtros seleccionados.'}</p>
+            {result.source === 'algolia' && result.total > 0 && (hasPrevious || result.hasMore)
+              ? <p>Puedes revisar otras páginas de coincidencias indexadas.</p> : null}
           </div>
         ) : (
-          <>
-            <p className={styles.summary} role="status">{result.total} {result.total === 1 ? 'orden' : 'órdenes'} · página {result.page} de {pages}</p>
-            <ul className={styles.list}>{result.orders.map(order => <OrderRow key={order.id} order={order} onOpenOrder={onOpenOrder} />)}</ul>
-            <nav className={styles.pagination} aria-label="Paginación de órdenes">
-              <button type="button" className={styles.secondaryButton} disabled={result.page <= 1} onClick={() => update({ page: result.page - 1 })}>Anterior</button>
-              <span>Página {result.page} de {pages}</span>
-              <button type="button" className={styles.secondaryButton} disabled={!result.hasMore} onClick={() => update({ page: result.page + 1 })}>Siguiente</button>
-            </nav>
-          </>
+          <ul className={styles.list}>{result.orders.map(order => <OrderRow key={order.id} order={order} onOpenOrder={onOpenOrder} />)}</ul>
         )}
+        {showPagination ? (
+          <nav className={styles.pagination} aria-label="Paginación de órdenes">
+            <button type="button" className={styles.secondaryButton} disabled={!hasPrevious}
+              onClick={() => { if (hasPrevious) update({ page: result.page - 1 }) }}>Anterior</button>
+            <span>Página {result.page}{pageCountLabel}</span>
+            <button type="button" className={styles.secondaryButton} disabled={!result.hasMore}
+              onClick={() => { if (result.hasMore) update({ page: result.page + 1 }) }}>Siguiente</button>
+          </nav>
+        ) : null}
       </section>
     )
   }
@@ -196,8 +215,13 @@ function AdminOrdersList({ userId, onOpenOrder }: { userId: string; onOpenOrder?
           </select>
         </label>
         <label><span>Orden</span>
-          <select value={filters.sort} disabled={searching} onChange={event => update({ sort: event.target.value as AdminOrderFilters['sort'] })}>
-            <option value="newest">Más recientes primero</option><option value="oldest">Más antiguas primero</option>
+          <select value={searching ? 'search' : filters.sort} disabled={searching} onChange={event => {
+            const sort = event.target.value
+            if (!searching && (sort === 'newest' || sort === 'oldest')) update({ sort })
+          }}>
+            {searching ? <option value="search">Orden de búsqueda</option> : <>
+              <option value="newest">Más recientes primero</option><option value="oldest">Más antiguas primero</option>
+            </>}
           </select>
         </label>
         <button type="button" className={styles.secondaryButton} onClick={reset}>Limpiar filtros</button>

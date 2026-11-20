@@ -233,7 +233,8 @@ Validación: `npm run lint`, `npm run build` y `node --test tests/inventorySimul
 ADMIN ve en el Header el enlace **Órdenes** (`#admin/orders`). La vista consulta `GET /api/v2/admin/orders` con `adminOrderApi`, que envía la identidad activa, valida cada respuesta desde `unknown` y no persiste Orders en el navegador.
 
 - **Listado:** número, fecha, comprador (nombre y User ID), tipo B2C/B2B, empresa, sucursal, total y estados de pedido y pago, de la más reciente a la más antigua.
-- **Filtros:** tipo de comprador, sucursal, estado del pedido, estado del pago, User ID y número de orden exacto, más orden ascendente o descendente y paginación. Estas consultas van a PostgreSQL e incluyen Orders pendientes de indexar; la vista avisa cuántas hay.
+- **Filtros:** tipo de comprador, sucursal, estado del pedido, estado del pago, User ID y número de orden exacto, más orden ascendente o descendente y paginación. Estas consultas van al Store seleccionado en Server e incluyen Orders pendientes de indexar; la vista avisa cuántas hay cuando el Store registra ese dato.
+- **Origen:** el listado distingue `source: "memory"` (memoria del servidor, sin persistencia duradera) de `"postgresql"`. Search conserva `source: "algolia"` para los candidatos del índice y describe su hidratación desde el almacenamiento seleccionado sin inferir un motor de persistencia.
 - **Búsqueda:** el campo de texto busca por número de orden o empresa en el índice de búsqueda. La vista advierte que los resultados pueden omitir Orders pendientes de sincronización, marca las filas con índice desactualizado y muestra siempre el estado actual. Si la búsqueda no está disponible, ofrece volver al listado sin búsqueda.
 - **Detalle:** `#admin/orders/<id>` (compatible con recarga y Back/Forward) combina la identidad del comprador del listado administrativo con el snapshot histórico de `GET /api/v2/orders/:orderId`. La presentación se comparte con My Orders mediante `components/orders/OrderDetailContent.tsx`.
 - **Acceso y Session:** App revoca las vistas para B2C, B2B y visitantes sin Session y las monta con una key por usuario y epoch, de modo que un cambio de identidad descarta resultados y requests anteriores. El Server aplica RBAC en cada request.
@@ -241,12 +242,3 @@ ADMIN ve en el Header el enlace **Órdenes** (`#admin/orders`). La vista consult
 - **Responsive:** reutiliza los estilos administrativos: dos columnas de tarjetas en Desktop, una en Tablet y filas apiladas en Mobile.
 
 Validación: `npm run lint`, `npm run build` y `node --test tests/adminOrders.test.mjs`.
-
-## Compra como invitado y sucursal en el Checkout
-
-- **Invitado:** sin Session se puede completar el Checkout como invitado B2C a precio Retail. `CheckoutPage` crea un ID `guest-<UUID>` en memoria al confirmar la primera compra y lo reutiliza para el pago y el Retry. `orderApi` y `paymentApi` lo envían como `X-CiberNova-Guest-Id` (`utils/guestIdentity.ts`).
-  - El invitado compra el carrito anónimo, nunca uno asignado a otra identidad, y ese carrito se limpia tras el pago aprobado.
-  - Un carrito guardado vacío de otra identidad se libera al cerrar sesión o recargar, para que el visitante agregue productos. Si tiene productos se conserva protegido, y la página del carrito ofrece vaciarlo y comprar como invitado con confirmación explícita.
-  - Las Orders de invitado no aparecen en My Orders, y recargar pierde el acceso a ellas.
-  - ADMIN sigue sin poder comprar.
-- **Sucursal:** si al confirmar no hay una sucursal válida, la revisión muestra el selector de sucursal en lugar de volver al carrito. Los datos de comprador y entrega se conservan.

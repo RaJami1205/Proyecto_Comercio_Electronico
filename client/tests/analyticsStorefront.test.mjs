@@ -84,8 +84,7 @@ for (const user of [null,{id:'u',role:'B2B'},{id:'u',role:'ADMIN'},{id:'u',role:
   const h=await setup(t)
   h.runtime.setCart({items:[{productId:'p',quantity:1}],hasExternalConflict:false})
   h.runtime.setUser(user)
-  // Sin Session se compra como invitado: su Checkout se registra en el scope anónimo.
-  const buyer=user===null||user?.role==='B2C'||user?.role==='B2B'
+  const buyer=user?.role==='B2C'||user?.role==='B2B'
   window.location=new URL('https://local.test/'+(buyer?'#cart-page':'#checkout'))
   const {default:App}=await h.load('App')
   let tree=h.render('app',App)
@@ -95,8 +94,8 @@ for (const user of [null,{id:'u',role:'B2B'},{id:'u',role:'ADMIN'},{id:'u',role:
   effects.forEach(effect=>effect())
   h.render('app',App)
   assert.equal(nodes(tree).some(node=>node.type==='CheckoutPage'),buyer)
-  assert.equal(h.api.getAnalyticsCounters('u').checkouts,buyer&&user?1:0)
-  assert.equal(h.api.getAnalyticsCounters().checkouts,user===null?1:0)
+  assert.equal(h.api.getAnalyticsCounters('u').checkouts,buyer?1:0)
+  assert.equal(h.api.getAnalyticsCounters().checkouts,0)
   await h.api.flushAnalytics()
 })
 

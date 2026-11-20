@@ -7,10 +7,8 @@ import ts from 'typescript'
 // Ejecuta el service real sin levantar React ni agregar dependencias de tests.
 const helper = ts.transpileModule(readFileSync(new URL('../src/utils/authorizationErrors.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText
 const helperUrl = 'data:text/javascript;base64,' + Buffer.from(helper).toString('base64')
-const guest = ts.transpileModule(readFileSync(new URL('../src/utils/guestIdentity.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText
-const guestUrl = 'data:text/javascript;base64,' + Buffer.from(guest).toString('base64')
 const source = readFileSync(new URL('../src/services/orderApi.ts', import.meta.url), 'utf8').replace('import.meta.env.VITE_API_BASE_URL', 'undefined')
-const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText.replace('../utils/authorizationErrors', helperUrl).replace('../utils/guestIdentity', guestUrl)
+const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText.replace('../utils/authorizationErrors', helperUrl)
 const { orderApi, OrderApiError, orderErrorMessage } = await import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'))
 const request = {
   buyer: { fullName: 'Prueba', email: 'prueba@example.com', phone: '88888888' },

@@ -1,15 +1,16 @@
 /**
  * Consulta administrativa global de Orders (CN-66), exclusivamente de lectura.
- * PostgreSQL (o el store seleccionado) es la fuente autoritativa; Algolia solo identifica Orders para búsquedas por texto
+ * El store seleccionado es la fuente de las Orders actuales; Algolia solo identifica candidatos para búsquedas por texto
  * y su resultado se completa con el estado actual persistido. No modifica Orders, Payments ni Idempotency.
  */
 import { getAlgoliaOrdersClient } from '../config/algolia.js'
 import { getAlgoliaOrdersConfig, isAlgoliaOrdersIndexConfigured } from '../config/env.js'
-import { parseAdminOrderQuery, toAdminOrderSummary, type AdminOrderQuery } from '../domain/adminOrderQuery.js'
+import { matchesAdminFilters, parseAdminOrderQuery, toAdminOrderSummary, type AdminOrderQuery } from '../domain/adminOrderQuery.js'
 import { OrderError } from '../domain/orderError.js'
 import { buildOrderIndexFilters } from '../domain/orderIndexQuery.js'
 import { commerceStores } from '../stores/commerceStores.js'
-import type { OrderStore } from '../stores/orderStore.js'
+import { InMemoryOrderStore, type OrderStore } from '../stores/orderStore.js'
+import { PostgreSQLOrderStore } from '../stores/postgreSQLOrderStore.js'
 import type { AdminOrderFilters, AdminOrderPage } from '../types/adminOrder.js'
 
 /** Coincidencia del índice orders con los estados indexados, para detectar un índice desactualizado. */
@@ -27,6 +28,18 @@ type OrdersSearchClient = Pick<ReturnType<typeof getAlgoliaOrdersClient>, 'searc
 
 function searchUnavailable(): OrderError {
   return new OrderError(503, 'ORDER_SEARCH_UNAVAILABLE', 'La búsqueda de órdenes no está disponible. Usa los filtros, que consultan las órdenes persistidas.')
+}
+
+/** Exige evidencia explícita de exhaustividad; ningún indicador presente puede contradecirla o estar mal formado. */
+function hasExhaustiveHitCount(exhaustive: unknown, legacy: unknown): boolean {
+  let current: unknown
+  if (exhaustive !== undefined) {
+    if (exhaustive === null || typeof exhaustive !== 'object' || Array.isArray(exhaustive)) return false
+    current = 'nbHits' in exhaustive ? exhaustive.nbHits : undefined
+  }
+  return (current === true || legacy === true)
+    && (current === undefined || current === true)
+    && (legacy === undefined || legacy === true)
 }
 
 /** Los fallos de persistencia se informan como consulta no disponible, sin mensajes de creación ni detalles internos. */
@@ -55,7 +68,8 @@ export function createAlgoliaOrderSearch(
             attributesToRetrieve: ['orderStatus', 'paymentStatus'], attributesToHighlight: [],
           },
         })
-        if (!Array.isArray(response.hits) || typeof response.nbHits !== 'number' || !Number.isSafeInteger(response.nbHits)) throw searchUnavailable()
+        if (!Array.isArray(response.hits) || typeof response.nbHits !== 'number' || !Number.isSafeInteger(response.nbHits)
+          || response.nbHits < 0 || !hasExhaustiveHitCount(response.exhaustive, response.exhaustiveNbHits)) throw searchUnavailable()
         return {
           hits: response.hits.map(hit => ({ id: String(hit.objectID), orderStatus: hit.orderStatus, paymentStatus: hit.paymentStatus })),
           total: response.nbHits,
@@ -75,11 +89,11 @@ export class AdminOrderService {
   async list(rawQuery: Record<string, unknown>): Promise<AdminOrderPage> {
     const query = parseAdminOrderQuery(rawQuery)
     if (!query.q) return this.listFromStore(query)
-    // El índice no filtra por número ni ID exactos y su ranking es por fecha descendente.
+    // El índice determina el orden de los candidatos, sin garantizar cronología global.
     if (query.filters.orderId !== undefined || query.filters.orderNumber !== undefined) {
       throw new OrderError(400, 'INVALID_ORDER_FILTER', 'La búsqueda por texto no se combina con orderId ni orderNumber.')
     }
-    if (query.sort !== 'newest') throw new OrderError(400, 'INVALID_ORDER_FILTER', 'La búsqueda por texto se ordena de la más reciente a la más antigua.')
+    if (query.sort !== 'newest') throw new OrderError(400, 'INVALID_ORDER_FILTER', 'El orden ascendente por fecha no está disponible durante la búsqueda. Los resultados utilizan el orden del índice.')
     return this.searchIndex(query)
   }
 
@@ -92,25 +106,34 @@ export class AdminOrderService {
       ])
       return {
         orders: result.entries.map(toAdminOrderSummary), page: query.page, pageSize: query.pageSize, total: result.total,
-        hasMore: query.offset + result.entries.length < result.total, source: 'postgresql', pendingIndexOrders,
+        hasMore: query.offset + result.entries.length < result.total, source: this.storeSource(), pendingIndexOrders,
       }
     } catch (error) { return queryUnavailable(error) }
   }
 
+  /** Describe el Repository utilizado, también cuando se inyecta uno distinto al de la composición predeterminada. */
+  private storeSource(): Exclude<AdminOrderPage['source'], 'algolia'> {
+    if (this.store instanceof InMemoryOrderStore) return 'memory'
+    if (this.store instanceof PostgreSQLOrderStore) return 'postgresql'
+    return queryUnavailable(undefined)
+  }
+
   /**
-   * El índice es eventualmente consistente: cada coincidencia se relee del store, las inexistentes se omiten y se
-   * marca indexOutdated cuando el estado indexado difiere del actual. Puede omitir Orders aún no indexadas.
+   * El índice es eventualmente consistente: cada coincidencia se relee del store y debe seguir cumpliendo los filtros.
+   * Se marca indexOutdated cuando el estado indexado difiere del actual. Puede omitir Orders aún no indexadas.
    */
   private async searchIndex(query: AdminOrderQuery): Promise<AdminOrderPage> {
     const { hits, total } = await this.search.search(query.q, query.filters, query.page, query.pageSize)
     try {
       const [entries, pendingIndexOrders] = await Promise.all([this.store.findEntriesByIds(hits.map(hit => hit.id)), this.store.countPendingIndex()])
       const indexed = new Map(hits.map(hit => [hit.id, hit]))
-      const orders = entries.map(entry => {
+      const orders = entries.filter(entry => matchesAdminFilters(entry, query.filters)).map(entry => {
         const hit = indexed.get(entry.order.id)
         const outdated = hit !== undefined && (hit.orderStatus !== entry.order.orderStatus || hit.paymentStatus !== entry.order.paymentStatus)
         return { ...toAdminOrderSummary(entry), ...(outdated ? { indexOutdated: true } : {}) }
       })
+      // total/hasMore describen candidatos del índice, no un conteo autoritativo tras filtrar esta página.
+      // No se recorren otras páginas para rellenarla; missingFromStore cuenta solo IDs inexistentes.
       return {
         orders, page: query.page, pageSize: query.pageSize, total, hasMore: query.offset + hits.length < total,
         source: 'algolia', pendingIndexOrders, missingFromStore: hits.length - entries.length,

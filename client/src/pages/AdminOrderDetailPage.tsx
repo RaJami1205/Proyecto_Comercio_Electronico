@@ -1,6 +1,6 @@
 /**
  * Admin Order Detail (CN-66): identidad del comprador desde la API administrativa y snapshot autoritativo de
- * GET /api/v2/orders/:orderId (PostgreSQL). Reutiliza la presentación del detalle del comprador; solo consulta.
+ * GET /api/v2/orders/:orderId (Store seleccionado). Reutiliza la presentación del detalle del comprador; solo consulta.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { AdminAccessNotice, AdminShell, type AdminShellProps } from '../components/admin/AdminShell'

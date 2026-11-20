@@ -32,7 +32,7 @@ export interface AdminOrderSummary {
   currency: 'CRC'
   orderStatus: OrderStatus
   paymentStatus: PaymentStatus
-  /** Solo en búsquedas: el índice tenía otro estado y se muestra el actual de PostgreSQL. */
+  /** Solo en búsquedas: el índice tenía otro estado y se muestra el actual del Store seleccionado. */
   indexOutdated?: boolean
 }
 
@@ -54,10 +54,10 @@ export interface AdminOrderPage {
   pageSize: number
   total: number
   hasMore: boolean
-  /** postgresql: listado autoritativo, incluye Orders sin indexar. algolia: búsqueda en el índice orders. */
-  source: 'postgresql' | 'algolia'
+  /** Proveedor de coincidencias: Repository efectivo en el listado, Algolia en Search; las Orders siempre se leen del Store. */
+  source: 'memory' | 'postgresql' | 'algolia'
   /** Orders persistidas con revisiones pendientes de indexar; null si el almacenamiento no las registra. */
   pendingIndexOrders: number | null
-  /** Coincidencias del índice que ya no existen en PostgreSQL y se omitieron. */
+  /** Coincidencias del índice que ya no existen en el Store seleccionado y se omitieron. */
   missingFromStore?: number
 }
