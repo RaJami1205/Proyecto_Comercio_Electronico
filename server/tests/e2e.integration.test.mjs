@@ -1,3 +1,4 @@
+import './helpers/postgresIntegrationIsolation.mjs'
 /**
  * CN-69 E2E de API con stack real: servicios HTTP del Client → Express → PostgreSQL aislado.
  * Algolia (catálogo y users) se sustituye por un catálogo QA en memoria; nunca se contactan servicios productivos.
@@ -10,6 +11,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { QA_ALGOLIA_ENV, QA_PRODUCTS, QA_USERS, createFakeAlgoliaCatalog } from './helpers/fakeAlgoliaCatalog.mjs'
+import { guardIntegrationDatabase, verifyIntegrationDatabases } from './helpers/postgresIntegrationHarness.mjs'
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION_TESTS === '1'
 // Las variables ficticias de Algolia deben existir antes de cargar la configuración del Server.
@@ -51,21 +53,22 @@ test('CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálo
   assert.equal(adminConfig.database, 'cibernova_test', 'Solo la base efímera cibernova_test.')
   const runtimeConfig = getDatabaseTestConfig({ ...process.env, DATABASE_TEST_URL: process.env.DATABASE_RUNTIME_TEST_URL })
   assert.equal(runtimeConfig.user, 'cibernova_app')
-  const admin = new Database(() => ({ ...adminConfig, max: 2 }))
+  const admin = guardIntegrationDatabase(new Database(() => ({ ...adminConfig, max: 2 })), 'admin')
   const pools = [admin]
   t.after(async () => { await Promise.all(pools.map(pool => pool.close())) })
   const previous = { orders: orderService.store, payments: paymentService.store, persistence: paymentService.persistence }
   t.after(() => { orderService.store = previous.orders; paymentService.store = previous.payments; paymentService.persistence = previous.persistence })
-  /** Conecta OrderService y PaymentService a un Pool nuevo; llamarlo otra vez simula reiniciar Node.js. */
-  const startPersistence = () => {
-    const db = new Database(() => ({ ...runtimeConfig, max: 4 }))
+  /** Reconstruye el Pool y los Stores dentro del mismo proceso; verifica el recurso antes de utilizarlos. */
+  const startPersistence = async () => {
+    const db = guardIntegrationDatabase(new Database(() => ({ ...runtimeConfig, max: 4 })), 'runtime')
     pools.push(db)
+    await verifyIntegrationDatabases(admin, db)
     const store = new PostgreSQLOrderStore(db)
     orderService.store = store
     paymentService.store = store
     paymentService.persistence = new PostgreSQLPaymentStore(store, db)
   }
-  startPersistence()
+  await startPersistence()
 
   // Algolia simulado sobre la instancia real que usan productService y UserService.
   const catalog = createFakeAlgoliaCatalog()
@@ -280,7 +283,7 @@ test('CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálo
   })
 
   await t.test('E2E-17 Recuperación después de reiniciar: historial, detalle y Replay salen de PostgreSQL', async () => {
-    startPersistence()
+    await startPersistence()
     const calls = catalog.calls.length
     const mine = await orderHistoryApi.listMine(id('b2b'), 1, 10)
     assert.ok(mine.orders.some(order => order.id === created.b2b.id && order.orderStatus === 'CONFIRMED'))

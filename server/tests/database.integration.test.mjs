@@ -1,4 +1,5 @@
-/** PostgreSQL real solo con opt-in y URL de loopback. Requiere la migration aplicada manualmente en una base aislada. */
+import './helpers/postgresIntegrationIsolation.mjs'
+/** PostgreSQL real solo con opt-in y recurso efímero verificado. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -6,6 +7,7 @@ import { Database } from '../dist/db/pool.js'
 import { DatabaseError } from '../dist/db/databaseError.js'
 import { getDatabaseTestConfig } from '../dist/config/database.js'
 import { calculateOrderTotals } from '../dist/domain/orderCalculations.js'
+import { guardIntegrationDatabase, verifyIntegrationDatabases } from './helpers/postgresIntegrationHarness.mjs'
 
 /** Revierte los fixtures incluso cuando las assertions pasan y conserva el fallo original si una assertion falla. */
 async function rolledBack(db, operation) {
@@ -31,8 +33,11 @@ async function rejectedStatement(client, sql, parameters, code) {
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION_TESTS === '1'
 test('CN-57 PostgreSQL real aislado', { skip: enabled ? false : 'Requiere RUN_DATABASE_INTEGRATION_TESTS=1 y DATABASE_TEST_URL local.', timeout: 15000 }, async t => {
-  const db = new Database(() => ({ ...getDatabaseTestConfig(), max: 2 }))
-  t.after(() => db.close())
+  const db = guardIntegrationDatabase(new Database(() => ({ ...getDatabaseTestConfig(), max: 2 })), 'admin')
+  const runtime = guardIntegrationDatabase(new Database(() => ({ ...getDatabaseTestConfig({ ...process.env,
+    DATABASE_TEST_URL: process.env.DATABASE_RUNTIME_TEST_URL }), max: 1 })), 'runtime')
+  t.after(async () => { await Promise.all([db.close(), runtime.close()]) })
+  await verifyIntegrationDatabases(db, runtime)
   const tables = await db.query('SELECT table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY table_name', ['commerce'])
   assert.deepEqual(tables.rows.map(row => row.table_name), ['order_creation_requests', 'orders', 'payment_attempts'], 'Aplicar primero la migration en una base local aislada.')
   const columns = await db.query('SELECT numeric_scale FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3', ['commerce', 'orders', 'subtotal'])

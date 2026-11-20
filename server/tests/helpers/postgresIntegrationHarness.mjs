@@ -1,0 +1,136 @@
+/** CN-69 TEST-ONLY: destino efímero y sesiones verificadas antes de cualquier operación del harness. */
+import { isIPv4 } from 'node:net'
+import { fileURLToPath } from 'node:url'
+import { basename, resolve } from 'node:path'
+
+export const publicDotenv = fileURLToPath(new URL('../../.env.database.example', import.meta.url))
+const failure = reason => new Error('CN69_POSTGRES_' + reason)
+
+/** No incluye valores recibidos en errores: las URLs pueden contener passwords. */
+export function validateIntegrationEnvironment(environment) {
+  if (environment.RUN_DATABASE_INTEGRATION_TESTS !== '1') throw failure('OPT_IN_REQUIRED')
+  const urls = []
+  for (const [key, user] of [['DATABASE_TEST_URL', 'cn_test_admin'], ['DATABASE_RUNTIME_TEST_URL', 'cibernova_app']]) {
+    let url
+    try { url = new URL(environment[key]) } catch { throw failure('INVALID_TARGET') }
+    if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.hostname !== '127.0.0.1'
+      || url.port !== '5432' || url.pathname !== '/cibernova_test' || url.username !== user
+      || !url.password || url.search || url.hash) throw failure('INVALID_TARGET')
+    urls.push(url)
+  }
+  if (urls[0].host !== urls[1].host || urls[0].pathname !== urls[1].pathname) throw failure('TARGET_MISMATCH')
+  if (!/^[a-f0-9]{64}$/.test(environment.CN69_POSTGRES_CONTAINER_ID ?? '')
+    || !isIPv4(environment.CN69_POSTGRES_SERVER_ADDRESS ?? '')) throw failure('RESOURCE_REQUIRED')
+  if (environment.COMMERCE_STORE_MODE !== 'memory' || environment.DATABASE_URL !== ''
+    || environment.ORDER_CREATION_MODE !== 'v1-compatible' || environment.DATABASE_TEST_SSL_MODE !== 'disable'
+    || environment.ALGOLIA_ORDERS_RECONCILE_ON_START !== 'false'
+    || environment.ALGOLIA_ORDERS_INDEX_NAME !== '' || environment.ALGOLIA_ORDERS_API_KEY !== '') {
+    throw failure('UNSAFE_COMPOSITION')
+  }
+  return { serverAddress: environment.CN69_POSTGRES_SERVER_ADDRESS }
+}
+
+/** Lista positiva: ni NODE_OPTIONS, PG*, credenciales, proxies ni dotenv heredados pasan a la aplicación. */
+export function isolatedIntegrationEnvironment(input) {
+  const environment = {}
+  for (const key of ['PATH', 'Path', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'COMSPEC', 'PATHEXT', 'NODE_TEST_CONTEXT']) {
+    if (input[key] !== undefined) environment[key] = input[key]
+  }
+  const optIn = input.RUN_DATABASE_INTEGRATION_TESTS
+  if (optIn !== undefined && optIn !== '0' && optIn !== '1') throw failure('INVALID_OPT_IN')
+  Object.assign(environment, {
+    // dotenv/config convierte opciones presentes con Boolean(...): incluso 'false' activaría override/debug.
+    DOTENV_CONFIG_PATH: publicDotenv, DOTENV_CONFIG_QUIET: 'true',
+    DOTENV_CONFIG_ENCODING: 'utf8', DOTENV_KEY: '', DOTENV_CONFIG_DOTENV_KEY: '',
+    COMMERCE_STORE_MODE: 'memory', ORDER_CREATION_MODE: 'v1-compatible', DATABASE_URL: '',
+    DATABASE_SSL_MODE: 'disable', DATABASE_TEST_SSL_MODE: 'disable',
+    RUN_DATABASE_INTEGRATION_TESTS: optIn === '1' ? '1' : '0',
+    DATABASE_TEST_URL: optIn === '1' ? input.DATABASE_TEST_URL : '',
+    DATABASE_RUNTIME_TEST_URL: optIn === '1' ? input.DATABASE_RUNTIME_TEST_URL : '',
+    CN69_POSTGRES_CONTAINER_ID: input.CN69_POSTGRES_CONTAINER_ID ?? '',
+    CN69_POSTGRES_SERVER_ADDRESS: input.CN69_POSTGRES_SERVER_ADDRESS ?? '',
+    ALGOLIA_APP_ID: 'QA_FAKE_APP', ALGOLIA_API_KEY: 'qa-fake-key',
+    ALGOLIA_INDEX_NAME: 'qa_products', ALGOLIA_USERS_INDEX_NAME: 'qa_users',
+    ALGOLIA_ORDERS_INDEX_NAME: '', ALGOLIA_ORDERS_API_KEY: '', ALGOLIA_ORDERS_SETTINGS_API_KEY: '',
+    ALGOLIA_ORDERS_RECONCILE_ON_START: 'false', ALGOLIA_SEED_API_KEY: '',
+    CLIENT_ORIGIN: 'http://localhost:5173', PORT: '3001',
+  })
+  if (optIn === '1') validateIntegrationEnvironment(environment)
+  return environment
+}
+
+export function assertIntegrationRead(file) {
+  const path = file instanceof URL ? fileURLToPath(file)
+    : typeof file === 'string' || Buffer.isBuffer(file) ? resolve(String(file)) : undefined
+  if (path && /^\.env(?:\.|$)/i.test(basename(path)) && path !== publicDotenv) throw failure('PRIVATE_ENV_BLOCKED')
+}
+
+/** Solo el PG aprobado y los puertos HTTP registrados por el propio harness. Nunca DNS/IPC/TLS. */
+export function assertIntegrationConnection(args, httpPorts, enabled) {
+  const first = Array.isArray(args[0]) ? args[0][0] : args[0]
+  const options = typeof first === 'object' && first !== null ? first : { port: first, host: args[1] }
+  if (options.path || options.host !== '127.0.0.1' || !Number.isInteger(Number(options.port))
+    || !(enabled && Number(options.port) === 5432 || httpPorts.has(Number(options.port)))) {
+    throw failure('NETWORK_BLOCKED')
+  }
+}
+
+export function assertIntegrationListener(args) {
+  if (args[0] !== 0 || args[1] !== '127.0.0.1') throw failure('LISTENER_BLOCKED')
+}
+
+export function assertIntegrationModule(specifier) {
+  if (/(?:src|dist)[/\\]scripts[/\\]/i.test(specifier)) throw failure('MAINTENANCE_BLOCKED')
+}
+
+export const sessionIdentitySql = `SELECT current_user AS user_name, session_user AS login_name,
+  current_database() AS database_name, current_setting('server_version_num')::integer AS version,
+  inet_server_addr()::text AS server_address, inet_server_port() AS server_port,
+  NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AS restricted
+  FROM pg_roles WHERE rolname = current_user`
+
+export function validateSessionIdentity(row, role, target) {
+  const user = role === 'admin' ? 'cn_test_admin' : role === 'runtime' ? 'cibernova_app' : undefined
+  if (!user || !row || row.user_name !== user || row.login_name !== user || row.database_name !== 'cibernova_test'
+    || !Number.isInteger(row.version) || row.version < 170000 || row.version >= 180000
+    || row.server_address !== target.serverAddress || row.server_port !== 5432
+    || (role === 'runtime' && row.restricted !== true)) throw failure('SESSION_IDENTITY')
+}
+
+/** Usa solo READ ONLY/SELECT/ROLLBACK, libera el client y descarta conexiones dañadas. Sin reintentos. */
+export async function verifyIntegrationSession(connect, role, target) {
+  const client = await connect()
+  let damaged = false
+  try {
+    await client.query('BEGIN READ ONLY')
+    const result = await client.query(sessionIdentitySql)
+    if (result.rows.length !== 1) throw failure('SESSION_IDENTITY')
+    validateSessionIdentity(result.rows[0], role, target)
+  } finally {
+    try { await client.query('ROLLBACK') } catch { damaged = true }
+    client.release(damaged)
+  }
+  if (damaged) throw failure('SESSION_CLEANUP')
+}
+
+/** Envuelve exclusivamente instancias creadas por los tests, incluidos Pools reconstruidos durante Recovery. */
+export function guardIntegrationDatabase(database, role, environment = process.env) {
+  const target = validateIntegrationEnvironment(environment)
+  const connect = database.connect.bind(database)
+  const query = database.query.bind(database)
+  const transaction = database.transaction.bind(database)
+  let verification
+  const ready = () => verification ??= verifyIntegrationSession(connect, role, target)
+  database.connect = async (...args) => { await ready(); return connect(...args) }
+  database.query = async (...args) => { await ready(); return query(...args) }
+  database.transaction = async (...args) => { await ready(); return transaction(...args) }
+  return database
+}
+
+/** Verifica ambas identidades antes de fixtures; las nuevas conexiones conservan además su guarda lazy. */
+export async function verifyIntegrationDatabases(...databases) {
+  for (const database of databases) {
+    const client = await database.connect()
+    client.release()
+  }
+}

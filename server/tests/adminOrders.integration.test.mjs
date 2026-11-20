@@ -1,3 +1,4 @@
+import './helpers/postgresIntegrationIsolation.mjs'
 /** CN-66 con PostgreSQL real EFÍMERO: listado global, filtros SQL, búsqueda por IDs y pendientes de indexación. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -7,6 +8,7 @@ import { getDatabaseTestConfig } from '../dist/config/database.js'
 import { PostgreSQLOrderStore } from '../dist/stores/postgreSQLOrderStore.js'
 import { AdminOrderService } from '../dist/services/adminOrderService.js'
 import { orderFixture } from './helpers/commerceFixtures.mjs'
+import { guardIntegrationDatabase, verifyIntegrationDatabases } from './helpers/postgresIntegrationHarness.mjs'
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION_TESTS === '1'
 test('CN-66 PostgreSQL aislado: consulta administrativa global Read-Only', {
@@ -16,9 +18,10 @@ test('CN-66 PostgreSQL aislado: consulta administrativa global Read-Only', {
   assert.equal(adminConfig.database, 'cibernova_test', 'Solo la base efímera cibernova_test.')
   const runtimeConfig = getDatabaseTestConfig({ ...process.env, DATABASE_TEST_URL: process.env.DATABASE_RUNTIME_TEST_URL })
   assert.equal(runtimeConfig.user, 'cibernova_app')
-  const admin = new Database(() => ({ ...adminConfig, max: 2 }))
-  const db = new Database(() => ({ ...runtimeConfig, max: 3 }))
+  const admin = guardIntegrationDatabase(new Database(() => ({ ...adminConfig, max: 2 })), 'admin')
+  const db = guardIntegrationDatabase(new Database(() => ({ ...runtimeConfig, max: 3 })), 'runtime')
   t.after(async () => { await Promise.all([admin.close(), db.close()]) })
+  await verifyIntegrationDatabases(admin, db)
   const store = new PostgreSQLOrderStore(db)
   const service = new AdminOrderService(store)
 
