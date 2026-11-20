@@ -3,6 +3,7 @@ import type { ApiErrorResponse } from '../types/apiError'
 import type { Order } from '../types/order'
 import type { PaymentResult, PaymentScenario, ProcessPaymentRequest } from '../types/payment'
 import { authorizationErrorMessage, identityErrorCodes, isAuthorizationRejection } from '../utils/authorizationErrors'
+import { identityHeaders } from '../utils/guestIdentity'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || '').replace(/\/+$/, '')
 
@@ -73,7 +74,7 @@ function isPaymentResult(value: unknown, orderId: string, scenario: PaymentScena
 async function processPayment(orderId: string, request: ProcessPaymentRequest, userId: string): Promise<PaymentResult> {
   const payload: ProcessPaymentRequest = { scenario: request.scenario, idempotencyKey: request.idempotencyKey }
   const response = await fetch(`${API_BASE_URL}/api/orders/${encodeURIComponent(orderId)}/payment`, {
-    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CiberNova-User-Id': userId },
+    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...identityHeaders(userId) },
     body: JSON.stringify(payload), signal: AbortSignal.timeout(20000),
   })
   const body: unknown = await response.json().catch(() => null)

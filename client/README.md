@@ -241,3 +241,11 @@ ADMIN ve en el Header el enlace **Órdenes** (`#admin/orders`). La vista consult
 - **Responsive:** reutiliza los estilos administrativos: dos columnas de tarjetas en Desktop, una en Tablet y filas apiladas en Mobile.
 
 Validación: `npm run lint`, `npm run build` y `node --test tests/adminOrders.test.mjs`.
+
+## Compra como invitado y sucursal en el Checkout
+
+- **Invitado:** sin Session se puede completar el Checkout como invitado B2C a precio Retail. `CheckoutPage` crea un ID `guest-<UUID>` en memoria al confirmar la primera compra y lo reutiliza para el pago y el Retry. `orderApi` y `paymentApi` lo envían como `X-CiberNova-Guest-Id` (`utils/guestIdentity.ts`).
+  - El invitado compra el carrito anónimo, nunca uno asignado a otra identidad, y ese carrito se limpia tras el pago aprobado.
+  - Las Orders de invitado no aparecen en My Orders, y recargar pierde el acceso a ellas.
+  - ADMIN sigue sin poder comprar.
+- **Sucursal:** si al confirmar no hay una sucursal válida, la revisión muestra el selector de sucursal en lugar de volver al carrito. Los datos de comprador y entrega se conservan.

@@ -29,6 +29,7 @@ import Footer from '../components/layout/Footer'
 import styles from '../styles/pages/CheckoutPage.module.css'
 import { trackEvent } from '../services/analytics'
 import { useSession } from '../hooks/useSession'
+import { createGuestId, GUEST_ID_PREFIX, guestPurchaser, isGuestId } from '../utils/guestIdentity'
 
 interface CheckoutPageProps {
   onBackToCart: () => void
@@ -55,8 +56,18 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const { items, cleanupPurchase, ownerId: cartOwnerId } = useCart()
   const { user, epoch } = useSession()
   const { branches, selectedBranchId } = useBranch()
-  // ADMIN y la ausencia de Session nunca habilitan compras; el Server vuelve a validar el rol.
-  const purchaser = user && user.role !== 'ADMIN' ? user : undefined
+  // Sin Session se compra como invitado B2C con un ID temporal en memoria; ADMIN nunca compra. El Server revalida.
+  // El ID de invitado se crea al confirmar la primera compra y se conserva para el pago y el Retry de este Checkout.
+  const guestIdRef = useRef<string | undefined>(undefined)
+  const purchaser = user ? (user.role !== 'ADMIN' ? user : undefined) : guestPurchaser(GUEST_ID_PREFIX)
+  // En el render solo se presenta 'Invitado'; el ID real se asigna al confirmar con purchaserId.
+  const isGuestPurchase = !user
+  /** Identidad que se envía al Server: la del usuario o, sin Session, el invitado de este Checkout. */
+  function purchaserId(current: NonNullable<typeof purchaser>): string {
+    if (!isGuestPurchase) return current.id
+    guestIdRef.current ??= createGuestId()
+    return guestIdRef.current
+  }
   const currentSession = useRef({ userId: user?.id, epoch })
   useLayoutEffect(() => { currentSession.current = { userId: user?.id, epoch } }, [user?.id, epoch])
   const originalSession = useRef({ userId: user?.id, epoch })
@@ -98,7 +109,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   // Garantiza que el Cart se limpie una sola vez por confirmación (CN-33), incluso si
   // algo disparara un re-render extra del mismo resultado APPROVED.
   const cartClearedRef = useRef(false)
-  const purchaseBaselineRef = useRef<{ orderId: string; ownerId: string; items: CartItem[] } | undefined>(undefined)
+  const purchaseBaselineRef = useRef<{ orderId: string; ownerId?: string; items: CartItem[] } | undefined>(undefined)
   const pageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageChangedRef = useRef(false)
@@ -183,7 +194,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     // Un intento existente conserva usuario, sucursal, payload y clave; solo un intento nuevo se prevalida.
     let activeAttempt = attemptRef.current
     if (!activeAttempt) {
-      if (cartOwnerId !== purchaser.id) {
+      // El invitado compra el carrito anónimo; nunca un carrito asignado a otra identidad.
+      if (isGuestPurchase ? cartOwnerId !== null : cartOwnerId !== purchaser.id) {
         setError('Este carrito pertenece a otra identidad. Selecciona su propietario antes de comprar.')
         setRecovery('cart')
         return
@@ -201,7 +213,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
         return
       }
       activeAttempt = {
-        userId: purchaser.id,
+        userId: purchaserId(purchaser),
         request: {
           buyer: normalizeBuyer(data.buyer), delivery: normalizeDelivery(data.delivery),
           items: items.map(({ productId, quantity }) => ({ productId, quantity })),
@@ -230,7 +242,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       if (!isCurrentSession()) return
       receivedOrder = true
       const alreadyConfirmed = created.orderStatus === 'CONFIRMED' && created.paymentStatus === 'APPROVED'
-      purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, ownerId: activeAttempt.userId, items: activeAttempt.items }
+      purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, ownerId: isGuestId(activeAttempt.userId) ? undefined : activeAttempt.userId, items: activeAttempt.items }
       const changes = alreadyConfirmed ? [] : orderReviewDifferences(activeAttempt.items, created)
       requiresAcceptance = changes.length > 0
       setDifferences(changes)
@@ -336,7 +348,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
     try {
       const activeAttempt = paymentAttemptRef.current ?? Object.freeze({
-        orderId: order.id, scenario: selectedPaymentScenario, idempotencyKey: crypto.randomUUID(), userId: purchaser.id,
+        orderId: order.id, scenario: selectedPaymentScenario, idempotencyKey: crypto.randomUUID(), userId: purchaserId(purchaser),
       })
       paymentAttemptRef.current = activeAttempt
       setHasPendingPayment(true)

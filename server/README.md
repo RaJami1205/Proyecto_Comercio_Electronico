@@ -286,3 +286,17 @@ node --test tests/adminOrders.test.mjs
 # PostgreSQL efímero local con las migrations aplicadas (ver docs/postgresql.md):
 node --test tests/adminOrders.integration.test.mjs
 ```
+
+## Compra como invitado
+
+Sin Session, el Client puede comprar como **invitado**. Envía `X-CiberNova-Guest-Id` con un ID aleatorio `guest-<UUID>` que vive solo en memoria del navegador.
+
+- **Identidad:** el Server la resuelve sin consultar UserService como comprador B2C (`displayName: "Invitado"`, precio Retail). Recibe los permisos `checkout:create` y `orders:read:own`, pero nunca B2B ni administrativos.
+- **Ownership:** se aplica igual que a cualquier comprador. Solo ese mismo ID puede leer y pagar sus Orders; otro invitado o usuario recibe 404.
+- **Ambigüedad:** se rechaza con 400 `INVALID_USER_ID` combinar los headers de usuario y de invitado, un ID con otro formato o un `X-CiberNova-User-Id` con prefijo `guest-`. Sin ningún header de identidad sigue respondiendo 401 `IDENTITY_REQUIRED`.
+- **Persistencia:** la Order guarda `owner_user_id = guest-…`, y ADMIN la ve en Admin Orders como "Invitado" B2C.
+- **Recarga:** al recargar la página el navegador pierde el ID, y con él el acceso a esas Orders. No es autenticación real.
+
+```sh
+node --test tests/guestCheckout.test.mjs
+```

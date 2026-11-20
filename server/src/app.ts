@@ -24,7 +24,7 @@ app.use(
   cors({
     origin: serverConfig.clientOrigin,
     methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'X-CiberNova-User-Id'],
+    allowedHeaders: ['Content-Type', 'X-CiberNova-User-Id', 'X-CiberNova-Guest-Id'],
   }),
 )
 

@@ -60,6 +60,13 @@ test('CN-66 PostgreSQL aislado: consulta administrativa global Read-Only', {
     assert.deepEqual(page.orders.map(order => order.id), [b2bOrder.id])
   })
 
+  await t.test('una Order de invitado cumple las restricciones de PostgreSQL y ADMIN la ve como Invitado', async () => {
+    const guest = { id: 'guest-' + randomUUID(), displayName: 'Invitado', role: 'B2C' }
+    const order = await create(guest, 2, id => v2(id, guest, 'cartago', '2026-11-04T10:00:00.000Z'))
+    const page = await service.list({ userId: guest.id })
+    assert.deepEqual(page.orders.map(row => [row.id, row.displayName, row.customerRole, row.branchId]), [[order.id, 'Invitado', 'B2C', 'cartago']])
+  })
+
   await t.test('findEntriesByIds conserva el orden recibido, omite inexistentes y no modifica filas', async () => {
     const before = (await admin.query('SELECT id, order_status, payment_status, updated_at, index_version FROM commerce.orders WHERE id = ANY($1::text[]) ORDER BY id',
       [[legacy.id, b2bOrder.id]])).rows

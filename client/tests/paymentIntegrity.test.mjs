@@ -64,6 +64,7 @@ modules.set('../utils/checkoutValidation', compile('utils/checkoutValidation.ts'
 const differencesUrl = compile('utils/orderReviewDifferences.ts')
 modules.set('../utils/orderReviewDifferences', differencesUrl)
 modules.set('../utils/authorizationErrors', compile('utils/authorizationErrors.ts'))
+modules.set('../utils/guestIdentity', compile('utils/guestIdentity.ts'))
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 const paymentApiUrl = compile('services/paymentApi.ts');

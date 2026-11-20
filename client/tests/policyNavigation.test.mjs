@@ -249,8 +249,17 @@ test('entrada a Checkout sin productos mantiene reemplazo por Cart', t => {
   assert.equal(nodes(tree).some(n => n.type === 'CheckoutPage'), false)
 })
 
-for (const user of [null, {id:'a',displayName:'Admin',role:'ADMIN'}]) {
-  test('CN-53 bloquea acceso directo, callbacks e historial de Checkout para ' + (user?.role ?? 'sin sesión'), t => {
+test('sin sesión el acceso directo a Checkout está permitido como invitado', t => {
+  const app = environment(t, '#checkout')
+  runtime.setSession(null)
+  app.render()
+  const tree = app.render()
+  assert.ok(nodes(tree).find(node => node.type === 'CheckoutPage'))
+  assert.equal(app.window.location.hash, '#checkout')
+})
+
+for (const user of [{id:'a',displayName:'Admin',role:'ADMIN'}]) {
+  test('CN-53 bloquea acceso directo, callbacks e historial de Checkout para ' + user.role, t => {
     const app = environment(t, '#checkout')
     runtime.setSession(user)
     app.render()
