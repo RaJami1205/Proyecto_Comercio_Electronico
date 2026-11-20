@@ -43,6 +43,7 @@ const modules = new Map([
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
   modules.set('../components/checkout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 }
+modules.set('../components/catalog/BranchSelector', dataUrl('export default "BranchSelector"'))
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default ${JSON.stringify(name)}`))
 /** Transpila el archivo indicado y exige que cada dependencia esté aislada por el harness. */
 function compile(file) {
@@ -205,8 +206,6 @@ for (const [label, user] of [['sin Session', null], ['ADMIN', admin]]) {
 
 const blockedCases = [
   ['carrito de otro propietario', { ownerId: 'other-user' }, /otra identidad/],
-  ['sucursal sin seleccionar', { branchId: null }, /Selecciona una sucursal/],
-  ['sucursal no disponible', { branchId: 'heredia' }, /Selecciona una sucursal/],
   ['MOQ inválido', { user: b2b, items: [{ ...wholesaleLine, quantity: 2 }] }, /cantidad mínima es 3/],
   ['stock insuficiente', { items: [{ ...retailLine, quantity: 6 }] }, /existencias suficientes/],
   ['inventario agotado', { items: [{ ...retailLine, inventoryStatus: 'out-of-stock', availableQuantity: 0 }] }, /existencias suficientes/],
@@ -225,6 +224,29 @@ for (const [label, options, message] of blockedCases) {
     assert.equal(typeof flow.review().onAdjustCart, 'function', 'Orienta a corregir en el carrito')
     flow.review().onAdjustCart()
     assert.ok(flow.events.includes('cart'))
+  })
+}
+
+for (const [label, branchId] of [['sin seleccionar', null], ['no disponible', 'heredia']]) {
+  test('Checkout pide la sucursal en la revisión sin volver al carrito ni repetir pasos: ' + label, async t => {
+    const requests = mockFetch(t, () => Response.json(serverOrder(b2c, [retailLine]), { status: 201 }))
+    const flow = checkout({ branchId })
+    assert.ok(flow.find('BranchSelector') !== undefined || nodes(flow.tree).some(node => node.type === 'BranchSelector'), 'El selector forma parte de la revisión')
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(requests.length, 0)
+    assert.equal(flow.step(), 'review')
+    assert.equal(flow.review().onAdjustCart, undefined, 'No envía al carrito')
+    assert.ok(!flow.events.includes('cart'))
+    assert.match(text(nodes(flow.tree).find(node => node.props?.role === 'alert')), /Selecciona una sucursal para confirmar la compra. Tus datos de comprador y entrega se conservan/)
+    runtime.setBranch('san_jose'); flow.render()
+    assert.equal(nodes(flow.tree).some(node => node.props?.role === 'alert' && /Selecciona una sucursal/.test(text(node))), false)
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0].body.branchId, 'san_jose')
+    assert.deepEqual(requests[0].body.buyer, { ...buyer, fullName: buyer.fullName.trim() })
+    assert.equal(flow.step(), 'payment')
+    // Con una Order creada el selector desaparece: la sucursal autoritativa es la de la Order.
+    assert.equal(nodes(flow.tree).some(node => node.type === 'BranchSelector'), false)
   })
 }
 

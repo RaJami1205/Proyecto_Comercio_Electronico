@@ -17,6 +17,7 @@ import type { TransactionState } from '../context/SessionContext'
 import type { BranchId } from '../types/branch'
 import { useCart } from '../hooks/useCart'
 import { useBranch } from '../hooks/useBranch'
+import BranchSelector from '../components/catalog/BranchSelector'
 import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalculations'
 import { commercialIssues, normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
 import { classifyOrderFailure, orderApi, OrderApiError, orderErrorMessage, type CheckoutRecovery } from '../services/orderApi'
@@ -77,6 +78,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const [differences, setDifferences] = useState<string[]>([])
   // Destino sugerido para corregir un rechazo concluyente sin reiniciar el Checkout.
   const [recovery, setRecovery] = useState<CheckoutRecovery>()
+  // Sin sucursal válida se pide elegirla en la revisión, sin volver al carrito ni repetir los pasos anteriores.
+  const [branchRequired, setBranchRequired] = useState(false)
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
   const [selectedPaymentScenario, setSelectedPaymentScenario] = useState<PaymentScenario | null>(null)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
@@ -187,10 +190,10 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       }
       const branchId = selectedBranchId
       if (!branchId || !branches.some(branch => branch.id === branchId && branch.available)) {
-        setError('Selecciona una sucursal válida en el carrito antes de confirmar la compra.')
-        setRecovery('cart')
+        setBranchRequired(true)
         return
       }
+      setBranchRequired(false)
       const issues = commercialIssues(items, purchaser.role, branchId)
       if (issues.length > 0) {
         setError('Ajusta tu carrito antes de continuar. ' + issues.map(issue => issue.message).join(' '))
@@ -441,6 +444,7 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
     branchName: reviewBranchId ? branches.find(branch => branch.id === reviewBranchId)?.name ?? reviewBranchId : undefined,
     confirmedByServer: Boolean(order?.commercial),
   } : undefined
+  const hasValidBranch = Boolean(selectedBranchId && branches.some(branch => branch.id === selectedBranchId && branch.available))
   const lockNavigation = isCreatingOrder || isProcessingPayment || Boolean(attempt) || differences.length > 0
   return (
     <div className={styles.page}>
@@ -497,6 +501,12 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
               </>
             ) : (
               <>
+                {currentStep === 'review' && !order && !attempt && !isCreatingOrder ? (
+                  <div data-checkout-branch>
+                    <BranchSelector />
+                    {branchRequired && !hasValidBranch ? <p role="alert">Selecciona una sucursal para confirmar la compra. Tus datos de comprador y entrega se conservan.</p> : null}
+                  </div>
+                ) : null}
                 <ReviewStep buyer={order?.buyer ?? data.buyer} delivery={order?.delivery ?? data.delivery}
                   items={displayItems} totals={order?.totals ?? calculateCartTotals(reviewItems)} order={order}
                   busy={isCreatingOrder} retryPending={Boolean(attempt)} invalid={!order && invalid} authorizationRejected={authorizationRejected} error={error}
