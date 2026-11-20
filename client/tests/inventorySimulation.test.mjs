@@ -45,15 +45,26 @@ async function load(t, user = admin) {
 }
 
 /** Monta el panel con un estado real de reducer, como lo hace App, y expone acciones de interacción. */
-function panelHarness(h, item = product()) {
+function panelHarness(h, item = product(), options = {}) {
   let state = h.sim.EMPTY_SIMULATION
+  let ownerId = 'admin'
   const actions = []
-  const dispatch = action => { actions.push(action); state = h.sim.inventorySimulationReducer(state, action) }
-  const render = () => deep(h.render('panel', h.Panel, { product: item, ownerId: 'admin', entries: h.sim.simulationsFor(state, 'admin', item.id), onSimulationChange: dispatch }))
+  const dispatch = action => {
+    actions.push(action)
+    state = h.sim.inventorySimulationReducer(state, options.transformAction?.(action) ?? action)
+  }
+  const render = () => deep(h.render('panel', h.Panel, { product: item, ownerId, entries: h.sim.simulationsFor(state, ownerId, item.id), onSimulationChange: dispatch }))
   const find = (tree, predicate) => nodes(tree).find(predicate)
   const button = (tree, label) => find(tree, node => node.type === 'button' && textOf(node).trim() === label)
   return {
     actions, render, button, get state() { return state },
+    setProduct(value) { item = value; return render() },
+    setSession(user) {
+      h.runtime.setUser(user)
+      ownerId = user?.id ?? ''
+      state = h.sim.inventorySimulationReducer(state, { type: 'reset-all' })
+      return render()
+    },
     selectBranch(id) { find(render(), node => node.type === 'select').props.onChange({ target: { value: id } }) },
     type(value) { find(render(), node => node.type === 'input').props.onChange({ target: { value } }) },
     review() { find(render(), node => node.type === 'form').props.onSubmit({ preventDefault() {} }) },
@@ -63,14 +74,162 @@ function panelHarness(h, item = product()) {
 
 test('validación: enteros no negativos, cero válido y rechazo de vacíos, decimales, signos y excesos', async t => {
   const { sim } = await load(t)
-  for (const [raw, value] of [['0', 0], ['25', 25], [' 7 ', 7], ['1000000', 1_000_000]]) assert.deepEqual(sim.validateSimulatedQuantity(raw), { ok: true, value })
+  for (const [raw, value] of [['0', 0], ['25', 25], [' 7 ', 7], ['1000000', 1_000_000], ['1000001', 1_000_001],
+    [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER]]) assert.deepEqual(sim.validateSimulatedQuantity(raw), { ok: true, value })
   for (const [raw, message] of [['', /Ingresa una cantidad/], ['   ', /Ingresa una cantidad/], ['-3', /negativa/], ['2.5', /entero/],
-    ['2,5', /entero/], ['abc', /solo dígitos/], ['1e3', /solo dígitos/], ['+4', /solo dígitos/], ['0x10', /solo dígitos/], ['1000001', /máxima/],
+    ['2,5', /entero/], ['abc', /solo dígitos/], ['1e3', /solo dígitos/], ['+4', /solo dígitos/], ['0x10', /solo dígitos/],
+    ['NaN', /solo dígitos/], ['Infinity', /solo dígitos/], ['1 000', /solo dígitos/], [String(Number.MAX_SAFE_INTEGER + 1), /máxima/],
     ['99999999999999999999', /máxima/]]) {
     const result = sim.validateSimulatedQuantity(raw)
     assert.equal(result.ok, false, raw)
     assert.match(result.message, message, raw)
   }
+})
+
+test('original válido: más de un millón, convencional, cero y máximo seguro se aplican realmente antes de anunciar éxito', async t => {
+  for (const original of [1_000_001, 18, 0, Number.MAX_SAFE_INTEGER]) {
+    await t.test(String(original), async child => {
+      const h = await load(child)
+      const item = product('ssd', [original, 2, 0, 8])
+      const snapshot = structuredClone(item)
+      const p = panelHarness(h, item)
+      p.selectBranch('san_jose'); p.type('25'); p.review()
+      assert.deepEqual(p.actions, [])
+      assert.equal(Object.keys(p.state.entries).length, 0)
+      assert.doesNotMatch(textOf(p.render()), /Simulación aplicada/)
+      p.click('Confirmar simulación')
+      const entry = p.state.entries[h.sim.simulationKey('ssd', 'san_jose')]
+      assert.deepEqual(entry, { productId: 'ssd', branchId: 'san_jose', originalQuantity: original, simulatedQuantity: 25, status: 'applied' })
+      assert.match(textOf(p.render()), /Simulación aplicada/)
+      assert.deepEqual(item, snapshot, 'El DTO congelado conserva todas sus referencias y valores originales')
+    })
+  }
+})
+
+test('original inválido: formulario y reducer rechazan desconocido, negativo, decimal, NaN, Infinity y cantidades inseguras', async t => {
+  for (const original of [null, undefined, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    await t.test(String(original), async child => {
+      const h = await load(child)
+      const p = panelHarness(h, product('ssd', [original, 2, 0, 8]))
+      p.selectBranch('san_jose'); p.type('25')
+      assert.equal(p.button(p.render(), 'Revisar simulación').props.disabled, true)
+      p.review()
+      assert.equal(nodes(p.render()).some(node => node.props?.role === 'alertdialog'), false)
+      assert.match(textOf(p.render()), /no está disponible/)
+      assert.doesNotMatch(textOf(p.render()), /Simulación aplicada/)
+      assert.deepEqual(p.actions, [])
+      const state = h.sim.inventorySimulationReducer(h.sim.EMPTY_SIMULATION, { type: 'apply', ownerId: 'admin', productId: 'ssd',
+        branchId: 'san_jose', originalQuantity: original, simulatedQuantity: 25 })
+      assert.equal(Object.keys(state.entries).length, 0)
+    })
+  }
+})
+
+test('propuesta: cero, más de un millón y máximo seguro; valores inválidos no producen estado ni feedback de éxito', async t => {
+  for (const [raw, value] of [['0', 0], ['1000001', 1_000_001], [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER]]) {
+    await t.test(raw, async child => {
+      const h = await load(child)
+      const p = panelHarness(h)
+      p.selectBranch('san_jose'); p.type(raw); p.review(); p.click('Confirmar simulación')
+      assert.equal(p.state.entries[h.sim.simulationKey('ssd', 'san_jose')].simulatedQuantity, value)
+      const tree = p.render()
+      assert.match(textOf(tree), /Simulación aplicada/)
+      assert.equal(nodes(tree).find(node => node.type === 'input').props.maxLength, String(Number.MAX_SAFE_INTEGER).length)
+    })
+  }
+  const h = await load(t)
+  const p = panelHarness(h)
+  p.selectBranch('san_jose')
+  for (const raw of ['', '  ', '-1', '1.5', 'NaN', 'Infinity', 'no numérico', String(Number.MAX_SAFE_INTEGER + 1)]) {
+    p.type(raw); p.review()
+    assert.ok(nodes(p.render()).some(node => node.props?.id === 'simulation-error'))
+    assert.equal(Object.keys(p.state.entries).length, 0)
+    assert.doesNotMatch(textOf(p.render()), /Simulación aplicada/)
+  }
+  for (const simulatedQuantity of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    const state = h.sim.inventorySimulationReducer(h.sim.EMPTY_SIMULATION, { type: 'apply', ownerId: 'admin', productId: 'ssd',
+      branchId: 'san_jose', originalQuantity: 18, simulatedQuantity })
+    assert.equal(Object.keys(state.entries).length, 0)
+  }
+})
+
+test('confirmación rechazada por el reducer conserva el estado anterior y muestra error, incluso si ya existían los mismos valores', async t => {
+  for (const previous of [false, true]) {
+    await t.test(previous ? 'con entrada previa idéntica' : 'sin entrada previa', async child => {
+      const h = await load(child)
+      let reject = false
+      const p = panelHarness(h, product(), { transformAction: action => reject ? { ...action, simulatedQuantity: NaN } : action })
+      if (previous) {
+        p.selectBranch('san_jose'); p.type('25'); p.review(); p.click('Confirmar simulación')
+        assert.match(textOf(p.render()), /Simulación aplicada/)
+      }
+      const before = p.state
+      reject = true
+      p.selectBranch('san_jose'); p.type('25'); p.review(); p.click('Confirmar simulación')
+      if (previous) assert.equal(p.state, before)
+      assert.deepEqual(p.state.entries, before.entries)
+      assert.match(textOf(p.render()), /No se pudo aplicar la simulación/)
+      assert.doesNotMatch(textOf(p.render()), /Simulación aplicada/)
+    })
+  }
+})
+
+test('confirmación: cancelar, cambiar producto/sucursal o cambiar el original invalida la propuesta sin éxito falso', async t => {
+  for (const change of ['cancelar', 'producto', 'sucursal', 'original']) {
+    await t.test(change, async child => {
+      const h = await load(child)
+      const p = panelHarness(h)
+      p.selectBranch('san_jose'); p.type('25')
+      const select = nodes(p.render()).find(node => node.type === 'select')
+      p.review()
+      const confirm = p.button(p.render(), 'Confirmar simulación').props.onClick
+      if (change === 'cancelar') p.click('Descartar cambio')
+      else if (change === 'producto') p.setProduct(product('other'))
+      else if (change === 'sucursal') select.props.onChange({ target: { value: 'heredia' } })
+      else p.setProduct(product('ssd', [17, 2, 0, 8]))
+      if (change === 'original') p.click('Confirmar simulación')
+      else confirm() // Callback anterior a la invalidación: no debe poder aplicar nada.
+      assert.equal(Object.keys(p.state.entries).length, 0)
+      assert.deepEqual(p.actions, [])
+      assert.doesNotMatch(textOf(p.render()), /Simulación aplicada/)
+      if (change === 'original') assert.match(textOf(p.render()), /inventario original cambió/)
+    })
+  }
+})
+
+test('confirmación: cambio de identidad, nuevo epoch o Logout descartan propuestas y callbacks de la Session anterior', async t => {
+  for (const user of [{ ...admin, id: 'admin-2' }, admin, null]) {
+    await t.test(user?.id ?? 'Logout', async child => {
+      const h = await load(child)
+      const p = panelHarness(h)
+      p.selectBranch('san_jose'); p.type('25'); p.review()
+      const confirm = p.button(p.render(), 'Confirmar simulación').props.onClick
+      p.setSession(user)
+      confirm()
+      assert.deepEqual(p.actions, [])
+      assert.equal(Object.keys(p.state.entries).length, 0)
+      assert.doesNotMatch(textOf(p.render()), /Simulación aplicada/)
+      assert.equal(nodes(p.render()).some(node => node.props?.role === 'alertdialog'), false)
+    })
+  }
+})
+
+test('confirmación repetida aplica una sola vez; desmontar el panel invalida el callback restante', async t => {
+  const h = await load(t)
+  const p = panelHarness(h)
+  p.selectBranch('san_jose'); p.type('25'); p.review()
+  const confirm = p.button(p.render(), 'Confirmar simulación').props.onClick
+  confirm(); confirm()
+  assert.equal(p.actions.length, 1)
+  assert.equal(Object.keys(p.state.entries).length, 1)
+  assert.equal(p.state.entries[h.sim.simulationKey('ssd', 'san_jose')].simulatedQuantity, 25)
+  assert.match(textOf(p.render()), /Simulación aplicada/)
+  p.selectBranch('san_jose'); p.type('30'); p.review()
+  const stale = p.button(p.render(), 'Confirmar simulación').props.onClick
+  h.runtime.unmount('panel')
+  stale()
+  assert.equal(p.actions.length, 1)
+  assert.equal(p.state.entries[h.sim.simulationKey('ssd', 'san_jose')].simulatedQuantity, 25)
 })
 
 test('reducer: incremento, reducción, cero, Reset y aislamiento por identidad sin mutar estados previos', async t => {
@@ -150,12 +309,107 @@ test('panel: reducción, cero como agotado, descartar pendiente y Reset por sucu
   assert.match(textOf(p.render()), /Se descartó la modificación pendiente/)
   assert.equal(p.state.entries[h.sim.simulationKey('ssd', 'san_jose')], undefined)
   nodes(p.render()).find(node => node.type === 'button' && node.props['aria-label'] === 'Restablecer Heredia al inventario original').props.onClick()
-  assert.match(textOf(p.render()), /Se restableció Heredia a su inventario original: 8 unidades/)
+  assert.match(textOf(p.render()), /Simulación descartada en Heredia\. Se muestra nuevamente el inventario consultado/)
   assert.deepEqual(h.sim.simulationsFor(p.state, 'admin', 'ssd').map(entry => entry.branchId), ['alajuela'])
   p.click('Restablecer simulación del producto')
   const tree = p.render()
   assert.deepEqual(h.sim.simulationsFor(p.state, 'admin', 'ssd'), [])
   assert.equal(nodes(tree).some(node => node.type === 'table'), false, 'Sin simulaciones vuelve a la vista original')
+})
+
+test('Reset: descarta 18 → 25 y muestra el DTO consultado, tanto si mantiene 18 como si ahora devuelve 7', async t => {
+  for (const quantity of [18, 7]) {
+    await t.test('inventario consultado ' + quantity, async child => {
+      const h = await load(child)
+      const calls = deferredFetch(child)
+      const { adminProductApi } = await h.load('services/adminProductApi')
+      const { default: Table } = await h.load('components/admin/BranchInventoryTable')
+      const original = product()
+      const p = panelHarness(h, original)
+      p.selectBranch('san_jose'); p.type('25'); p.review(); p.click('Confirmar simulación')
+      const key = h.sim.simulationKey('ssd', 'san_jose')
+      assert.equal(p.state.entries[key].originalQuantity, 18)
+      assert.equal(p.state.entries[key].simulatedQuantity, 25)
+
+      // Nueva consulta controlada: conserva la simulación, pero recibe el inventario vigente desde la API real.
+      const request = adminProductApi.get('admin', 'ssd')
+      assert.equal(calls.length, 1)
+      calls[0].resolve(Response.json(product('ssd', [quantity, 2, 0, 8])))
+      const updated = freeze(await request)
+      p.setProduct(updated)
+      const stockRow = () => {
+        const table = deep(Table({ branches: updated.inventory.branches, caption: 'Existencias consultadas',
+          simulated: h.sim.simulationsFor(p.state, 'admin', 'ssd') }))
+        return textOf(nodes(table).find(node => node.type === 'tr' && /San José/.test(textOf(node))))
+      }
+      assert.match(stockRow(), new RegExp(`San José\\s+${quantity} unidades\\s+Disponible\\s+25 unidades · simulado`))
+      const reset = nodes(p.render()).find(node => node.type === 'button'
+        && node.props['aria-label'] === 'Restablecer San José al inventario original').props.onClick
+      reset()
+      assert.equal(p.state.entries[key], undefined)
+      assert.equal(Object.keys(p.state.entries).length, 0)
+      assert.equal(stockRow(), `San José ${quantity} unidades Disponible`)
+      const feedback = textOf(nodes(p.render()).find(node => node.props?.role === 'status'))
+      assert.match(feedback, /Simulación descartada en San José/)
+      assert.match(feedback, /Se muestra nuevamente el inventario consultado/)
+      assert.doesNotMatch(feedback, /18|25|restaur|restablec|actualiz/i)
+      reset()
+      assert.equal(Object.keys(p.state.entries).length, 0, 'Reset repetido conserva el estado vacío')
+      assert.equal(stockRow(), `San José ${quantity} unidades Disponible`)
+      assert.equal(calls.length, 1, 'Reset no realiza nuevas consultas ni escrituras')
+      assert.equal(calls[0].options.method, 'GET')
+      assert.equal(calls[0].options.headers['X-CiberNova-User-Id'], 'admin')
+      assert.equal(original.inventory.branches[0].quantity, 18)
+      assert.equal(updated.inventory.branches[0].quantity, quantity)
+    })
+  }
+})
+
+test('Reset: aísla producto y sucursal, descarta propuestas pendientes y funciona después del cambio de Session', async t => {
+  const h = await load(t)
+  const calls = deferredFetch(t)
+  const p = panelHarness(h)
+  const apply = (branch, value) => { p.selectBranch(branch); p.type(value); p.review(); p.click('Confirmar simulación') }
+  const resetBranch = name => nodes(p.render()).find(node => node.type === 'button'
+    && node.props['aria-label'] === `Restablecer ${name} al inventario original`).props.onClick()
+  apply('san_jose', '25')
+  apply('heredia', '4')
+  const otherBranch = p.state.entries[h.sim.simulationKey('ssd', 'heredia')]
+  p.setProduct(product('other'))
+  apply('alajuela', '6')
+  const otherProduct = p.state.entries[h.sim.simulationKey('other', 'alajuela')]
+
+  p.setProduct(product('ssd', [7, 2, 0, 8]))
+  p.selectBranch('heredia')
+  resetBranch('San José')
+  assert.equal(p.state.entries[h.sim.simulationKey('ssd', 'san_jose')], undefined)
+  assert.equal(p.state.entries[h.sim.simulationKey('ssd', 'heredia')], otherBranch)
+  assert.equal(p.state.entries[h.sim.simulationKey('other', 'alajuela')], otherProduct)
+  assert.match(textOf(nodes(p.render()).find(node => node.props?.role === 'status')), /Simulación descartada en San José/)
+
+  p.type('5'); p.review()
+  const staleConfirm = p.button(p.render(), 'Confirmar simulación').props.onClick
+  p.click('Restablecer simulación del producto')
+  staleConfirm()
+  assert.deepEqual(h.sim.simulationsFor(p.state, 'admin', 'ssd'), [])
+  assert.equal(p.state.entries[h.sim.simulationKey('other', 'alajuela')], otherProduct)
+  assert.equal(nodes(p.render()).some(node => node.props?.role === 'alertdialog'), false)
+  assert.match(textOf(nodes(p.render()).find(node => node.props?.role === 'status')), /Se descartaron las simulaciones de este producto/)
+  assert.doesNotMatch(textOf(nodes(p.render()).find(node => node.props?.role === 'status')), /restaur|restablec|actualiz|unidades/i)
+
+  p.setProduct(product('other'))
+  resetBranch('Alajuela')
+  assert.equal(Object.keys(p.state.entries).length, 0)
+  apply('san_jose', '10')
+  p.setSession({ ...admin, id: 'admin-2' })
+  assert.equal(Object.keys(p.state.entries).length, 0)
+  assert.equal(nodes(p.render()).some(node => node.type === 'button' && textOf(node) === 'Restablecer'), false)
+  apply('san_jose', '12')
+  resetBranch('San José')
+  assert.equal(Object.keys(p.state.entries).length, 0)
+  assert.equal(p.state.ownerId, 'admin-2')
+  assert.match(textOf(nodes(p.render()).find(node => node.props?.role === 'status')), /Simulación descartada en San José/)
+  assert.equal(calls.length, 0, 'Todas las operaciones son locales')
 })
 
 test('panel: errores de validación e inventario original no disponible impiden aplicar', async t => {

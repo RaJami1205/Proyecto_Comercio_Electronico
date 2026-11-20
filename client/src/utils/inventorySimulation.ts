@@ -4,8 +4,8 @@
  */
 import { BRANCH_IDS, type BranchId } from '../types/branch'
 
-/** Límite demostrativo explícito: evita valores que no se representan con exactitud o no aportan a la demo. */
-export const MAX_SIMULATED_QUANTITY = 1_000_000
+/** Mismo rango de representación segura que el inventario autoritativo. */
+export const MAX_SIMULATED_QUANTITY = Number.MAX_SAFE_INTEGER
 
 export interface InventorySimulationEntry {
   productId: string
@@ -32,8 +32,17 @@ export const EMPTY_SIMULATION: InventorySimulationState = Object.freeze({ ownerI
 
 export const simulationKey = (productId: string, branchId: BranchId) => JSON.stringify([productId, branchId])
 
-const isQuantity = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= MAX_SIMULATED_QUANTITY
+/** Original y propuesta comparten representación numérica, sin coerciones ni límites demostrativos. */
+export const isInventoryQuantity = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+
+/** Guarda común para el formulario y el reducer; el original siempre procede del DTO del Server. */
+export function isValidSimulationApplication(action: Extract<InventorySimulationAction, { type: 'apply' }>): boolean {
+  return typeof action.ownerId === 'string' && action.ownerId.trim().length > 0
+    && typeof action.productId === 'string' && action.productId.trim().length > 0
+    && (BRANCH_IDS as readonly string[]).includes(action.branchId)
+    && isInventoryQuantity(action.originalQuantity) && isInventoryQuantity(action.simulatedQuantity)
+}
 
 export type QuantityValidation = { ok: true; value: number } | { ok: false; message: string }
 
@@ -45,7 +54,7 @@ export function validateSimulatedQuantity(raw: string): QuantityValidation {
   if (/^\d*[.,]\d+$/.test(text)) return { ok: false, message: 'La cantidad debe ser un número entero.' }
   if (!/^\d+$/.test(text)) return { ok: false, message: 'Ingresa solo dígitos, sin signos ni letras.' }
   const value = Number(text)
-  if (!isQuantity(value)) return { ok: false, message: `La cantidad máxima de simulación es ${MAX_SIMULATED_QUANTITY.toLocaleString('es-CR')} unidades.` }
+  if (!isInventoryQuantity(value)) return { ok: false, message: `La cantidad máxima de simulación es ${MAX_SIMULATED_QUANTITY.toLocaleString('es-CR')} unidades.` }
   return { ok: true, value }
 }
 
@@ -59,8 +68,7 @@ export function inventorySimulationReducer(state: InventorySimulationState, acti
   if (action.type === 'reset-all') return state.ownerId === null && !Object.keys(state.entries).length ? state : EMPTY_SIMULATION
   const current = forOwner(state, action.ownerId)
   if (action.type === 'apply') {
-    if (!action.productId || !(BRANCH_IDS as readonly string[]).includes(action.branchId)
-      || !isQuantity(action.originalQuantity) || !isQuantity(action.simulatedQuantity)) return current
+    if (!isValidSimulationApplication(action)) return current
     const entry: InventorySimulationEntry = { productId: action.productId, branchId: action.branchId,
       originalQuantity: action.originalQuantity, simulatedQuantity: action.simulatedQuantity, status: 'applied' }
     return { ownerId: current.ownerId, entries: { ...current.entries, [simulationKey(action.productId, action.branchId)]: entry } }

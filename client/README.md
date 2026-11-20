@@ -215,7 +215,7 @@ Validación: `npm run lint`, `npm run build` y `node --test tests/adminProducts.
 En **Admin Product Detail** (`#admin/products/<id>`), ADMIN dispone del panel **Inventory Simulation · Modo demostrativo**:
 
 1. Elegir una de las cuatro sucursales; se muestra la cantidad original recibida del Server.
-2. Escribir la nueva cantidad simulada: solo enteros entre 0 y 1 000 000. Cero representa una sucursal agotada; se rechazan vacíos, negativos, decimales, signos y letras.
+2. Escribir la nueva cantidad simulada: solo enteros entre 0 y `Number.MAX_SAFE_INTEGER` (9 007 199 254 740 991), el mismo rango de representación segura del inventario original. Cero representa una sucursal agotada; se rechazan vacíos, negativos, decimales, signos y letras.
 3. **Revisar simulación** muestra producto, sucursal, Original Stock y Simulated Stock propuesto (incremento, reducción y diferencia). La operación se aplica solo con **Confirmar simulación**; **Descartar cambio** la cancela.
 4. La tabla **Original vs Simulated** mantiene visibles ambos valores. **Restablecer** devuelve una sucursal a su valor original y **Restablecer simulación del producto** limpia todas sus sucursales. El listado de Admin Products marca los productos con **Simulación activa**.
 
