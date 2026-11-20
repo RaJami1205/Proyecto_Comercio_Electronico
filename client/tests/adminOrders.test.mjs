@@ -288,3 +288,113 @@ test('Admin Orders no persiste Orders, solo usa GET y reutiliza la presentación
   }
   assert.match(readFileSync(new URL('../src/pages/AdminOrdersPage.tsx', import.meta.url), 'utf8'), /styles\/admin\/AdminProducts\.module\.css/)
 })
+
+/** Snapshot autoritativo de GET /api/v2/orders/:id con contexto comercial B2B. */
+const orderDetail = (id, userId = 'user-b2b-01') => ({ id, orderNumber: 'CN-2026-' + id.toUpperCase(), createdAt: '2026-11-10T15:30:00.000Z',
+  buyer: { fullName: 'Persona Compradora', email: 'compras@example.com', phone: '88888888' },
+  delivery: { province: 'Heredia', canton: 'Central', address: 'Dirección de prueba' },
+  items: [{ productId: 'p1', name: 'Monitor', image: '', unitPrice: 8000, quantity: 10, lineSubtotal: 80000, minOrderQuantity: 5 }],
+  totals: { subtotal: 80000, tax: 10400, shipping: 0, total: 90400 }, currency: 'CRC', orderStatus: 'CONFIRMED', paymentStatus: 'APPROVED',
+  termsAcceptance: { accepted: true, version: '2026-10-lab4-v1', acceptedAt: '2026-11-10T15:30:00.000Z' }, contractVersion: 2,
+  commercial: { userId, customerRole: 'B2B', company: { id: 'company-demo-01', name: 'Distribuidora Demo' }, branchId: 'heredia',
+    pricingType: 'WHOLESALE', policyVersion: 'CIBERNOVA-COMMERCIAL-V1' } })
+
+async function setupDetail(t, user = admin) {
+  const h = await setup(t, user)
+  const { default: AdminOrderDetailPage } = await h.load('pages/AdminOrderDetailPage')
+  const shell = { onCatalogClick() {}, onPolicyNavigate() {}, onCartClick() {} }
+  let backs = 0
+  const detail = (orderId = 'o1') => {
+    const tree = h.render('detail-page', AdminOrderDetailPage, { ...shell, orderId, onBack: () => backs++ })
+    const node = nodes(tree).find(item => typeof item.type === 'function' && item.type.name === 'AdminOrderLoader')
+    return { tree, node, content: node ? h.render('AdminOrderLoader', node.type, node.props) : null }
+  }
+  return { ...h, detail, backs: () => backs }
+}
+
+test('detalle ADMIN: identidad del comprador y snapshot histórico de PostgreSQL con importes y Terms', async t => {
+  const h = await setupDetail(t)
+  const calls = deferredFetch(t)
+  let view = h.detail('o 1/x')
+  assert.match(textOf(view.content), /Cargando el detalle de la orden/)
+  assert.equal(calls[0].url, '/api/v2/admin/orders?orderId=o+1%2Fx&page=1&pageSize=20')
+  calls[0].resolve(ok(page([{ ...b2bSummary('o 1/x'), id: 'o 1/x' }])))
+  await flush()
+  assert.equal(calls[1].url, '/api/v2/orders/o%201%2Fx')
+  assert.equal(calls[1].options.method, 'GET')
+  calls[1].resolve(ok(orderDetail('o 1/x')))
+  await flush()
+  view = h.detail('o 1/x')
+  const text = textOf(deep(view.content))
+  for (const expected of [/User ID user-b2b-01/, /Nombre visible Compras Empresa Demo/, /Tipo de cliente B2B/, /Distribuidora Demo \(company-demo-01\)/,
+    /Sucursal Heredia/, /Persona Compradora/, /compras@example.com/, /Monitor/, /10/, /8\s?000/, /80\s?000/, /10\s?400/, /90\s?400/,
+    /Pedido: Confirmada/, /Pago aprobado/, /2026-10-lab4-v1/, /Mínimo de compra \(MOQ\): 5 unidades/, /solo consulta/]) assert.match(text, expected)
+  nodes(view.content).find(node => node.type === 'button' && textOf(node) === 'Volver a órdenes').props.onClick()
+  assert.equal(h.backs(), 1)
+  assert.equal(nodes(deep(view.content)).some(node => node.type === 'button' && /Pagar|Confirmar|Cambiar estado|Eliminar/.test(textOf(node))), false)
+})
+
+test('detalle: inexistente, propietario inconsistente, errores de consulta y acceso por rol', async t => {
+  const h = await setupDetail(t)
+  const calls = deferredFetch(t)
+  h.detail('missing')
+  calls[0].resolve(ok(page([])))
+  await flush()
+  assert.match(textOf(h.detail('missing').content), /Orden no encontrada/)
+  assert.equal(calls.length, 1, 'Sin resumen no consulta el detalle')
+
+  h.runtime.unmount('AdminOrderLoader')
+  h.detail('o1')
+  calls.at(-1).resolve(ok(page([b2bSummary('o1')])))
+  await flush()
+  calls.at(-1).resolve(ok(orderDetail('o1', 'another-owner')))
+  await flush()
+  let view = h.detail('o1')
+  assert.match(textOf(view.content), /No pudimos consultar el detalle de la orden/)
+  nodes(view.content).find(node => node.type === 'button' && textOf(node) === 'Reintentar').props.onClick()
+  view = h.detail('o1')
+  assert.match(textOf(view.content), /Cargando el detalle/)
+  calls.at(-1).resolve(fail(503, 'ORDER_QUERY_UNAVAILABLE'))
+  await flush()
+  assert.match(textOf(h.detail('o1').content), /No pudimos consultar el detalle/)
+
+  h.runtime.unmount('AdminOrderLoader')
+  h.detail('o2')
+  calls.at(-1).resolve(ok(page([b2bSummary('o2')])))
+  await flush()
+  calls.at(-1).resolve(fail(404, 'ORDER_NOT_FOUND'))
+  await flush()
+  assert.match(textOf(h.detail('o2').content), /Orden no encontrada/)
+
+  for (const user of [buyer, business, null]) {
+    h.runtime.setUser(user)
+    const before = calls.length
+    const restricted = h.detail('o3')
+    assert.equal(restricted.node, undefined)
+    assert.match(textOf(deep(restricted.tree)), user ? /Acceso no autorizado/ : /Selecciona una identidad/)
+    assert.equal(calls.length, before)
+  }
+})
+
+test('App: abre el detalle desde el listado con hash directo, recarga por hash y Back; compradores no acceden', async t => {
+  const h = await setupApp(t, admin, '#admin/orders')
+  let tree = h.app()
+  h.find(tree, 'AdminOrdersPage').props.onOpenOrder('order 1/x')
+  tree = h.app()
+  assert.equal(window.location.hash, '#admin/orders/order%201%2Fx')
+  assert.equal(h.find(tree, 'AdminOrderDetailPage').props.orderId, 'order 1/x')
+  h.find(tree, 'AdminOrderDetailPage').props.onBack()
+  tree = h.app()
+  assert.equal(window.location.hash, '#admin/orders')
+  assert.ok(h.find(tree, 'AdminOrdersPage'))
+  const reloaded = await setupApp(t, admin, '#admin/orders/abc%20123')
+  assert.equal(reloaded.find(reloaded.app(), 'AdminOrderDetailPage').props.orderId, 'abc 123')
+  for (const user of [buyer, business, null]) {
+    const denied = await setupApp(t, user, '#admin/orders/abc')
+    assert.equal(denied.find(denied.app(), 'AdminOrderDetailPage'), undefined)
+    assert.equal(window.location.hash, '#catalog')
+  }
+  // My Orders del comprador conserva su ruta propia.
+  const buyerApp = await setupApp(t, buyer, '#my-orders/abc')
+  assert.equal(buyerApp.find(buyerApp.app(), 'OrderDetailPage').props.orderId, 'abc')
+})

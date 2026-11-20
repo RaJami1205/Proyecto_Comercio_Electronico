@@ -69,9 +69,22 @@ export function adminOrderQuery(filters: AdminOrderFilters): string {
 }
 
 async function list(userId: string, filters: AdminOrderFilters, signal?: AbortSignal): Promise<AdminOrderPage> {
+  return request(userId, adminOrderQuery(filters), filters.page, signal)
+}
+
+/** Resumen administrativo de una Order (identidad del comprador); null si no existe en la persistencia. */
+async function getSummary(userId: string, orderId: string, signal?: AbortSignal): Promise<AdminOrderSummary | null> {
+  const query = new URLSearchParams({ orderId, page: '1', pageSize: String(ADMIN_ORDERS_PAGE_SIZE) })
+  const result = await request(userId, query.toString(), 1, signal)
+  const summary = result.orders[0]
+  if (result.orders.length > 1 || (summary && summary.id !== orderId)) throw new AdminOrderApiError('unavailable')
+  return summary ?? null
+}
+
+async function request(userId: string, query: string, page: number, signal?: AbortSignal): Promise<AdminOrderPage> {
   let response: Response
   try {
-    response = await fetch(API_BASE_URL + '/api/v2/admin/orders?' + adminOrderQuery(filters), {
+    response = await fetch(API_BASE_URL + '/api/v2/admin/orders?' + query, {
       method: 'GET', headers: { Accept: 'application/json', 'X-CiberNova-User-Id': userId }, signal,
     })
   } catch (error) {
@@ -80,7 +93,7 @@ async function list(userId: string, filters: AdminOrderFilters, signal?: AbortSi
   }
   const body: unknown = await response.json().catch(() => null)
   if (response.status === 200) {
-    if (!isPage(body, filters.page)) throw new AdminOrderApiError('unavailable')
+    if (!isPage(body, page)) throw new AdminOrderApiError('unavailable')
     return body
   }
   const code = isRecord(body) && isRecord(body.error) ? body.error.code : undefined
@@ -91,4 +104,4 @@ async function list(userId: string, filters: AdminOrderFilters, signal?: AbortSi
   throw new AdminOrderApiError('unavailable')
 }
 
-export const adminOrderApi = { list }
+export const adminOrderApi = { list, getSummary }
