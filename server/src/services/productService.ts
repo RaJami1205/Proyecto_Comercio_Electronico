@@ -98,7 +98,7 @@ export async function getCatalogPage(
       facets: response.facets ?? {},
     }
   } catch (error) {
-    console.error(`Error consultando el índice '${targetIndex}' en Algolia:`, error)
+    console.error('Falló la consulta de catálogo en getCatalogPage.')
     throw error
   }
 }

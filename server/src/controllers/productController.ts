@@ -121,7 +121,7 @@ export async function getProducts(
       facets: result.facets,
     })
   } catch (error) {
-    console.error('Error procesando consulta de catálogo en getProducts:', error)
+    console.error('Falló la consulta de catálogo en getProducts.')
     next(error)
   }
 }
@@ -148,7 +148,7 @@ export async function searchProductCatalog(
     const hits = await searchProducts(query)
     response.json({ products: hits.map(record => mapSearchProductRecord(record, user, branchId)) })
   } catch (error) {
-    console.error('Error procesando búsqueda en searchProductCatalog:', error)
+    console.error('Falló la búsqueda en searchProductCatalog.')
     next(error)
   }
 }
@@ -163,7 +163,7 @@ export async function getCategoryTreeHandler(
     const tree = await getCategoryTree()
     response.json({ tree })
   } catch (error) {
-    console.error('Error obteniendo árbol de categorías:', error)
+    console.error('Falló la consulta de categorías en getCategoryTreeHandler.')
     next(error)
   }
 }
