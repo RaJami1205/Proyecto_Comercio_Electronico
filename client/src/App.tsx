@@ -23,6 +23,7 @@ import MyOrdersPage from './pages/MyOrdersPage'
 import OrderDetailPage from './pages/OrderDetailPage'
 import AdminProductsPage from './pages/AdminProductsPage'
 import AdminProductDetailPage from './pages/AdminProductDetailPage'
+import AdminOrdersPage from './pages/AdminOrdersPage'
 import { trackEvent } from './services/analytics'
 import { EMPTY_SIMULATION, inventorySimulationReducer } from './utils/inventorySimulation'
 
@@ -320,6 +321,15 @@ function App() {
           onBack={() => navigate('admin-products')}
           simulation={inventorySimulation}
           onSimulationChange={dispatchInventorySimulation}
+          onCatalogClick={(hash) => navigate('catalog', hash)}
+          onPolicyNavigate={navigate}
+          onCartClick={openCartPreview}
+        />
+      ) : null}
+      {view === 'admin-orders' && canViewAdmin ? (
+        // CN-66: key por usuario y epoch; un cambio de Session descarta filtros, resultados y requests previos.
+        <AdminOrdersPage
+          key={`admin-orders:${session.user?.id ?? 'none'}:${session.epoch}`}
           onCatalogClick={(hash) => navigate('catalog', hash)}
           onPolicyNavigate={navigate}
           onCartClick={openCartPreview}

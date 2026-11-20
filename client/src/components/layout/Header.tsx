@@ -14,15 +14,16 @@ interface HeaderProps {
   analyticsView?: boolean
   ordersView?: boolean
   adminProductsView?: boolean
+  adminOrdersView?: boolean
   onCartClick?: () => void
   onCatalogClick?: () => void
 }
 
 /** Presenta los accesos según la vista activa usando totalUnits de useCart. */
-function Header({ cartView = false, checkoutView = false, policyView = false, analyticsView = false, ordersView = false, adminProductsView = false, onCartClick, onCatalogClick }: HeaderProps) {
+function Header({ cartView = false, checkoutView = false, policyView = false, analyticsView = false, ordersView = false, adminProductsView = false, adminOrdersView = false, onCartClick, onCatalogClick }: HeaderProps) {
   const { totalUnits } = useCart()
   const session = useSession()
-  const outsideCatalog = cartView || checkoutView || policyView || analyticsView || ordersView || adminProductsView
+  const outsideCatalog = cartView || checkoutView || policyView || analyticsView || ordersView || adminProductsView || adminOrdersView
 
   /** Permite regresar al catálogo mediante el callback de navegación o un ancla. */
   function handleCatalogNavigation(event: MouseEvent<HTMLAnchorElement>) {
@@ -48,6 +49,12 @@ function Header({ cartView = false, checkoutView = false, policyView = false, an
       <li>
         <a href="#admin/products" aria-current={adminProductsView ? 'page' : undefined}>
           Productos
+        </a>
+      </li>
+      {/* CN-66: consulta global Read-Only de Orders; el Server exige orders:read:all en cada request. */}
+      <li>
+        <a href="#admin/orders" aria-current={adminOrdersView ? 'page' : undefined}>
+          Órdenes
         </a>
       </li>
     </>
