@@ -246,6 +246,7 @@ Validación: `npm run lint`, `npm run build` y `node --test tests/adminOrders.te
 
 - **Invitado:** sin Session se puede completar el Checkout como invitado B2C a precio Retail. `CheckoutPage` crea un ID `guest-<UUID>` en memoria al confirmar la primera compra y lo reutiliza para el pago y el Retry. `orderApi` y `paymentApi` lo envían como `X-CiberNova-Guest-Id` (`utils/guestIdentity.ts`).
   - El invitado compra el carrito anónimo, nunca uno asignado a otra identidad, y ese carrito se limpia tras el pago aprobado.
+  - Un carrito guardado vacío de otra identidad se libera al cerrar sesión o recargar, para que el visitante agregue productos. Si tiene productos se conserva protegido, y la página del carrito ofrece vaciarlo y comprar como invitado con confirmación explícita.
   - Las Orders de invitado no aparecen en My Orders, y recargar pierde el acceso a ellas.
   - ADMIN sigue sin poder comprar.
 - **Sucursal:** si al confirmar no hay una sucursal válida, la revisión muestra el selector de sucursal en lugar de volver al carrito. Los datos de comprador y entrega se conservan.
