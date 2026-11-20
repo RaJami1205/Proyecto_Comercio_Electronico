@@ -9,6 +9,7 @@ import usersRouter from './routes/users.js'
 import sessionRouter from './routes/session.js'
 import branchesRouter from './routes/branches.js'
 import adminProductsRouter from './routes/adminProducts.js'
+import adminOrdersRouter from './routes/adminOrders.js'
 import { CatalogError } from './domain/catalogError.js'
 import { OrderError } from './domain/orderError.js'
 import { OrderPersistenceError } from './domain/orderPersistenceError.js'
@@ -32,6 +33,7 @@ app.use('/api/branches', branchesRouter)
 app.use('/api/orders', authorizeRoles('B2C', 'B2B'), express.json(), ordersRouter)
 app.use('/api/v2/orders', authorizeIdentity(), ordersV2Router)
 app.use('/api/v2/admin/products', authorizeIdentity(), adminProductsRouter)
+app.use('/api/v2/admin/orders', authorizeIdentity(), adminOrdersRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/session', express.json(), sessionRouter)
 
@@ -65,7 +67,8 @@ app.use(
       return
     }
     if (_request.path === '/api/orders' || _request.path.startsWith('/api/orders/')
-      || _request.path === '/api/v2/orders' || _request.path.startsWith('/api/v2/orders/')) {
+      || _request.path === '/api/v2/orders' || _request.path.startsWith('/api/v2/orders/')
+      || _request.path === '/api/v2/admin/orders' || _request.path.startsWith('/api/v2/admin/orders/')) {
       let status = 500
       let body: ApiErrorResponse = { error: { code: 'UNEXPECTED_ERROR', message: 'No se pudo completar la solicitud.' } }
       if (error instanceof OrderError || error instanceof UserError) {

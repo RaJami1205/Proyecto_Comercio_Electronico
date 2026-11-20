@@ -2,6 +2,8 @@
 import { randomUUID } from 'node:crypto'
 import type { Order } from '../types/order.js'
 import type { ResolvedUser } from '../types/user.js'
+import type { AdminOrderEntry, AdminOrderFilters, AdminOrderOwner, AdminOrderSort } from '../types/adminOrder.js'
+import { matchesAdminFilters } from '../domain/adminOrderQuery.js'
 import { orderIdentity, requireCompatible, requireOrderOwner } from '../domain/orderIdentity.js'
 
 export interface OrderCreationContext {
@@ -26,6 +28,12 @@ export function compareHistoryOrder(first: Pick<Order, 'createdAt' | 'id'>, seco
   return first.id < second.id ? -1 : first.id > second.id ? 1 : 0
 }
 
+/** Página global administrativa (CN-66); total cuenta todas las Orders que cumplen los filtros. */
+export interface AdminOrdersPageResult {
+  entries: AdminOrderEntry[]
+  total: number
+}
+
 export interface OrderStore {
   createOrReplay(context: OrderCreationContext, build: OrderBuilder): Promise<Order>
   findById(id: string): Promise<Order | undefined>
@@ -34,6 +42,12 @@ export interface OrderStore {
   listByOwner(ownerId: string, offset: number, limit: number): Promise<OwnerOrdersPage>
   findByIdempotencyKey(key: string, ownerId: string): Promise<Order | undefined>
   update(order: Order, ownerId: string): Promise<Order | undefined>
+  /** CN-66: consulta global Read-Only; filtra, ordena por createdAt y pagina en la persistencia. */
+  listAll(filters: AdminOrderFilters, sort: AdminOrderSort, offset: number, limit: number): Promise<AdminOrdersPageResult>
+  /** CN-66: estado actual de Orders identificadas por el índice; omite IDs inexistentes y conserva el orden recibido. */
+  findEntriesByIds(ids: string[]): Promise<AdminOrderEntry[]>
+  /** CN-66: Orders con revisiones pendientes de indexar; null si el almacenamiento no las registra. */
+  countPendingIndex(): Promise<number | null>
 }
 
 /** Conserva copias defensivas y fixtures legacy sin propietario; nunca asigna estos últimos a otro usuario. */
@@ -112,6 +126,28 @@ export class InMemoryOrderStore implements OrderStore {
     this.orders.set(order.id, { ...entry, snapshot: structuredClone(order) })
     return structuredClone(order)
   }
+
+  /** Copia defensiva con la identidad registrada; los fixtures legacy sin propietario se informan con userId null. */
+  private entry(value: { snapshot: Order; ownerId?: string; user?: ResolvedUser }): AdminOrderEntry {
+    const role = value.user?.role ?? value.snapshot.commercial?.customerRole
+    const owner: AdminOrderOwner = { userId: value.ownerId ?? null, displayName: value.user?.displayName ?? null,
+      customerRole: role === 'B2C' || role === 'B2B' ? role : null,
+      ...(value.user?.role === 'B2B' ? { company: { ...value.user.company } } : {}) }
+    return { order: structuredClone(value.snapshot), owner }
+  }
+
+  async listAll(filters: AdminOrderFilters, sort: AdminOrderSort, offset: number, limit: number): Promise<AdminOrdersPageResult> {
+    const matching = [...this.orders.values()].map(value => this.entry(value)).filter(entry => matchesAdminFilters(entry, filters))
+    matching.sort((first, second) => sort === 'oldest' ? -compareHistoryOrder(first.order, second.order) || (first.order.id < second.order.id ? -1 : 1)
+      : compareHistoryOrder(first.order, second.order))
+    return { entries: matching.slice(offset, offset + limit), total: matching.length }
+  }
+
+  async findEntriesByIds(ids: string[]): Promise<AdminOrderEntry[]> {
+    return ids.flatMap(id => { const value = this.orders.get(id); return value ? [this.entry(value)] : [] })
+  }
+
+  async countPendingIndex(): Promise<number | null> { return null }
 }
 
 /** No depende de DATABASE_URL ni importa la implementación PostgreSQL. */
