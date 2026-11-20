@@ -139,3 +139,59 @@
   .branches th, .branches td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.2rem 0; border: 0; }
   .branches td::before { content: attr(data-label); color: var(--color-text-muted); font-weight: 700; }
 }
+
+/* Inventory Simulation (CN-68): borde punteado y etiqueta propia para distinguir datos demostrativos de los reales. */
+.simulation {
+  margin-top: 1.25rem;
+  padding: clamp(1rem, 3vw, 1.4rem);
+  border: 2px dashed #f0c96b;
+  border-radius: var(--border-radius);
+  background: linear-gradient(135deg, #fffdf6, #fff8e6);
+}
+.simulation h2 { margin: 0 0 0.5rem; color: var(--color-text-primary); font-size: 1.15rem; }
+.simulation h3 { margin: 0 0 0.75rem; color: var(--color-text-primary); font-size: 1rem; }
+.simulationTag {
+  display: inline-block;
+  margin: 0 0 0.6rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  background: #6b4a00;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.simulationForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  align-items: end;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+.simulationForm label { display: grid; gap: 0.35rem; min-width: 0; color: var(--color-text-muted); font-size: 0.85rem; font-weight: 700; }
+.simulationForm input, .simulationForm select {
+  min-height: 44px;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-weight: 400;
+}
+.simulationForm input[aria-invalid="true"] { border-color: #a33442; }
+.originalQuantity { grid-column: 1 / -1; margin: 0; color: var(--color-text-primary); }
+.fieldError { grid-column: 1 / -1; margin: 0; color: #8a1c2b; font-weight: 700; }
+.confirmation { margin-top: 1rem; padding: 1rem; border: 1px solid #f0c96b; border-radius: 14px; background: #fff; }
+.confirmation .actions { margin: 1rem 0 0; }
+.simulationFeedback { margin: 1rem 0 0; padding: 0.75rem 1rem; border-left: 4px solid #6b4a00; border-radius: 10px; background: #fff; color: var(--color-text-primary); }
+.comparison { margin-top: 1.25rem; }
+.comparison .actions { margin: 1rem 0 0; }
+.comparison td .secondaryButton { min-height: 36px; padding: 0.35rem 0.8rem; }
+
+@media (max-width: 600px) {
+  .simulationForm button, .confirmation .actions > button, .comparison .actions > button { width: 100%; }
+}

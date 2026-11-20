@@ -209,3 +209,21 @@ ADMIN ve en el Header el enlace **Productos** (`#admin/products`). La página co
 - **Responsive:** dos columnas de tarjetas en Desktop, una en Tablet (≤ 960 px) y, en Mobile (≤ 600 px), la tabla de sucursales se presenta como filas etiquetadas.
 
 Validación: `npm run lint`, `npm run build` y `node --test tests/adminProducts.test.mjs`.
+
+## Inventory Simulation (CN-68)
+
+En **Admin Product Detail** (`#admin/products/<id>`), ADMIN dispone del panel **Inventory Simulation · Modo demostrativo**:
+
+1. Elegir una de las cuatro sucursales; se muestra la cantidad original recibida del Server.
+2. Escribir la nueva cantidad simulada: solo enteros entre 0 y `Number.MAX_SAFE_INTEGER` (9 007 199 254 740 991), el mismo rango de representación segura del inventario original. Cero representa una sucursal agotada; se rechazan vacíos, negativos, decimales, signos y letras.
+3. **Revisar simulación** muestra producto, sucursal, Original Stock y Simulated Stock propuesto (incremento, reducción y diferencia). La operación se aplica solo con **Confirmar simulación**; **Descartar cambio** la cancela.
+4. La tabla **Original vs Simulated** mantiene visibles ambos valores. **Restablecer** devuelve una sucursal a su valor original y **Restablecer simulación del producto** limpia todas sus sucursales. El listado de Admin Products marca los productos con **Simulación activa**.
+
+**La modificación es exclusivamente demostrativa.** No existe endpoint de escritura y no se modifica ningún registro de Algolia ni de PostgreSQL. El estado vive en un reducer de `App` (`utils/inventorySimulation.ts`) separado de los DTO del Server, que nunca se mutan; las columnas Existencias y Estado conservan siempre el dato autoritativo.
+
+- Solo en memoria: sin `localStorage`, `sessionStorage`, IndexedDB ni cookies. Recargar la aplicación borra las simulaciones.
+- Cada simulación pertenece a la identidad que la creó. Cambiar de usuario o cerrar sesión las descarta, y otra Session nunca las hereda.
+- Solo ADMIN accede: App revoca las vistas administrativas para B2C, B2B y visitantes sin Session, y el Server mantiene RBAC en la consulta del producto.
+- El catálogo público, Quick View, selección de sucursal, Cart, Checkout, creación de Orders, Payment y el historial de Orders no importan ni reciben este estado; siguen usando únicamente los datos del Server.
+
+Validación: `npm run lint`, `npm run build` y `node --test tests/inventorySimulation.test.mjs`.

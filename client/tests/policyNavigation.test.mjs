@@ -21,6 +21,7 @@ const runtimeUrl = dataUrl(`
     return [slots[index], value=>{slots[index]=typeof value==='function'?value(slots[index]):value}];
   }
   export function useRef(initial) { const [ref]=useState(()=>({current:initial})); return ref; }
+  export function useReducer(reducer, initial) { const [state,set]=useState(initial); return [state, action=>set(value=>reducer(value,action))]; }
   export function useCallback(callback) { return callback; }
   export function useId() { return 'test-id-'+ids++; }
   export function useEffect(effect,deps) {
