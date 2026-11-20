@@ -10,7 +10,10 @@ const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).t
 const runtimeUrl = dataUrl(`
   let slots = [], cursor = 0;
   export let cart = []; export let cleanupCount = 0;
-  export function reset(items) { slots = []; cursor = 0; cart = items; cleanupCount = 0; }
+  export let session = {user:{id:"test-user",role:"B2C"},epoch:0};
+  export function useSession() { return session; }
+  export function setUser(user) { session = {user,epoch:session.epoch+1}; }
+  export function reset(items) { slots = []; cursor = 0; cart = items; cleanupCount = 0; session = {user:{id:"test-user",role:"B2C"},epoch:0}; }
   export function renderStart() { cursor = 0; }
   export function useState(initial) {
     const index = cursor++;
@@ -19,7 +22,8 @@ const runtimeUrl = dataUrl(`
   }
   export function useRef(initial) { const [value] = useState(() => ({current:initial})); return value; }
   export function useEffect() {}
-  export function useCart() { return {items:cart, cleanupPurchase: () => { cleanupCount++; throw new Error('No se permite cleanup automático'); }}; }
+  export function useLayoutEffect(callback) { callback(); }
+  export function useCart() { return {items:cart, ownerId:'test-user', cleanupPurchase: () => { cleanupCount++; throw new Error('No se permite cleanup automático'); }}; }
   export const Fragment = 'Fragment';
   export function jsx(type, props) { return {type, props}; }
   export const jsxs = jsx;
@@ -29,7 +33,8 @@ const analyticsUrl = dataUrl('export function trackEvent() {}')
 const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
-  ['../hooks/useSession', dataUrl('export function useSession() {return {user:{id:"test-user"}}}')],
+  ['../hooks/useSession', runtimeUrl],
+  ['../hooks/useBranch', dataUrl('export function useBranch() {return {selectedBranchId:"san_jose",branches:[{id:"san_jose",name:"San José",available:true}]}}')],
   ['../services/analytics', analyticsUrl],
 ])
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
@@ -56,9 +61,11 @@ modules.set('../utils/cartCalculations', calculationsUrl)
 modules.set('../utils/checkoutValidation', compile('utils/checkoutValidation.ts'))
 const differencesUrl = compile('utils/orderReviewDifferences.ts')
 modules.set('../utils/orderReviewDifferences', differencesUrl)
+modules.set('../utils/authorizationErrors', compile('utils/authorizationErrors.ts'))
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 modules.set('../services/paymentApi', compile('services/paymentApi.ts'))
+modules.set('../services/orderHistoryApi', compile('services/orderHistoryApi.ts'))
 modules.set('./OrderConfirmationPage', dataUrl("export default 'OrderConfirmationPage'"))
 const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx'))
 const { default: ReviewStep } = await import(compile('components/checkout/ReviewStep.tsx'))
@@ -71,7 +78,8 @@ const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quant
 function order() {
   return { termsAcceptance:{accepted:true,version:'2026-10-lab4-v1',acceptedAt:'2026-10-12T00:00:00.000Z'}, id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
     items:[{productId:'p', name:'Producto', image:'', unitPrice:10000, quantity:1, lineSubtotal:10000}],
-    totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING' }
+    totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING', contractVersion:2,
+    commercial:{userId:'test-user', customerRole:'B2C', branchId:'san_jose', pricingType:'RETAIL', policyVersion:'CIBERNOVA-COMMERCIAL-V1'} }
 }
 /** Recorre el árbol JSX simulado y devuelve sus nodos para inspeccionar propiedades. */
 function nodes(tree) {
@@ -104,6 +112,59 @@ function checkout({ acceptTerms = true } = {}) {
   if (acceptTerms) { find('ReviewStep').onTermsAcceptedChange(true); render() }
   return { render, find, review: () => find('ReviewStep'), payment: () => find('PaymentStep'), step: () => find('CheckoutStepper').currentStep, events }
 }
+
+for (const code of ['FORBIDDEN', 'USER_DISABLED', 'ORDER_NOT_FOUND']) {
+  test('RBAC rechazo nuevo de creación no permite generar otro intento ' + code, async t => {
+    const requests = []
+    t.mock.method(globalThis, 'fetch', async (_, options) => {
+      requests.push(options)
+      return Response.json({ error: { code } }, { status: code === 'ORDER_NOT_FOUND' ? 404 : 403 })
+    })
+    const flow = checkout()
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(flow.review().retryPending, false)
+    assert.equal(flow.review().invalid, false)
+    assert.equal(flow.review().authorizationRejected, true)
+    const renderedReview = ReviewStep(flow.review())
+    assert.equal(text(renderedReview).includes('Completa los datos del comprador'), false)
+    assert.ok(nodes(renderedReview).some(node => node.type === 'button' && node.props.disabled && text(node).includes('Confirmar y continuar')))
+    await flow.review().onConfirm()
+    assert.equal(requests.length, 1)
+    assert.equal(runtime.cleanupCount, 0)
+  })
+
+  test('RBAC rechazo después de creación incierta conserva key y permite recuperar el resultado ' + code, async t => {
+    const requests = []
+    t.mock.method(globalThis, 'fetch', async (_, options) => {
+      requests.push(options)
+      if (requests.length === 1) throw new TypeError('Network failure')
+      if (requests.length === 2) return Response.json({ error: { code } }, { status: code === 'ORDER_NOT_FOUND' ? 404 : 403 })
+      return Response.json(order(), { status: 201 })
+    })
+    const flow = checkout()
+    await flow.review().onConfirm(); flow.render()
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(flow.review().retryPending, true)
+    await flow.review().onConfirm(); flow.render()
+    assert.equal(flow.step(), 'payment')
+    assert.equal(new Set(requests.map(request => request.body)).size, 1)
+    assert.ok(requests.every(request => request.headers['X-CiberNova-User-Id'] === 'test-user'))
+  })
+}
+
+for (const nextUser of [null, { id: 'other', role: 'B2C' }]) test('RBAC descarta respuesta de creación de Session anterior ' + nextUser?.id, async t => {
+  let release
+  const response = new Promise(resolve => { release = resolve })
+  t.mock.method(globalThis, 'fetch', () => response)
+  const flow = checkout()
+  const pending = flow.review().onConfirm()
+  runtime.setUser(nextUser); flow.render()
+  release(Response.json(order(), { status: 201 }))
+  await pending; flow.render()
+  assert.equal(flow.events.includes('created'), false)
+  assert.equal(flow.step(), 'review')
+  assert.equal(runtime.cleanupCount, 0)
+})
 /** Ejecuta el caso con un responder simulado, captura sus solicitudes y restaura fetch al terminar. */
 async function withFetch(responder, run) {
   const original = globalThis.fetch

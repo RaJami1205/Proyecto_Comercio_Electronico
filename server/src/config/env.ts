@@ -22,7 +22,22 @@ function resolvePort(value: string | undefined): number {
   return Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_PORT
 }
 
+const commerceStoreMode = process.env.COMMERCE_STORE_MODE?.trim() || 'memory'
+if (commerceStoreMode !== 'memory' && commerceStoreMode !== 'postgresql') {
+  throw new ConfigurationError('COMMERCE_STORE_MODE debe ser memory o postgresql.')
+}
+
+// El corte de Checkout es independiente del almacenamiento y solo se configura en Server.
+const orderCreationMode = process.env.ORDER_CREATION_MODE?.trim() || 'v1-compatible'
+if (orderCreationMode !== 'v1-compatible' && orderCreationMode !== 'v2-only') {
+  throw new ConfigurationError('ORDER_CREATION_MODE debe ser v1-compatible o v2-only.')
+}
+
 export const serverConfig = {
+  commerceStoreMode,
+  orderCreationMode,
+  // Opt-in: una pasada acotada de Reconciliation al iniciar recupera revisiones pendientes tras un reinicio.
+  ordersIndexReconcileOnStart: process.env.ALGOLIA_ORDERS_RECONCILE_ON_START?.trim() === 'true',
   port: resolvePort(process.env.PORT),
   clientOrigin: process.env.CLIENT_ORIGIN?.trim() || DEFAULT_CLIENT_ORIGIN,
 }
@@ -60,4 +75,26 @@ export function getAlgoliaUsersConfig() {
   }
 
   return { indexName }
+}
+
+/** Presencia de nombre y clave del índice orders; sin ellos la proyección queda pendiente en PostgreSQL. */
+export function isAlgoliaOrdersIndexConfigured(): boolean {
+  return Boolean(process.env.ALGOLIA_ORDERS_INDEX_NAME?.trim() && process.env.ALGOLIA_ORDERS_API_KEY?.trim())
+}
+
+/** Índice orders con clave propia, separada del catálogo, users y de credenciales administrativas. */
+export function getAlgoliaOrdersConfig() {
+  const { appId, indexName: productIndexName } = getAlgoliaConfig()
+  const indexName = process.env.ALGOLIA_ORDERS_INDEX_NAME?.trim()
+  const apiKey = process.env.ALGOLIA_ORDERS_API_KEY?.trim()
+  const missingVariables = [!indexName && 'ALGOLIA_ORDERS_INDEX_NAME', !apiKey && 'ALGOLIA_ORDERS_API_KEY'].filter(Boolean)
+
+  if (!indexName || !apiKey) {
+    throw new ConfigurationError(`Faltan variables de entorno del servidor: ${missingVariables.join(', ')}.`)
+  }
+  if (collidesWithProductIndex(indexName, productIndexName) || indexName === process.env.ALGOLIA_USERS_INDEX_NAME?.trim()) {
+    throw new ConfigurationError('ALGOLIA_ORDERS_INDEX_NAME no puede apuntar a los índices de productos, sus réplicas ni users.')
+  }
+
+  return { appId, apiKey, indexName }
 }

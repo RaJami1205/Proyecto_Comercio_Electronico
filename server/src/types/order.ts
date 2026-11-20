@@ -1,5 +1,8 @@
 /** Define solicitudes de creación y snapshots de Order con productos, importes y estados transaccionales. */
 import type { BuyerInfo, DeliveryInfo } from './checkout.js'
+import type { BranchId } from './branch.js'
+import type { Company, UserRole } from './user.js'
+import type { PricingType } from './commercial.js'
 
 export interface CreateOrderItemRequest {
   productId: string
@@ -19,6 +22,9 @@ export interface CreateOrderRequest {
   items: CreateOrderItemRequest[]
   idempotencyKey: string
   termsAcceptance: TermsAcceptanceRequest
+  /** Requerido por V2; V1 se conserva solo para validación/replay histórico. */
+  branchId?: BranchId
+  financialExpectation?: Partial<OrderTotals>
 }
 
 /** Snapshot de producto con precio y subtotal determinados por el Server. */
@@ -29,6 +35,8 @@ export interface OrderItem {
   unitPrice: number
   quantity: number
   lineSubtotal: number
+  /** Condición comercial histórica por producto; ausente en Orders V1. */
+  minOrderQuantity?: number
 }
 
 export interface OrderTotals {
@@ -68,4 +76,38 @@ export interface Order {
   orderStatus: OrderStatus
   paymentStatus: PaymentStatus
   termsAcceptance: OrderTermsAcceptance
+  contractVersion?: 1 | 2
+  commercial?: OrderCommercialSnapshot
+}
+
+export interface OrderCommercialSnapshot {
+  userId: string
+  customerRole: Extract<UserRole, 'B2C' | 'B2B'>
+  company?: Company
+  branchId: BranchId
+  pricingType: PricingType
+  policyVersion: string
+}
+
+/** Fila resumida de Order History (CN-64): identifica la Order sin exponer Buyer, Delivery ni productos. */
+export interface OrderSummary {
+  id: string
+  orderNumber: string
+  createdAt: string
+  contractVersion: 1 | 2
+  /** Las Orders V1 no registraban sucursal; se informa null en lugar de inventar una. */
+  branchId: BranchId | null
+  total: number
+  currency: 'CRC'
+  orderStatus: OrderStatus
+  paymentStatus: PaymentStatus
+}
+
+/** Página del historial propio, ordenada por createdAt descendente e id ascendente. */
+export interface OrderHistoryPage {
+  orders: OrderSummary[]
+  page: number
+  pageSize: number
+  total: number
+  hasMore: boolean
 }

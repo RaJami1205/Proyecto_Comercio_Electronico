@@ -12,15 +12,18 @@ interface HeaderProps {
   checkoutView?: boolean
   policyView?: boolean
   analyticsView?: boolean
+  ordersView?: boolean
+  adminProductsView?: boolean
+  adminOrdersView?: boolean
   onCartClick?: () => void
   onCatalogClick?: () => void
 }
 
 /** Presenta los accesos según la vista activa usando totalUnits de useCart. */
-function Header({ cartView = false, checkoutView = false, policyView = false, analyticsView = false, onCartClick, onCatalogClick }: HeaderProps) {
+function Header({ cartView = false, checkoutView = false, policyView = false, analyticsView = false, ordersView = false, adminProductsView = false, adminOrdersView = false, onCartClick, onCatalogClick }: HeaderProps) {
   const { totalUnits } = useCart()
   const session = useSession()
-  const outsideCatalog = cartView || checkoutView || policyView || analyticsView
+  const outsideCatalog = cartView || checkoutView || policyView || analyticsView || ordersView || adminProductsView || adminOrdersView
 
   /** Permite regresar al catálogo mediante el callback de navegación o un ancla. */
   function handleCatalogNavigation(event: MouseEvent<HTMLAnchorElement>) {
@@ -36,9 +39,30 @@ function Header({ cartView = false, checkoutView = false, policyView = false, an
 
   // Hash nativo: App resuelve #analytics con su listener de History/hashchange, incluido Back/Forward.
   const activityLink = session.user?.role === 'ADMIN' ? (
+    <>
+      <li>
+        <a href="#analytics" aria-current={analyticsView ? 'page' : undefined}>
+          Analytics
+        </a>
+      </li>
+      {/* CN-67: consulta Read-Only de productos e inventario; App revoca la vista si la Session deja de ser ADMIN. */}
+      <li>
+        <a href="#admin/products" aria-current={adminProductsView ? 'page' : undefined}>
+          Productos
+        </a>
+      </li>
+      {/* CN-66: consulta global Read-Only de Orders; el Server exige orders:read:all en cada request. */}
+      <li>
+        <a href="#admin/orders" aria-current={adminOrdersView ? 'page' : undefined}>
+          Órdenes
+        </a>
+      </li>
+    </>
+  ) : session.user ? (
+    // CN-64: compradores B2C/B2B acceden a su historial; App resuelve #my-orders igual que #analytics.
     <li>
-      <a href="#analytics" aria-current={analyticsView ? 'page' : undefined}>
-        Analytics
+      <a href="#my-orders" aria-current={ordersView ? 'page' : undefined}>
+        Mis órdenes
       </a>
     </li>
   ) : null
@@ -78,11 +102,6 @@ function Header({ cartView = false, checkoutView = false, policyView = false, an
                   <a href="#catalog" aria-current="page" onClick={handleAnchorNavigation}>
                     Catálogo
                   </a>
-                </li>
-                <li>
-                  <span className={styles.pending} title="Disponible próximamente">
-                    Ofertas
-                  </span>
                 </li>
                 <li>
                   <a href="#about" onClick={handleAnchorNavigation}>

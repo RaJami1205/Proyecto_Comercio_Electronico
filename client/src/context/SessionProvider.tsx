@@ -16,14 +16,14 @@ function transitionReason(state: SessionState): string | null {
 function purchaseReason(state: SessionState, conflict: boolean): string | null {
   if (conflict) return 'Hay un cambio de carrito de otra pestaña pendiente de revisión.'
   if (state.dialog || state.resolving) return 'Completa o cancela el cambio de sesión antes de comprar.'
-  if (!state.user) return 'Inicia una sesión simulada B2C para finalizar la compra.'
-  if (state.user.role !== 'B2C') return 'Checkout disponible temporalmente solo para B2C. El catálogo muestra precios Retail.'
+  if (!state.user) return 'Inicia una sesión simulada B2C o B2B para finalizar la compra.'
+  if (state.user.role === 'ADMIN') return 'La identidad administrativa no puede realizar compras. El catálogo muestra precios Retail.'
   return null
 }
 
 /** Mantiene la sesión simulada en memoria y publica SESSION_STARTED una vez por transición a una identidad resuelta. */
 export default function SessionProvider({ children }: { children: ReactNode }) {
-  const { getSnapshot, clearCart, hasExternalConflict } = useCart()
+  const { getSnapshot, clearCart, setCartOwner, hasExternalConflict } = useCart()
   const [state, setState] = useState<SessionState>({ user: null, dialog: null, pending: null,
     resolving: false, error: null, epoch: 0, checkoutMounted: false, transaction: 'idle' })
   const current = useRef(state)
@@ -60,7 +60,9 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
     return !reason
   }
   /** Aplica la transición y avanza el epoch solo cuando corresponde a un cambio de identidad. */
-  function commit(user: ResolvedUser | null, kind: 'identity' | 'conflict') {
+  function commit(user: ResolvedUser | null, kind: 'identity' | 'conflict', adoptUnowned = false) {
+    if (user && !setCartOwner(user.id, adoptUnowned)) return
+    if (!user) setCartOwner(null)
     invalidate()
     update({ user, dialog: null, pending: null, resolving: false, error: null,
       epoch: current.current.epoch + (kind === 'identity' ? 1 : 0) })
@@ -69,9 +71,11 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
   /** Captura la revisión del Cart que requiere consentimiento o aplica la transición directamente. */
   function prepare(user: ResolvedUser | null, kind: 'identity' | 'conflict' = 'identity') {
     const cart = getSnapshot()
-    if (cart.items.length || cart.hasExternalConflict) {
-      update({ resolving: false, error: null, pending: { user, kind, cartRevision: cart.revision } })
-    } else commit(user, kind)
+    if (!user && !cart.hasExternalConflict) { commit(null, kind); return }
+    if (user && cart.ownerId === user.id && !cart.hasExternalConflict) { commit(user, kind); return }
+    if (!cart.items.length && !cart.hasExternalConflict) { commit(user, kind); return }
+    update({ resolving: false, error: null, pending: { user, kind, cartRevision: cart.revision,
+      cartOwnerId: cart.ownerId, cartItemCount: cart.items.length } })
   }
   /** Abre el selector si la sesión admite una transición. */
   function openLogin() {
@@ -79,11 +83,11 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
     invalidate()
     update({ dialog: 'login', pending: null, error: null })
   }
-  /** Prepara el cierre de la sesión activa con las mismas guardas de descarte del Cart. */
+  /** Cierra la sesión y conserva el carrito asociado para la siguiente selección de identidad. */
   function requestLogout() {
     if (!allowed() || current.current.resolving || !current.current.user) return
-    update({ dialog: 'logout', pending: null, error: null })
-    prepare(null)
+    update({ dialog: null, pending: null, error: null })
+    commit(null, 'identity')
   }
   /** Resuelve la identidad en el Server y prepara el cambio solo si la respuesta sigue vigente. */
   async function resolveUser(userId: string) {
@@ -106,7 +110,7 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
       if (!abort.signal.aborted && requestId === operation.current) update({ resolving: false, error: sessionErrorMessage(error) })
     }
   }
-  /** Descarta el Cart solo bajo consentimiento para la revisión actual antes de aplicar el cambio pendiente. */
+  /** Aplica el consentimiento actual: adopta un carrito legacy o descarta el anterior antes del cambio de identidad. */
   function confirmTransition(consentRevision: number) {
     if (!allowed() || current.current.resolving) return
     const pending = current.current.pending
@@ -114,6 +118,10 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
     const cart = getSnapshot()
     if (cart.revision !== pending.cartRevision) {
       update({ pending: { ...pending, cartRevision: cart.revision }, error: 'El carrito cambió. Revisa el estado actual y confirma nuevamente el descarte.' })
+      return
+    }
+    if (pending.user && pending.cartOwnerId === null && cart.items.length > 0 && !cart.hasExternalConflict) {
+      commit(pending.user, pending.kind, true)
       return
     }
     clearCart()

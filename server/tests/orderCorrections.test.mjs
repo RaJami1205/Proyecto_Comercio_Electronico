@@ -1,17 +1,21 @@
+const testUser = { id: 'test-user', displayName: 'Usuario Test', role: 'B2C' }
 /** Verifica stock, identidad de creación y cálculos con módulos aislados, sin importar configuración ni contactar Algolia. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { stripTypeScriptTypes } from 'node:module'
+import ts from '../../client/node_modules/typescript/lib/typescript.js'
 
 // Compila únicamente estos módulos puros en memoria. Nunca importa app, env o Algolia.
 const sources = new Map()
 /** Codifica el código recibido como módulo importable en memoria. */
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 sources.set('services/productService', dataUrl('export async function getProductById() { throw new Error("Debe inyectarse el catálogo simulado") }'))
-for (const name of ['domain/termsPolicy', 'domain/orderError', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderStore', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
+sources.set('config/env', dataUrl('export const serverConfig={commerceStoreMode:undefined}'))
+// CN-65: la proyección hacia Algolia queda deshabilitada en estos módulos aislados.
+sources.set('services/orderIndexing', dataUrl('export const orderIndexNotifier={notify(){}}'))
+for (const name of ['db/databaseError', 'domain/termsPolicy', 'domain/orderError', 'domain/adminOrderQuery', 'domain/userError', 'domain/orderAccess', 'domain/orderHistory', 'domain/catalogError', 'services/branchService', 'domain/pricing', 'domain/inventory', 'domain/orderIdentity', 'domain/orderValidation', 'domain/orderCalculations', 'stores/orderRowMapper', 'stores/orderStore', 'stores/paymentStore', 'stores/commerceStores', 'domain/paymentValidation', 'services/paymentSandboxService', 'services/paymentService', 'services/orderService']) {
   const source = readFileSync(new URL('../src/' + name + '.ts', import.meta.url), 'utf8')
-  const compiled = stripTypeScriptTypes(source, { mode: 'transform' })
+  const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText
   const isolated = compiled.replace(/from ['"](\.[^'"]+)['"]/g, (_, path) => {
     const resolved = new URL(path, 'https://local/' + name + '.js').pathname.slice(1).replace(/\.js$/, '')
     assert.ok(sources.has(resolved), 'Dependencia no autorizada: ' + resolved)
@@ -53,8 +57,8 @@ for (const [name, overrides, quantity] of [
     const { store, service } = setup(async () => ({ ...product, ...overrides }))
     const input = request()
     input.items[0] = { productId: 'p', quantity, in_stock: true, stock_quantity: 100 }
-    await assert.rejects(service.create(input), invalid)
-    assert.equal(store.findByIdempotencyKey(input.idempotencyKey), undefined)
+    await assert.rejects(service.create(input, testUser), invalid)
+    assert.equal((await store.findByIdempotencyKey(input.idempotencyKey)), undefined)
   })
 }
 test('F1 acepta disponibilidad suficiente y exacta; agrega líneas repetidas', async () => {
@@ -62,24 +66,24 @@ test('F1 acepta disponibilidad suficiente y exacta; agrega líneas repetidas', a
     const { service } = setup()
     const input = request()
     input.items = quantities.map(quantity => ({ productId: 'p', quantity }))
-    assert.equal((await service.create(input)).items.reduce((sum, item) => sum + item.quantity, 0), quantities.reduce((sum, value) => sum + value, 0))
+    assert.equal((await service.create(input, testUser)).items.reduce((sum, item) => sum + item.quantity, 0), quantities.reduce((sum, value) => sum + value, 0))
   }
   const { store, service } = setup()
   const input = request()
   input.items = [{ productId: 'p', quantity: 2 }, { productId: 'p', quantity: 2 }]
-  await assert.rejects(service.create(input), invalid)
-  assert.equal(store.findByIdempotencyKey(input.idempotencyKey), undefined)
+  await assert.rejects(service.create(input, testUser), invalid)
+  assert.equal((await store.findByIdempotencyKey(input.idempotencyKey)), undefined)
 })
 test('F1 no almacena orden parcial si falla un producto posterior', async () => {
   const { store, service } = setup(async id => ({ ...product, objectID: id, in_stock: id === 'p' }))
   const input = request()
   input.items.push({ productId: 'q', quantity: 1 })
-  await assert.rejects(service.create(input), invalid)
-  assert.equal(store.findByIdempotencyKey(input.idempotencyKey), undefined)
+  await assert.rejects(service.create(input, testUser), invalid)
+  assert.equal((await store.findByIdempotencyKey(input.idempotencyKey)), undefined)
 })
 test('F1 rechaza desbordamiento de cantidades agregadas antes del catálogo', async () => {
   const { service } = setup(async () => assert.fail('No consultar'))
-  await assert.rejects(service.create({ ...request(), items: [{ productId: 'p', quantity: Number.MAX_SAFE_INTEGER }, { productId: 'p', quantity: 1 }] }), invalid)
+  await assert.rejects(service.create({ ...request(), items: [{ productId: 'p', quantity: Number.MAX_SAFE_INTEGER }, { productId: 'p', quantity: 1 }] }, testUser), invalid)
 })
 
 test('F2 replay normalizado conserva una sola orden y tolera orden de propiedades/líneas', async () => {
@@ -87,13 +91,13 @@ test('F2 replay normalizado conserva una sola orden y tolera orden de propiedade
   const { service, store } = setup(async id => { calls++; return { ...product, objectID: id } })
   const input = request()
   input.items.push({ productId: 'q', quantity: 1 })
-  const first = await service.create(input)
+  const first = await service.create(input, testUser)
   const equivalent = { ...input, buyer: { phone: '88888888 ', email: ' user@example.com ', fullName: 'Usuario' }, delivery: { address: 'Dirección ', canton: 'Central', province: 'San José', additionalInfo: ' ' }, items: [...input.items].reverse() }
-  assert.deepEqual(await service.create(equivalent), first)
+  assert.deepEqual(await service.create(equivalent, testUser), first)
   assert.equal(calls, 2)
   // La identidad sobrevive a otra instancia del servicio y cambios de estado en el Store.
-  store.update({ ...first, orderStatus: 'CONFIRMED', paymentStatus: 'APPROVED' })
-  const replay = await new OrderService(store, async () => assert.fail('No consultar')).create(equivalent)
+  await store.update({ ...first, orderStatus: 'CONFIRMED', paymentStatus: 'APPROVED' })
+  const replay = await new OrderService(store, async () => assert.fail('No consultar')).create(equivalent, testUser)
   assert.equal(replay.id, first.id)
   assert.equal(replay.orderStatus, 'CONFIRMED')
 })
@@ -108,14 +112,14 @@ for (const [name, change] of [
     let calls = 0
     const { service, store } = setup(async () => { calls++; await gate; return product })
     const original = request()
-    const first = service.create(original)
+    const first = service.create(original, testUser)
     const changed = request()
     change(changed)
-    try { await assert.rejects(service.create(changed), conflict) }
+    try { await assert.rejects(service.create(changed, testUser), conflict) }
     finally { release() }
     const order = await first
-    await assert.rejects(service.create(changed), conflict)
-    assert.deepEqual(store.findById(order.id), order)
+    await assert.rejects(service.create(changed, testUser), conflict)
+    assert.deepEqual((await store.findById(order.id)), order)
     assert.equal(calls, 1)
   })
 }
@@ -123,18 +127,18 @@ test('F2 comparte concurrentes compatibles y libera pending tras fallo', async (
   let calls = 0
   let fail = true
   const { store, service } = setup(async () => { calls++; if (fail) throw new Error('fixture failure'); return product })
-  const failed = await Promise.allSettled([service.create(request()), service.create(request())])
+  const failed = await Promise.allSettled([service.create(request(), testUser), service.create(request(), testUser)])
   assert.ok(failed.every(result => result.status === 'rejected'))
   assert.equal(calls, 1)
-  assert.equal(store.findByIdempotencyKey('creation'), undefined)
+  assert.equal((await store.findByIdempotencyKey('creation')), undefined)
   fail = false
   const changed = request()
   changed.items[0].quantity = 2
-  const orders = await Promise.all(Array.from({ length: 10 }, () => service.create(changed)))
+  const orders = await Promise.all(Array.from({ length: 10 }, () => service.create(changed, testUser)))
   assert.equal(new Set(orders.map(order => order.id)).size, 1)
   assert.equal(calls, 2)
-  assert.equal((await service.create(changed)).id, orders[0].id)
-  assert.notEqual((await service.create({ ...changed, idempotencyKey: 'new' })).id, orders[0].id)
+  assert.equal((await service.create(changed, testUser)).id, orders[0].id)
+  assert.notEqual((await service.create({ ...changed, idempotencyKey: 'new' }, testUser)).id, orders[0].id)
 })
 
 for (const [prices, shipping] of [
@@ -147,7 +151,7 @@ for (const [prices, shipping] of [
   test('F3 precios sin normalizar ' + prices.join(' + '), async () => {
     const { service } = setup(async id => ({ ...product, objectID: id, price: prices[Number(id)] }))
     const input = { ...request(), items: prices.map((_, index) => ({ productId: String(index), quantity: 1 })) }
-    const order = await service.create(input)
+    const order = await service.create(input, testUser)
     assert.deepEqual(order.items.map(item => item.unitPrice), prices)
     assert.deepEqual(order.items.map(item => item.lineSubtotal), prices)
     assert.equal(order.totals.subtotal, prices.reduce((sum, price) => sum + price, 0))
@@ -160,7 +164,7 @@ test('F3 preserva precisión antes de multiplicar y rechaza importes inválidos'
   const { service } = setup(async () => ({ ...product, price: 49999.9975 }))
   const input = request()
   input.items[0].quantity = 2
-  const order = await service.create(input)
+  const order = await service.create(input, testUser)
   assert.equal(order.items[0].lineSubtotal, 99999.995)
   assert.equal(order.items[0].unitPrice, 49999.9975)
   assert.equal(order.totals.subtotal, 99999.995)
@@ -173,19 +177,91 @@ test('F3 preserva precisión antes de multiplicar y rechaza importes inválidos'
 
 test('CN-30 mantiene estados, replay, autoridad y bloqueo con órdenes corregidas', async () => {
   const { service, store } = setup()
-  const order = await service.create(request())
+  const order = await service.create(request(), testUser)
   const payments = new PaymentService(store)
   for (const [scenario, status] of [['PAYMENT_ERROR', 'ERROR'], ['PAYMENT_DECLINED', 'DECLINED'], ['PAYMENT_APPROVED', 'APPROVED']]) {
     const input = { scenario, idempotencyKey: scenario, amount: 1, currency: 'USD' }
-    const active = payments.process(order.id, input)
-    await assert.rejects(payments.process(order.id, { ...input, idempotencyKey: 'parallel' }), error => error.code === 'PAYMENT_IN_PROGRESS')
+    const active = payments.process(order.id, input, 'test-user')
+    await assert.rejects(payments.process(order.id, { ...input, idempotencyKey: 'parallel' }, 'test-user'), error => error.code === 'PAYMENT_IN_PROGRESS')
     const result = await active
     assert.equal(result.order.paymentStatus, status)
     assert.equal(result.order.orderStatus, status === 'APPROVED' ? 'CONFIRMED' : 'PENDING')
     assert.deepEqual(result.order.totals, order.totals)
-    assert.deepEqual(service.findById(order.id), result.order)
-    assert.deepEqual(await payments.process(order.id, input), result)
+    assert.deepEqual((await service.findById(order.id, 'test-user')), result.order)
+    assert.deepEqual(await payments.process(order.id, input, 'test-user'), result)
   }
-  await assert.rejects(payments.process(order.id, { scenario: 'PAYMENT_APPROVED', idempotencyKey: 'new' }), error => error.code === 'ORDER_ALREADY_CONFIRMED')
-  assert.equal((await service.create(request())).orderStatus, 'CONFIRMED')
+  await assert.rejects(payments.process(order.id, { scenario: 'PAYMENT_APPROVED', idempotencyKey: 'new' }, 'test-user'), error => error.code === 'ORDER_ALREADY_CONFIRMED')
+  assert.equal((await service.create(request(), testUser)).orderStatus, 'CONFIRMED')
+})
+
+const b2bUser = { id: 'b2b-user', displayName: 'Comprador B2B', role: 'B2B', company: { id: 'company-1', name: 'Empresa Uno' } }
+const v2Product = { ...product, b2b: { available: true, wholesale_price: 800, min_order_quantity: 3 }, stock_by_branch: { san_jose: 5, alajuela: 0, cartago: 2, heredia: 1 } }
+function v2Request(overrides = {}) {
+  return { ...request(), idempotencyKey: 'v2-create', branchId: 'san_jose', items: [{ productId: 'p', quantity: 3 }], ...overrides }
+}
+test('V2 crea B2C Retail y guarda sucursal, rol y política comercial', async () => {
+  const store = new InMemoryOrderStore()
+  const service = new OrderService(store, async () => v2Product)
+  const order = await service.createV2(v2Request(), { ...testUser, role: 'B2C' })
+  assert.equal(order.items[0].unitPrice, 10000)
+  assert.deepEqual(order.commercial, { userId: testUser.id, customerRole: 'B2C', branchId: 'san_jose', pricingType: 'RETAIL', policyVersion: 'CIBERNOVA-COMMERCIAL-V1' })
+  assert.equal(order.contractVersion, 2)
+})
+test('V2 crea B2B Wholesale con MOQ y Company Snapshot; agrupa productos repetidos', async () => {
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  const order = await service.createV2(v2Request({ items: [{ productId: 'p', quantity: 1 }, { productId: 'p', quantity: 2 }] }), b2bUser)
+  assert.equal(order.items.length, 1)
+  assert.equal(order.items[0].quantity, 3)
+  assert.equal(order.items[0].unitPrice, 800)
+  assert.deepEqual(order.commercial.company, b2bUser.company)
+})
+test('V2 rechaza ADMIN, MOQ incumplido, stock insuficiente y Branch inválida', async () => {
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  await assert.rejects(service.createV2(v2Request(), { id: 'admin', displayName: 'Admin', role: 'ADMIN' }), error => error.status === 403)
+  await assert.rejects(service.createV2(v2Request({ items: [{ productId: 'p', quantity: 2 }] }), b2bUser), error => error.code === 'INVALID_MOQ')
+  await assert.rejects(service.createV2(v2Request({ items: [{ productId: 'p', quantity: 6 }] }), b2bUser), error => error.code === 'INSUFFICIENT_INVENTORY')
+  await assert.rejects(service.createV2(v2Request({ branchId: 'alajuela' }), b2bUser), error => error.code === 'INSUFFICIENT_INVENTORY')
+})
+test('V2 rechaza expectativas financieras desactualizadas y conserva cálculos del Server', async () => {
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  await assert.rejects(service.createV2(v2Request({ financialExpectation: { subtotal: 2500 } }), b2bUser), error => error.status === 409 && Boolean(error.fieldErrors['financialExpectation.subtotal']))
+  const expected = calculateOrderTotals([{ unitPrice: 800, quantity: 3, lineSubtotal: 2400 }])
+  const valid = await service.createV2(v2Request({ idempotencyKey: 'v2-valid', financialExpectation: expected }), b2bUser)
+  assert.deepEqual(valid.totals, calculateOrderTotals(valid.items))
+})
+test('V2 replay devuelve Snapshot histórico sin volver a consultar catálogo', async () => {
+  let calls = 0
+  const store = new InMemoryOrderStore()
+  const service = new OrderService(store, async () => { calls++; return v2Product })
+  const input = v2Request()
+  const created = await service.createV2(input, b2bUser)
+  // Regresión E2E-20: medir la key externa sola ocultaba la creación V2 persistida bajo el namespace del propietario.
+  assert.equal(await store.findByIdempotencyKey(input.idempotencyKey, b2bUser.id), undefined, 'La key externa no es la key persistida de V2')
+  assert.deepEqual(await store.findByIdempotencyKey(`${b2bUser.id}:${input.idempotencyKey}`, b2bUser.id), created, 'V2 conserva la creación bajo userId:key')
+  const replay = await new OrderService(store, async () => assert.fail('Replay no consulta catálogo')).createV2(input, b2bUser)
+  assert.deepEqual(replay, created)
+  assert.equal(calls, 1)
+})
+test('V2 exige sucursal e idempotencia comparte creación concurrente', async () => {
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  await assert.rejects(service.createV2(v2Request({ branchId: undefined }), b2bUser), error => error.fieldErrors?.branchId !== undefined)
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  let calls = 0
+  const concurrentService = new OrderService(new InMemoryOrderStore(), async () => { calls++; await gate; return v2Product })
+  const input = v2Request({ idempotencyKey: 'v2-concurrent' })
+  const first = concurrentService.createV2(input, b2bUser)
+  const second = concurrentService.createV2(input, b2bUser)
+  release()
+  const [one, two] = await Promise.all([first, second])
+  assert.equal(one.id, two.id)
+  assert.equal(calls, 1)
+})
+test('V2 Order y Payment snapshots hacen roundtrip por la frontera PostgreSQL', async () => {
+  const { orderToRow, mapOrderRow, mapOrderSnapshot } = await import(sources.get('stores/orderRowMapper'))
+  const service = new OrderService(new InMemoryOrderStore(), async () => v2Product)
+  const order = await service.createV2(v2Request(), b2bUser)
+  const row = orderToRow(order, b2bUser)
+  assert.deepEqual(mapOrderRow(row), order)
+  assert.deepEqual(mapOrderSnapshot(order), order)
 })

@@ -8,7 +8,7 @@ import ts from '../../client/node_modules/typescript/lib/typescript.js'
 
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
 const fixture = id => ({objectID:id,title:'Actual '+id,price:1234.567,image_url:'/current.png',
-  categories:['Almacenamiento','Interno'],description:'Vigente',in_stock:true,facets:{capacity:'2 TB'}})
+  categories:['Almacenamiento','Interno'],description:'Vigente',in_stock:true,stock_by_branch:{san_jose:2},facets:{capacity:'2 TB'}})
 const servicesUrl=dataUrl([
   'export const requestedIds=[],catalogCalls=[];',
   'export function reset(){requestedIds.length=0;catalogCalls.length=0;}',
@@ -20,10 +20,15 @@ const servicesUrl=dataUrl([
 const directory=await import(servicesUrl)
 const compile=file=>ts.transpileModule(readFileSync(new URL('../src/'+file,import.meta.url),'utf8'),
   {compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText
-const mapperUrl=dataUrl(compile('mappers/productMapper.ts'))
+const pricingUrl=dataUrl(compile('domain/pricing.ts'))
+const catalogErrorUrl=dataUrl(compile('domain/catalogError.ts'))
+const branchServiceUrl=dataUrl(compile('services/branchService.ts').replace("from '../domain/catalogError.js'", `from ${JSON.stringify(catalogErrorUrl)}`))
+const inventoryUrl=dataUrl(compile('domain/inventory.ts').replace("from './catalogError.js'", `from ${JSON.stringify(catalogErrorUrl)}`).replace("from '../services/branchService.js'", `from ${JSON.stringify(branchServiceUrl)}`))
+const mapperSource=compile('mappers/productMapper.ts').replace("from '../domain/pricing.js'", `from ${JSON.stringify(pricingUrl)}`).replace("from '../domain/inventory.js'", `from ${JSON.stringify(inventoryUrl)}`)
+const mapperUrl=dataUrl(mapperSource)
 const categoriesUrl=dataUrl('export async function getCategoryTree(){return []}')
 const controller=await import(dataUrl(compile('controllers/productController.ts').replace(/from ['"]([^'"]+)['"]/g,(_,dependency)=>
-  'from '+JSON.stringify(dependency.includes('productService')?servicesUrl:dependency.includes('productMapper')?mapperUrl:categoriesUrl))))
+  'from '+JSON.stringify(dependency.includes('productService')?servicesUrl:dependency.includes('productMapper')?mapperUrl:dependency.includes('branchService')?branchServiceUrl:categoriesUrl))))
 
 let server,base
 before(async()=>{
@@ -38,7 +43,9 @@ after(async()=>{if(server)await new Promise(resolve=>server.close(resolve))})
 beforeEach(()=>directory.reset())
 const get=async query=>{const response=await fetch(base+query);return {status:response.status,body:await response.json()}}
 const expected=id=>({id,name:'Actual '+id,price:1234.567,image:'/current.png',category:'Almacenamiento',
-  description:'Vigente',inStock:true,specifications:[{label:'Capacity',value:'2 TB'}]})
+  retailPrice:1234.567,pricing:{type:'RETAIL',eligible:true,minOrderQuantity:1,message:null},
+  inventory:{branchId:null,quantity:null,status:'unselected',canFulfillMinimum:null,message:'Selecciona una sucursal para consultar existencias.'},
+  canAddToCart:true,description:'Vigente',inStock:true,specifications:[{label:'Capacity',value:'2 TB'}]})
 
 test('HTTP sin ids conserva Listing, query y paginación',async()=>{
   const result=await get('?q=ssd&page=3&perPage=2')

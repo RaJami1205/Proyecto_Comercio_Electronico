@@ -13,7 +13,10 @@ const runtimeUrl = dataUrl(`
   import { cartReducer } from '${reducerUrl}';
   let slots = [], cursor = 0;
   export let cart = []; export let cleanupCount = 0;
-  export function reset(items) { slots = []; cursor = 0; cart = items; cleanupCount = 0; }
+  export let session = {user:{id:"test-user",role:"B2C"},epoch:0};
+  export function useSession() { return session; }
+  export function setUser(user) { session = {user,epoch:session.epoch+1}; }
+  export function reset(items) { slots = []; cursor = 0; cart = items; cleanupCount = 0; session = {user:{id:"test-user",role:"B2C"},epoch:0}; }
   export function renderStart() { cursor = 0; }
   export function useState(initial) {
     const index = cursor++;
@@ -22,7 +25,8 @@ const runtimeUrl = dataUrl(`
   }
   export function useRef(initial) { const [value] = useState(() => ({current:initial})); return value; }
   export function useEffect() {}
-  export function useCart() { return {items:cart, cleanupPurchase: payload => { cleanupCount++; cart = cartReducer({items:cart}, {type:'CLEANUP_PURCHASE', payload}).items; }}; }
+  export function useLayoutEffect(callback) { callback(); }
+  export function useCart() { return {items:cart, ownerId:'test-user', cleanupPurchase: payload => { cleanupCount++; cart = cartReducer({items:cart}, {type:'CLEANUP_PURCHASE', payload}).items; }}; }
   export const Fragment = 'Fragment';
   export function jsx(type, props) { return {type, props}; }
   export const jsxs = jsx;
@@ -32,7 +36,8 @@ const analyticsUrl = dataUrl('export function trackEvent() {}')
 const modules = new Map([
   ['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl],
   ['../hooks/useCart', runtimeUrl],
-  ['../hooks/useSession', dataUrl('export function useSession() {return {user:{id:"test-user"}}}')],
+  ['../hooks/useSession', runtimeUrl],
+  ['../hooks/useBranch', dataUrl('export function useBranch() {return {selectedBranchId:"san_jose",branches:[{id:"san_jose",name:"San José",available:true}]}}')],
   ['../services/analytics', analyticsUrl],
 ])
 for (const name of ['CheckoutStepper', 'BuyerStep', 'DeliveryStep', 'ReviewStep', 'PaymentStep', 'PaymentResultPanel', 'TermsDialog']) {
@@ -57,10 +62,12 @@ modules.set('../utils/cartCalculations', calculationsUrl)
 modules.set('../utils/checkoutValidation', compile('utils/checkoutValidation.ts'))
 const differencesUrl = compile('utils/orderReviewDifferences.ts')
 modules.set('../utils/orderReviewDifferences', differencesUrl)
+modules.set('../utils/authorizationErrors', compile('utils/authorizationErrors.ts'))
 const apiUrl = compile('services/orderApi.ts')
 modules.set('../services/orderApi', apiUrl)
 const paymentApiUrl = compile('services/paymentApi.ts');
 modules.set('../services/paymentApi', paymentApiUrl);
+modules.set('../services/orderHistoryApi', compile('services/orderHistoryApi.ts'));
 const { paymentApi, PaymentApiError } = await import(paymentApiUrl);
 modules.set('./OrderConfirmationPage', dataUrl("export default 'OrderConfirmationPage'"))
 const { default: CheckoutPage } = await import(compile('pages/CheckoutPage.tsx'))
@@ -72,7 +79,8 @@ const cart = [{ productId: 'p', name: 'Producto', image: '', price: 10000, quant
 function order() {
   return { termsAcceptance:{accepted:true,version:'2026-10-lab4-v1',acceptedAt:'2026-10-12T00:00:00.000Z'}, id:'order-1', orderNumber:'CN-1', createdAt:'2026-10-12T00:00:00Z', buyer, delivery,
     items:[{productId:'p', name:'Producto', image:'', unitPrice:10000, quantity:1, lineSubtotal:10000}],
-    totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING' }
+    totals:calculateCartTotals(cart), currency:'CRC', orderStatus:'PENDING', paymentStatus:'PENDING', contractVersion:2,
+    commercial:{userId:'test-user', customerRole:'B2C', branchId:'san_jose', pricingType:'RETAIL', policyVersion:'CIBERNOVA-COMMERCIAL-V1'} }
 }
 /** Recorre el árbol JSX simulado y devuelve sus nodos para inspeccionar propiedades. */
 function nodes(tree) {
@@ -114,13 +122,22 @@ async function paymentFlow(t, scenario = 'PAYMENT_DECLINED', Page = CheckoutPage
   const requests = []
   /** Construye la respuesta simulada para el escenario incluido en la solicitud de pago. */
   let respond = request => { const response = result(request.scenario); return Response.json({ ...response, order: { ...response.order, id: orderId } }) }
+  let readOrder = () => { throw new Error('Consulta de Order inesperada') }
   globalThis.fetch = async (url, options) => {
+    assert.equal(options.headers['X-CiberNova-User-Id'], 'test-user')
+    if (options.method === 'GET') {
+      assert.equal(url, '/api/v2/orders/' + encodeURIComponent(orderId))
+      assert.equal(options.body, undefined)
+      assert.ok(options.signal instanceof AbortSignal)
+      requests.push({ url, method: 'GET' })
+      return readOrder()
+    }
     assert.equal(options.method, 'POST')
     const payload = JSON.parse(options.body)
     assert.equal(typeof payload.idempotencyKey, 'string')
     assert.ok(payload.idempotencyKey.length > 0)
     requests.push({url, payload})
-    if (url === '/api/orders') return Response.json({ ...order(), id: orderId }, {status:201})
+    if (url === '/api/v2/orders') return Response.json({ ...order(), id: orderId }, {status:201})
     assert.equal(url, '/api/orders/' + orderId + '/payment')
     assert.deepEqual(Object.keys(payload).sort(), ['idempotencyKey', 'scenario'])
     return respond(payload)
@@ -128,7 +145,7 @@ async function paymentFlow(t, scenario = 'PAYMENT_DECLINED', Page = CheckoutPage
   const flow = checkout({ Page })
   await flow.review().onConfirm(); flow.render()
   flow.find('PaymentStep').onScenarioChange(scenario); flow.render()
-  return {...flow, requests, respond: fn => { respond = fn }, payment: () => flow.find('PaymentStep')}
+  return {...flow, requests, respond: fn => { respond = fn }, readOrder: fn => { readOrder = fn }, payment: () => flow.find('PaymentStep')}
 }
 
 async function trackedCheckout(t) {
@@ -139,6 +156,188 @@ async function trackedCheckout(t) {
   modules.set('../services/analytics', analyticsUrl)
   return { api, Page, ...storage }
 }
+
+test('F2-01 ORDER_ALREADY_CONFIRMED recupera la Order propia y navegación sin PaymentResult, Analytics ni cleanup', { timeout: 3000 }, async t => {
+  const { api, Page } = await trackedCheckout(t)
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED', Page)
+  const baseline = structuredClone(runtime.cart)
+  const process = flow.payment().onProcessPayment
+  flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED' } }, { status: 409 }))
+  let release
+  flow.readOrder(() => new Promise(resolve => { release = resolve }))
+  const pending = process()
+  await new Promise(resolve => setImmediate(resolve))
+  flow.render()
+  assert.equal(flow.transactions.at(-1), 'active', 'La consulta todavía no libera el bloqueo')
+  assert.equal(flow.find('button').disabled, true)
+  assert.equal(flow.payment(), undefined)
+  assert.equal(flow.find('PaymentResultPanel'), undefined)
+  assert.equal(flow.find('OrderConfirmationPage'), undefined)
+  await process()
+  assert.equal(flow.requests.length, 3, 'Un POST de creación, un POST de Payment y un GET autorizado')
+  const authoritative = result('PAYMENT_APPROVED').order
+  release(Response.json(authoritative))
+  await pending; flow.render()
+  const confirmation = flow.find('OrderConfirmationPage')
+  assert.deepEqual(confirmation.order, authoritative)
+  assert.equal(confirmation.recovered, true)
+  assert.equal(flow.transactions.at(-1), 'known')
+  assert.equal(flow.events.at(-1), false, 'La navegación queda desbloqueada')
+  assert.equal(flow.find('PaymentResultPanel'), undefined)
+  assert.equal(runtime.cleanupCount, 0)
+  assert.deepEqual(runtime.cart, baseline)
+  assert.equal(api.getAnalyticsCounters('test-user').purchases, 0)
+  assert.equal(api.getAggregateAnalyticsSnapshot().counters.purchases, 0)
+  await process()
+  assert.equal(flow.requests.length, 3, 'Un callback obsoleto tampoco vuelve a pagar ni genera otra key')
+  await api.flushAnalytics()
+})
+
+const failedOrderRecoveries = [
+  ['red', () => { throw new TypeError('INTERNAL network failure') }],
+  ['no disponible', () => Response.json({ error: { code: 'UNEXPECTED_ERROR', message: 'INTERNAL' } }, { status: 503 })],
+  ['sin autorización', () => Response.json({ error: { code: 'FORBIDDEN', message: 'INTERNAL' } }, { status: 403 })],
+  ['ajena o inexistente', () => Response.json({ error: { code: 'ORDER_NOT_FOUND', message: 'INTERNAL' } }, { status: 404 })],
+  ['todavía pendiente', () => Response.json(order())],
+  ['otra Order', () => Response.json({ ...result('PAYMENT_APPROVED').order, id: 'another-order' })],
+  ['otro propietario', () => { const confirmed = result('PAYMENT_APPROVED').order; return Response.json({ ...confirmed, commercial: { ...confirmed.commercial, userId: 'other' } }) }],
+  ['otra sucursal', () => { const confirmed = result('PAYMENT_APPROVED').order; return Response.json({ ...confirmed, commercial: { ...confirmed.commercial, branchId: 'alajuela' } }) }],
+]
+for (const [label, readOrder] of failedOrderRecoveries) {
+  test('F2-01 consulta insuficiente conserva Recovery y reintenta solo GET: ' + label, { timeout: 3000 }, async t => {
+    const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+    const process = flow.payment().onProcessPayment
+    flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED' } }, { status: 409 }))
+    flow.readOrder(readOrder)
+    await process(); flow.render()
+    assert.equal(flow.transactions.at(-1), 'uncertain')
+    assert.equal(flow.find('OrderConfirmationPage'), undefined)
+    assert.equal(flow.find('PaymentResultPanel'), undefined)
+    assert.equal(flow.payment(), undefined)
+    const retry = flow.find('button')
+    assert.equal(retry.disabled, false)
+    assert.equal(retry.children, 'Recuperar estado de la orden')
+    assert.ok(nodes(flow.find('section').children).some(node => node.props.role === 'alert'
+      && !String(node.props.children).includes('INTERNAL')))
+    flow.readOrder(() => Response.json(result('PAYMENT_APPROVED').order))
+    await retry.onClick(); flow.render()
+    assert.equal(flow.requests.filter(request => request.url.endsWith('/payment')).length, 1)
+    assert.equal(flow.requests.filter(request => request.method === 'GET').length, 2)
+    assert.equal(flow.transactions.at(-1), 'known')
+    assert.equal(flow.find('OrderConfirmationPage').recovered, true)
+    assert.equal(runtime.cleanupCount, 0)
+  })
+}
+
+test('F2-01 una consulta tardía de otra Session no muestra la Order ni libera sus guardas', { timeout: 3000 }, async t => {
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+  flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED' } }, { status: 409 }))
+  let release
+  flow.readOrder(() => new Promise(resolve => { release = resolve }))
+  const process = flow.payment().onProcessPayment
+  const pending = process()
+  await new Promise(resolve => setImmediate(resolve))
+  runtime.setUser({ id: 'other', role: 'B2C' }); flow.render()
+  release(Response.json(result('PAYMENT_APPROVED').order))
+  await pending; flow.render()
+  assert.equal(flow.find('OrderConfirmationPage'), undefined)
+  assert.equal(flow.find('PaymentResultPanel'), undefined)
+  assert.equal(runtime.cleanupCount, 0)
+  assert.equal(flow.transactions.at(-1), 'active')
+  await process()
+  assert.equal(flow.requests.length, 3)
+})
+
+test('F2-01 un error no concluyente conserva la key y el Replay de Payment, sin consultar Order', async t => {
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+  flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED', outcome: 'unknown' } }, { status: 503 }))
+  await flow.payment().onProcessPayment(); flow.render()
+  assert.equal(flow.transactions.at(-1), 'uncertain')
+  assert.equal(flow.payment().scenarioLocked, true)
+  flow.respond(() => Response.json(result('PAYMENT_APPROVED')))
+  await flow.payment().onProcessPayment(); flow.render()
+  assert.deepEqual(flow.requests[1], flow.requests[2])
+  assert.equal(flow.requests.some(request => request.method === 'GET'), false)
+  assert.equal(runtime.cleanupCount, 1)
+  assert.equal(flow.find('OrderConfirmationPage').recovered, false)
+})
+
+test('F2-01 rechazo concluyente tras una respuesta perdida recupera estado sin cambiar la key', async t => {
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+  flow.respond(() => { throw new TypeError('Network failure') })
+  await flow.payment().onProcessPayment(); flow.render()
+  assert.equal(flow.transactions.at(-1), 'uncertain')
+  flow.respond(() => Response.json({ error: { code: 'ORDER_ALREADY_CONFIRMED' } }, { status: 409 }))
+  flow.readOrder(() => Response.json(result('PAYMENT_APPROVED').order))
+  await flow.payment().onProcessPayment(); flow.render()
+  assert.deepEqual(flow.requests[1], flow.requests[2])
+  assert.equal(flow.requests.filter(request => request.method === 'GET').length, 1)
+  assert.equal(flow.transactions.at(-1), 'known')
+  assert.equal(flow.find('OrderConfirmationPage').recovered, true)
+  assert.equal(runtime.cleanupCount, 0)
+})
+
+for (const code of ['IDENTITY_REQUIRED', 'USER_DISABLED', 'FORBIDDEN', 'ORDER_NOT_FOUND']) {
+  test('RBAC rechazo inicial de Payment queda conocido y no habilita Retry comercial ' + code, async t => {
+    const flow = await paymentFlow(t)
+    flow.respond(() => Response.json({ error: { code } }, { status: code === 'IDENTITY_REQUIRED' ? 401 : code === 'ORDER_NOT_FOUND' ? 404 : 403 }))
+    await flow.payment().onProcessPayment(); flow.render()
+    assert.equal(flow.transactions.at(-1), 'known')
+    assert.equal(flow.payment().scenarioLocked, false)
+    assert.equal(flow.payment().locked, true)
+    assert.equal(flow.find('PaymentResultPanel'), undefined)
+    await flow.payment().onProcessPayment()
+    assert.equal(flow.requests.length, 2)
+    assert.equal(runtime.cleanupCount, 0)
+    flow.find('button').onClick(); flow.render()
+    assert.ok(flow.review().error)
+    assert.equal(flow.review().authorizationRejected, true)
+  })
+
+  test('RBAC rechazo de Replay incierto conserva el intento Payment ' + code, async t => {
+    const flow = await paymentFlow(t)
+    flow.respond(() => { throw new TypeError('Network failure') })
+    await flow.payment().onProcessPayment(); flow.render()
+    flow.respond(() => Response.json({ error: { code } }, { status: code === 'IDENTITY_REQUIRED' ? 401 : code === 'ORDER_NOT_FOUND' ? 404 : 403 }))
+    await flow.payment().onProcessPayment(); flow.render()
+    assert.equal(flow.transactions.at(-1), 'uncertain')
+    assert.equal(flow.payment().scenarioLocked, true)
+    assert.equal(runtime.cleanupCount, 0)
+    flow.respond(request => Response.json(result(request.scenario)))
+    await flow.payment().onProcessPayment(); flow.render()
+    assert.equal(flow.transactions.at(-1), 'known')
+    assert.deepEqual(flow.requests[1].payload, flow.requests[2].payload)
+    assert.deepEqual(flow.requests[1].payload, flow.requests[3].payload)
+  })
+}
+
+for (const nextUser of [null, { id: 'other', role: 'B2C' }]) test('RBAC Payment tardío de Session anterior no confirma ni limpia ' + nextUser?.id, async t => {
+  const flow = await paymentFlow(t, 'PAYMENT_APPROVED')
+  let release
+  flow.respond(() => new Promise(resolve => { release = resolve }))
+  const pending = flow.payment().onProcessPayment()
+  runtime.setUser(nextUser); flow.render()
+  release(Response.json(result('PAYMENT_APPROVED')))
+  await pending; flow.render()
+  assert.equal(flow.find('OrderConfirmationPage'), undefined)
+  assert.equal(flow.find('PaymentResultPanel'), undefined)
+  assert.equal(runtime.cleanupCount, 0)
+  assert.equal(flow.transactions.at(-1), 'active')
+})
+
+for (const [status, code] of [[400, 'INVALID_USER_ID'], [401, 'IDENTITY_REQUIRED'], [403, 'FORBIDDEN'],
+  [404, 'USER_NOT_FOUND'], [503, 'USER_SERVICE_UNAVAILABLE']]) test('RBAC PaymentApi conserva el error ' + code, async t => {
+  t.mock.method(globalThis, 'fetch', async (_, options) => {
+    assert.equal(options.headers['X-CiberNova-User-Id'], 'effective-user')
+    return Response.json({ error: { code } }, { status })
+  })
+  await assert.rejects(paymentApi.processPayment('order-1', { scenario: 'PAYMENT_APPROVED', idempotencyKey: 'key' }, 'effective-user'), error => {
+    assert.equal(error.code, code)
+    assert.equal(error.conclusive, status !== 503)
+    assert.equal(error.authorizationDenied, status !== 503)
+    return true
+  })
+})
 
 test('Dos compras aprobadas B2C con Orders distintas producen dos compras agregadas para ADMIN', async t => {
   const { api, Page } = await trackedCheckout(t)
@@ -252,7 +451,7 @@ test('F2 fallo de red conserva Order, escenario y key incluso ante callback de s
   await flow.payment().onProcessPayment(); flow.render()
   assert.equal(flow.transactions.at(-1), 'known')
   assert.deepEqual(flow.requests[1], flow.requests[2])
-  assert.equal(flow.requests.filter(r => r.url === '/api/orders').length, 1)
+  assert.equal(flow.requests.filter(r => r.url === '/api/v2/orders').length, 1)
 })
 
 for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR']) {
@@ -332,7 +531,7 @@ test('F4 rechaza todas las combinaciones contradictorias en el límite API', asy
       const valid = body.order.orderStatus === orderStatus && body.order.paymentStatus === paymentStatus
       body.order.orderStatus = orderStatus; body.order.paymentStatus = paymentStatus
       globalThis.fetch = async () => Response.json(body)
-      const call = paymentApi.processPayment('order-1', {scenario, idempotencyKey:'test'})
+      const call = paymentApi.processPayment('order-1', {scenario, idempotencyKey:'test'}, 'test-user')
       if (valid) assert.deepEqual(await call, body)
       else await assert.rejects(call, error => error instanceof PaymentApiError && !error.conclusive)
     }
@@ -348,7 +547,7 @@ test('API excluye campos de tarjeta demostrativos y otros extras del payload', a
     return Response.json(result('PAYMENT_APPROVED'))
   }
   await paymentApi.processPayment('order-1', {scenario:'PAYMENT_APPROVED', idempotencyKey:'test',
-    cardNumber:'1234567890123456', cardCvv:'000', cardName:'Demo', amount:1})
+    cardNumber:'1234567890123456', cardCvv:'000', cardName:'Demo', amount:1}, 'test-user')
 })
 
 const { default: PaymentStep } = await import(compile('components/checkout/PaymentStep.tsx'))
@@ -373,7 +572,7 @@ test('Sandbox conserva campos demo, validación, escenarios y payload sin datos 
   })
   const props = {order:order(), selectedScenario:null, isProcessingPayment:false,
     onScenarioChange: scenario => { props.selectedScenario = scenario },
-    onProcessPayment: () => paymentApi.processPayment('order-1', {scenario:props.selectedScenario, idempotencyKey:'demo-key'})}
+    onProcessPayment: () => paymentApi.processPayment('order-1', {scenario:props.selectedScenario, idempotencyKey:'demo-key'}, 'test-user')}
   let tree
   /** Actualiza el árbol simulado del formulario de pago con las propiedades actuales. */
   const render = () => { runtime.renderStart(); tree = PaymentStep(props) }
@@ -430,5 +629,5 @@ test('CN-47 PaymentApi conserva consentimiento histórico válido',async t=>{
   const historical=result('PAYMENT_APPROVED')
   historical.order.termsAcceptance.version='historical-test-version'
   t.mock.method(globalThis,'fetch',async()=>Response.json(historical))
-  assert.deepEqual(await paymentApi.processPayment('order-1',{scenario:'PAYMENT_APPROVED',idempotencyKey:'history'}),historical)
+  assert.deepEqual(await paymentApi.processPayment('order-1',{scenario:'PAYMENT_APPROVED',idempotencyKey:'history'}, 'test-user'),historical)
 })

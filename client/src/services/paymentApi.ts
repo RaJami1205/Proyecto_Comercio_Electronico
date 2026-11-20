@@ -2,18 +2,21 @@
 import type { ApiErrorResponse } from '../types/apiError'
 import type { Order } from '../types/order'
 import type { PaymentResult, PaymentScenario, ProcessPaymentRequest } from '../types/payment'
+import { authorizationErrorMessage, identityErrorCodes, isAuthorizationRejection } from '../utils/authorizationErrors'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || '').replace(/\/+$/, '')
 
 export class PaymentApiError extends Error {
   readonly code: ApiErrorResponse['error']['code']
   readonly conclusive: boolean
+  readonly authorizationDenied: boolean
   /** Conserva el código público y la certeza del fallo para distinguir errores del intento de pago. */
   constructor(code: ApiErrorResponse['error']['code'], conclusive: boolean) {
     super('No se pudo procesar el pago.')
     this.name = 'PaymentApiError'
     this.code = code
     this.conclusive = conclusive
+    this.authorizationDenied = conclusive && isAuthorizationRejection(code)
   }
 }
 
@@ -67,19 +70,19 @@ function isPaymentResult(value: unknown, orderId: string, scenario: PaymentScena
 }
 
 /** Envía escenario y clave para la Order indicada; devuelve únicamente un resultado validado y coherente. */
-async function processPayment(orderId: string, request: ProcessPaymentRequest): Promise<PaymentResult> {
+async function processPayment(orderId: string, request: ProcessPaymentRequest, userId: string): Promise<PaymentResult> {
   const payload: ProcessPaymentRequest = { scenario: request.scenario, idempotencyKey: request.idempotencyKey }
   const response = await fetch(`${API_BASE_URL}/api/orders/${encodeURIComponent(orderId)}/payment`, {
-    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CiberNova-User-Id': userId },
     body: JSON.stringify(payload), signal: AbortSignal.timeout(20000),
   })
   const body: unknown = await response.json().catch(() => null)
   if (response.status !== 200 && response.status !== 201) {
     const code = isRecord(body) && isRecord(body.error) ? body.error.code : undefined
     // Códigos que el Server puede devolver de forma conocida para este endpoint.
-    const known = ['ORDER_NOT_FOUND', 'ORDER_ALREADY_CONFIRMED', 'PAYMENT_IN_PROGRESS', 'INVALID_PAYMENT_SCENARIO', 'CHECKOUT_VALIDATION_ERROR']
+    const known = ['ORDER_NOT_FOUND', 'ORDER_ALREADY_CONFIRMED', 'PAYMENT_IN_PROGRESS', 'INVALID_PAYMENT_SCENARIO', 'CHECKOUT_VALIDATION_ERROR', ...identityErrorCodes]
     // Clasifica estos errores HTTP como concluyentes; Checkout conserva el intento hasta recibir un PaymentResult válido.
-    throw new PaymentApiError(known.includes(String(code)) ? code as ApiErrorResponse['error']['code'] : 'UNEXPECTED_ERROR', [400, 404, 409, 422].includes(response.status))
+    throw new PaymentApiError(known.includes(String(code)) ? code as ApiErrorResponse['error']['code'] : 'UNEXPECTED_ERROR', [400, 401, 403, 404, 409, 422].includes(response.status))
   }
   if (!isPaymentResult(body, orderId, payload.scenario)) throw new PaymentApiError('UNEXPECTED_ERROR', false)
   return body
@@ -90,7 +93,9 @@ export const paymentApi = { processPayment }
 /** Convierte errores de pago en un mensaje público para la recuperación del intento. */
 export function paymentErrorMessage(error: unknown): string {
   if (error instanceof PaymentApiError) {
-    if (error.code === 'ORDER_NOT_FOUND') return 'No encontramos la orden asociada a este pago. Vuelve al carrito e intenta de nuevo.'
+    const identityMessage = authorizationErrorMessage(error.code)
+    if (identityMessage) return identityMessage
+    if (error.code === 'ORDER_NOT_FOUND') return 'No se puede acceder a la orden asociada a este pago.'
     if (error.code === 'ORDER_ALREADY_CONFIRMED') return 'Esta orden ya fue confirmada; no es necesario procesar otro pago.'
     if (error.code === 'PAYMENT_IN_PROGRESS') return 'Ya hay un pago en proceso para esta orden. Espera un momento.'
     if (error.code === 'INVALID_PAYMENT_SCENARIO') return 'Selecciona un escenario de pago válido.'

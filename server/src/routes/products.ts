@@ -7,13 +7,14 @@ import {
 } from '../controllers/productController.js'
 
 import { getCategoryTreeHandler } from '../controllers/productController.js'
+import { resolveOptionalIdentity } from '../middleware/authorization.js'
 
 
 
 const productsRouter = Router()
 
-productsRouter.get('/search', searchProductCatalog)
-productsRouter.get('/', getProducts)
+productsRouter.get('/search', resolveOptionalIdentity(), searchProductCatalog)
+productsRouter.get('/', resolveOptionalIdentity(), getProducts)
 
 productsRouter.get('/categories/tree', getCategoryTreeHandler)
 

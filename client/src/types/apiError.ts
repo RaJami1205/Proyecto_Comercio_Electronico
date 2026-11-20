@@ -1,5 +1,7 @@
 /** Define los códigos y la estructura pública de errores de la API. */
 export type ApiErrorCode =
+  | 'IDENTITY_REQUIRED'
+  | 'FORBIDDEN'
   | 'CHECKOUT_VALIDATION_ERROR'
   | 'EMPTY_CART'
   | 'PRODUCT_NOT_FOUND'
@@ -15,11 +17,26 @@ export type ApiErrorCode =
   | 'INVALID_B2B_DATA'
   | 'USER_SERVICE_UNAVAILABLE'
   | 'UNEXPECTED_ERROR'
+  | 'INVALID_BRANCH_ID'
+  | 'INVALID_PRODUCT_PRICE'
+  | 'B2B_NOT_AVAILABLE'
+  | 'INVALID_MOQ'
+  | 'INVALID_QUANTITY'
+  | 'INVENTORY_UNAVAILABLE'
+  | 'INSUFFICIENT_INVENTORY'
+  | 'ORDER_CONTRACT_DEPRECATED'
+  | 'INVALID_ORDER_FILTER'
+  | 'ORDER_SEARCH_UNAVAILABLE'
+  | 'ORDER_QUERY_UNAVAILABLE'
+  | 'CATALOG_RESULT_LIMIT'
+  | 'CATALOG_UNAVAILABLE'
+  | 'INVALID_PRODUCT_FILTER'
 
 export interface ApiErrorResponse {
   error: {
     code: ApiErrorCode
     message: string
     fieldErrors?: Record<string, string>
+    outcome?: 'unknown'
   }
 }

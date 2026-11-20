@@ -20,6 +20,8 @@ import styles from '../styles/pages/ProductListingPage.module.css'
 import { scrollToElement } from '../utils/scrollToAnchor'
 import type { PolicyView } from '../utils/appNavigation'
 import { trackEvent } from '../services/analytics'
+import { useBranch } from '../hooks/useBranch'
+import BranchSelector from '../components/catalog/BranchSelector'
 
 export interface CartFeedback {
   productId: string
@@ -47,6 +49,7 @@ const EMPTY_FILTERS: CatalogFiltersState = {
 /** Posee filtros, query, selección de Quick View y feedback temporal de presentación. */
 function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, onProductAdded, onPolicyNavigate }: ProductListingPageProps) {
   const { epoch, user } = useSession()
+  const { selectedBranchId } = useBranch()
   const { currentPage, pageSize, setCurrentPage } = useCatalogPagination()
   const [filters, setFilters] = useState<CatalogFiltersState>(EMPTY_FILTERS)
   const [catalogSearch, setCatalogSearch] = useState<{ query: string; source: 'catalog' | 'recent' }>({ query: '', source: 'catalog' })
@@ -57,6 +60,12 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
   
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [searchEpoch, setSearchEpoch] = useState(epoch)
+  const [previousBranchId, setPreviousBranchId] = useState(selectedBranchId)
+  if (previousBranchId !== selectedBranchId) {
+    setPreviousBranchId(selectedBranchId)
+    setSelectedProduct(null)
+    setCurrentPage(1)
+  }
   if (searchEpoch !== epoch) {
     setSearchEpoch(epoch)
     setCatalogSearch({ query: '', source: 'catalog' })
@@ -67,7 +76,7 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
   const resultsStartRef = useRef<HTMLDivElement>(null)
 
   const { products, totalPages, nbHits, facets, isLoading, error } =
-    useProductCatalog(currentPage, pageSize, filters, catalogQuery, user?.id, catalogSearch.source)
+    useProductCatalog(currentPage, pageSize, filters, catalogQuery, user?.id, catalogSearch.source, selectedBranchId)
 
   /** El preview comparte owner con las vistas y nunca se superpone al Quick View. */
   function openCartPreview() {
@@ -111,7 +120,13 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
       <Header onCartClick={openCartPreview} />
 
       <main>
-        <p className="retail-notice">Catálogo público a precios Retail. Checkout disponible temporalmente solo para identidades B2C.</p>
+        <p className="retail-notice">
+          {user?.role === 'B2B'
+            ? 'Precios mayoristas y condiciones comerciales aplicados. El checkout valida nuevamente precio, mínimo de compra e inventario de tu sucursal.'
+            : user?.role === 'ADMIN'
+              ? 'Vista administrativa de precios públicos; las compras están deshabilitadas.'
+              : 'Catálogo público a precios Retail. Inicia una sesión B2C o B2B para comprar.'}
+        </p>
         <CatalogHero />
 
         <section className={styles.catalog} id="catalog" aria-labelledby="catalog-title">
@@ -127,6 +142,9 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
               </p>
             </header>
 
+            {/* La sucursal se elige antes de buscar: condiciona existencias y disponibilidad de los resultados. */}
+            <BranchSelector />
+
             {/* Pasamos el estado del panel activo y la función para cambiarlo */}
             <CatalogToolbar
               key={epoch}
@@ -135,6 +153,8 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
               onTogglePanel={setActivePanel}
               onSearchChange={handleSearchChange}
               onProductSelect={openProduct}
+              userId={user?.id}
+              branchId={selectedBranchId}
             />
 
             {/* CatalogFilters ahora renderiza internamente solo la sección según 'activePanel' */}
@@ -145,14 +165,14 @@ function ProductListingPage({ active, isCartPreviewOpen, onCartClick, feedback, 
               activePanel={activePanel}
             />
 
-            <RecentlyViewedProducts userId={user?.id} onProductSelect={openProduct} />
+            <RecentlyViewedProducts userId={user?.id} branchId={selectedBranchId} onProductSelect={openProduct} />
 
             <div className={styles.results} ref={resultsStartRef}>
               {error ? (
                 <p className={styles.description} role="alert">
                   {error}
                 </p>
-              ) : !isLoading && products.length === 0 ? (
+              ) : isLoading ? null : products.length === 0 ? (
                 <p className={styles.description} role="status">
                   {catalogQuery
                     ? 'No encontramos productos para esta búsqueda.'

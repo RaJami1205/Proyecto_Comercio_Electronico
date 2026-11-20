@@ -196,3 +196,49 @@ comercial nueva, sin caché persistente. Las respuestas antiguas se descartan al
 
 Las pruebas usan componentes/servicios reales con storage, fetch y catálogo aislados; los tests HTTP del
 controller usan Express y el mapper real en loopback. No prueban Algolia ni despliegues remotos.
+
+## Admin Products & Inventory (CN-67)
+
+ADMIN ve en el Header el enlace **Productos** (`#admin/products`). La página consulta `GET /api/v2/admin/products` mediante `adminProductApi`, que envía la identidad activa, valida cada respuesta desde `unknown` y no persiste datos en el navegador.
+
+- **Listado:** búsqueda por nombre, marca o SKU; filtros de categoría, marca, sucursal, disponibilidad y condición B2B; orden y paginación resueltos por el Server. Cada tarjeta muestra precio Retail, Wholesale, MOQ, stock global y las cuatro sucursales.
+- **Detalle:** `#admin/products/<id>` (compatible con recarga y Back/Forward) presenta identificación, precios y condiciones, stock global frente a la suma de sucursales, existencias por sucursal e inconsistencias del catálogo.
+- **Solo consulta:** no hay controles de edición; la modificación simulada corresponde a otra Story.
+- **Acceso:** App revoca las vistas si la Session no es ADMIN y las monta con una key por usuario y epoch, de modo que un cambio de identidad descarta filtros, resultados y requests anteriores. Las páginas también muestran un aviso si se renderizan sin Session o con otro rol; el Server aplica RBAC en cada request.
+- **Estados:** Loading, Empty, Error con Reintentar, filtro inválido con Limpiar filtros y producto no encontrado.
+- **Responsive:** dos columnas de tarjetas en Desktop, una en Tablet (≤ 960 px) y, en Mobile (≤ 600 px), la tabla de sucursales se presenta como filas etiquetadas.
+
+Validación: `npm run lint`, `npm run build` y `node --test tests/adminProducts.test.mjs`.
+
+## Inventory Simulation (CN-68)
+
+En **Admin Product Detail** (`#admin/products/<id>`), ADMIN dispone del panel **Inventory Simulation · Modo demostrativo**:
+
+1. Elegir una de las cuatro sucursales; se muestra la cantidad original recibida del Server.
+2. Escribir la nueva cantidad simulada: solo enteros entre 0 y `Number.MAX_SAFE_INTEGER` (9 007 199 254 740 991), el mismo rango de representación segura del inventario original. Cero representa una sucursal agotada; se rechazan vacíos, negativos, decimales, signos y letras.
+3. **Revisar simulación** muestra producto, sucursal, Original Stock y Simulated Stock propuesto (incremento, reducción y diferencia). La operación se aplica solo con **Confirmar simulación**; **Descartar cambio** la cancela.
+4. La tabla **Original vs Simulated** mantiene visibles ambos valores. **Restablecer** devuelve una sucursal a su valor original y **Restablecer simulación del producto** limpia todas sus sucursales. El listado de Admin Products marca los productos con **Simulación activa**.
+
+**La modificación es exclusivamente demostrativa.** No existe endpoint de escritura y no se modifica ningún registro de Algolia ni de PostgreSQL. El estado vive en un reducer de `App` (`utils/inventorySimulation.ts`) separado de los DTO del Server, que nunca se mutan; las columnas Existencias y Estado conservan siempre el dato autoritativo.
+
+- Solo en memoria: sin `localStorage`, `sessionStorage`, IndexedDB ni cookies. Recargar la aplicación borra las simulaciones.
+- Cada simulación pertenece a la identidad que la creó. Cambiar de usuario o cerrar sesión las descarta, y otra Session nunca las hereda.
+- Solo ADMIN accede: App revoca las vistas administrativas para B2C, B2B y visitantes sin Session, y el Server mantiene RBAC en la consulta del producto.
+- El catálogo público, Quick View, selección de sucursal, Cart, Checkout, creación de Orders, Payment y el historial de Orders no importan ni reciben este estado; siguen usando únicamente los datos del Server.
+
+Validación: `npm run lint`, `npm run build` y `node --test tests/inventorySimulation.test.mjs`.
+
+## Admin Orders (CN-66)
+
+ADMIN ve en el Header el enlace **Órdenes** (`#admin/orders`). La vista consulta `GET /api/v2/admin/orders` con `adminOrderApi`, que envía la identidad activa, valida cada respuesta desde `unknown` y no persiste Orders en el navegador.
+
+- **Listado:** número, fecha, comprador (nombre y User ID), tipo B2C/B2B, empresa, sucursal, total y estados de pedido y pago, de la más reciente a la más antigua.
+- **Filtros:** tipo de comprador, sucursal, estado del pedido, estado del pago, User ID y número de orden exacto, más orden ascendente o descendente y paginación. Estas consultas van al Store seleccionado en Server e incluyen Orders pendientes de indexar; la vista avisa cuántas hay cuando el Store registra ese dato.
+- **Origen:** el listado distingue `source: "memory"` (memoria del servidor, sin persistencia duradera) de `"postgresql"`. Search conserva `source: "algolia"` para los candidatos del índice y describe su hidratación desde el almacenamiento seleccionado sin inferir un motor de persistencia.
+- **Búsqueda:** el campo de texto busca por número de orden o empresa en el índice de búsqueda. La vista advierte que los resultados pueden omitir Orders pendientes de sincronización, marca las filas con índice desactualizado y muestra siempre el estado actual. Si la búsqueda no está disponible, ofrece volver al listado sin búsqueda.
+- **Detalle:** `#admin/orders/<id>` (compatible con recarga y Back/Forward) combina la identidad del comprador del listado administrativo con el snapshot histórico de `GET /api/v2/orders/:orderId`. La presentación se comparte con My Orders mediante `components/orders/OrderDetailContent.tsx`.
+- **Acceso y Session:** App revoca las vistas para B2C, B2B y visitantes sin Session y las monta con una key por usuario y epoch, de modo que un cambio de identidad descarta resultados y requests anteriores. El Server aplica RBAC en cada request.
+- **Solo consulta:** no hay controles para crear, pagar, cambiar estados ni eliminar Orders.
+- **Responsive:** reutiliza los estilos administrativos: dos columnas de tarjetas en Desktop, una en Tablet y filas apiladas en Mobile.
+
+Validación: `npm run lint`, `npm run build` y `node --test tests/adminOrders.test.mjs`.

@@ -24,15 +24,17 @@ export async function reactHarness() {
     export function dispose(){for(const scope of scopes.values())for(const slot of scope.slots)slot?.cleanup?.();scopes.clear();}
     export function useReducer(reducer,initial,initialize){const [state,set]=useState(()=>initialize?initialize(initial):initial);return [state,action=>set(value=>reducer(value,action))];}
     export function useCart(){return cartContext;}
-    const reason=()=>!sessionUser?'Sin sesión':sessionUser.role!=='B2C'?'Solo B2C':null;
+    const reason=()=>!sessionUser?'Sin sesión':sessionUser.role==='ADMIN'?'ADMIN no compra':null;
     const noop=()=>{};
     export function useSession(){return {user:sessionUser,epoch,dialog:null,purchaseBlockReason:reason(),getPurchaseBlockReason:reason,isTransactionBlocked:()=>false,setCheckoutMounted:noop,setTransactionState:noop};}
     export function useCatalogPagination(){const [currentPage,setCurrentPage]=useState(1);return {currentPage,pageSize:20,setCurrentPage};}
+    export function useBranch(){return {selectedBranchId:null};}
     export function jsx(type,props,key){return {type,props,key};}export const jsxs=jsx,Fragment='Fragment';
   `) + '#react-' + instance++
   const runtime = await import(url)
   const overrides = new Map([['react', url], ['react/jsx-runtime', url], ['hooks/useCart', url],
-    ['hooks/useSession', url], ['hooks/useCatalogPagination', url]])
+    ['hooks/useSession', url], ['hooks/useCatalogPagination', url], ['hooks/useBranch', url],
+    ['components/catalog/BranchSelector', dataUrl('export default "BranchSelector"')]])
   const cache = new Map()
   function compile(file) {
     if (overrides.has(file)) return overrides.get(file)

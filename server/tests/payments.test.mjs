@@ -1,6 +1,7 @@
 /** Verifica servicios de pago y endpoints locales con fixtures de Orders y un catálogo simulado. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mockUserDirectory, testIdentityHeaders } from './helpers/identity.mjs'
 import app from '../dist/app.js'
 import { OrderService, orderService } from '../dist/services/orderService.js'
 import { PaymentService, paymentService } from '../dist/services/paymentService.js'
@@ -20,9 +21,9 @@ const fixture = (id = 'order-1') => ({
 /** Construye una solicitud de pago con escenario y clave de idempotencia de prueba. */
 const request = (scenario = 'PAYMENT_APPROVED', idempotencyKey = 'attempt-1') => ({scenario, idempotencyKey})
 /** Crea un store independiente y un servicio de pago con el Sandbox recibido. */
-const setup = (sandbox = new PaymentSandboxService()) => {
+const setup = async (sandbox = new PaymentSandboxService()) => {
   const store = new InMemoryOrderStore()
-  store.create(fixture(), 'creation-1')
+  await store.create(fixture(), 'creation-1', 'test-user')
   return { store, service: new PaymentService(store, sandbox) }
 }
 
@@ -32,13 +33,13 @@ for (const [scenario, paymentStatus, orderStatus] of [
   ['PAYMENT_ERROR', 'ERROR', 'PENDING'],
 ]) {
   test('Sandbox determinista y transición: ' + scenario, async () => {
-    const {store, service} = setup()
-    const result = await service.process('order-1', request(scenario))
+    const {store, service} = (await setup())
+    const result = await service.process('order-1', request(scenario), 'test-user')
     assert.equal(result.result, scenario)
     assert.equal(result.order.paymentStatus, paymentStatus)
     assert.equal(result.order.orderStatus, orderStatus)
     assert.ok(Number.isFinite(Date.parse(result.processedAt)))
-    assert.deepEqual(store.findById('order-1'), result.order)
+    assert.deepEqual((await store.findById('order-1')), result.order)
     assert.deepEqual(result.order.totals, fixture().totals)
     assert.deepEqual(result.order.items, fixture().items)
     assert.deepEqual(result.order.termsAcceptance, fixture().termsAcceptance)
@@ -47,31 +48,31 @@ for (const [scenario, paymentStatus, orderStatus] of [
 
 test('amount, currency e identidad proceden del store; replay aprobado y nuevo pago bloqueado', async () => {
   const calls = []
-  const {store, service} = setup({ process: async input => { calls.push(input); return {result: input.scenario} } })
-  const payment = await service.process('order-1', { ...request(), amount: 1, currency: 'USD', orderId: 'attacker', orderStatus: 'PENDING', paymentStatus: 'ERROR' })
+  const {store, service} = (await setup({ process: async input => { calls.push(input); return {result: input.scenario} } }))
+  const payment = await service.process('order-1', { ...request(), amount: 1, currency: 'USD', orderId: 'attacker', orderStatus: 'PENDING', paymentStatus: 'ERROR' }, 'test-user')
   assert.deepEqual(calls, [{orderId:'order-1', amount:26100, currency:'CRC', scenario:'PAYMENT_APPROVED'}])
-  const replay = await service.process('order-1', request('PAYMENT_DECLINED'))
+  const replay = await service.process('order-1', request('PAYMENT_DECLINED'), 'test-user')
   assert.deepEqual(replay, payment)
   assert.equal(calls.length, 1)
   replay.order.totals.total = 1
-  assert.equal((await service.process('order-1', request())).order.totals.total, 26100)
-  assert.equal(store.findById('order-1').totals.total, 26100)
-  await assert.rejects(service.process('order-1', request('PAYMENT_APPROVED', 'new-key')), error => error.status === 409 && error.code === 'ORDER_ALREADY_CONFIRMED')
+  assert.equal((await service.process('order-1', request(), 'test-user')).order.totals.total, 26100)
+  assert.equal((await store.findById('order-1')).totals.total, 26100)
+  await assert.rejects(service.process('order-1', request('PAYMENT_APPROVED', 'new-key'), 'test-user'), error => error.status === 409 && error.code === 'ORDER_ALREADY_CONFIRMED')
   assert.equal(calls.length, 1)
 })
 
 for (const scenario of ['PAYMENT_DECLINED', 'PAYMENT_ERROR']) {
   test('Retry sobre la misma Order y replay histórico después de ' + scenario, async () => {
     let calls = 0
-    const {store, service} = setup({process: async input => { calls++; return {result: input.scenario} }})
-    const first = await service.process('order-1', request(scenario))
-    assert.deepEqual(await service.process('order-1', request(scenario)), first)
-    const approved = await service.process('order-1', request('PAYMENT_APPROVED', 'retry-key'))
+    const {store, service} = (await setup({process: async input => { calls++; return {result: input.scenario} }}))
+    const first = await service.process('order-1', request(scenario), 'test-user')
+    assert.deepEqual(await service.process('order-1', request(scenario), 'test-user'), first)
+    const approved = await service.process('order-1', request('PAYMENT_APPROVED', 'retry-key'), 'test-user')
     assert.equal(approved.order.id, first.order.id)
     assert.deepEqual(approved.order.termsAcceptance, first.order.termsAcceptance)
     assert.equal(approved.order.paymentStatus, 'APPROVED')
-    assert.equal(store.findById('order-1').orderStatus, 'CONFIRMED')
-    assert.deepEqual(await service.process('order-1', request(scenario)), first)
+    assert.equal((await store.findById('order-1')).orderStatus, 'CONFIRMED')
+    assert.deepEqual(await service.process('order-1', request(scenario), 'test-user'), first)
     assert.equal(calls, 2)
   })
 }
@@ -81,27 +82,27 @@ test('dos solicitudes concurrentes: misma o distinta clave solo inicia un Sandbo
     let release
     let calls = 0
     const completion = new Promise(resolve => { release = resolve })
-    const {store, service} = setup({process: async input => { calls++; await completion; return {result:input.scenario} }})
-    const first = service.process('order-1', request('PAYMENT_DECLINED'))
-    await assert.rejects(service.process('order-1', request('PAYMENT_APPROVED', secondKey)), error => error.status === 409 && error.code === 'PAYMENT_IN_PROGRESS')
+    const {store, service} = (await setup({process: async input => { calls++; await completion; return {result:input.scenario} }}))
+    const first = service.process('order-1', request('PAYMENT_DECLINED'), 'test-user')
+    await assert.rejects(service.process('order-1', request('PAYMENT_APPROVED', secondKey), 'test-user'), error => error.status === 409 && error.code === 'PAYMENT_IN_PROGRESS')
     assert.equal(calls, 1)
-    assert.equal(store.findById('order-1').paymentStatus, 'PENDING')
+    assert.equal((await store.findById('order-1')).paymentStatus, 'PENDING')
     release()
     const result = await first
     assert.equal(result.order.paymentStatus, 'DECLINED')
-    assert.deepEqual(await service.process('order-1', request('PAYMENT_DECLINED')), result)
+    assert.deepEqual(await service.process('order-1', request('PAYMENT_DECLINED'), 'test-user'), result)
     assert.equal(calls, 1)
-    assert.equal((await service.process('order-1', request('PAYMENT_APPROVED', 'retry'))).order.orderStatus, 'CONFIRMED')
+    assert.equal((await service.process('order-1', request('PAYMENT_APPROVED', 'retry'), 'test-user')).order.orderStatus, 'CONFIRMED')
   }
 })
 
 test('locks y claves de idempotencia se aíslan por orden', async () => {
   let release
   const completion = new Promise(resolve => { release = resolve })
-  const {store, service} = setup({process: async input => { await completion; return {result:input.scenario} }})
-  store.create(fixture('order-2'), 'creation-2')
-  const first = service.process('order-1', request('PAYMENT_DECLINED'))
-  const second = service.process('order-2', request('PAYMENT_APPROVED'))
+  const {store, service} = (await setup({process: async input => { await completion; return {result:input.scenario} }}))
+  await store.create(fixture('order-2'), 'creation-2', 'test-user')
+  const first = service.process('order-1', request('PAYMENT_DECLINED'), 'test-user')
+  const second = service.process('order-2', request('PAYMENT_APPROVED'), 'test-user')
   release()
   const results = await Promise.all([first, second])
   assert.deepEqual(results.map(result => result.order.id), ['order-1', 'order-2'])
@@ -110,36 +111,37 @@ test('locks y claves de idempotencia se aíslan por orden', async () => {
 
 test('fallos reales liberan lock y no cachean resultados ni cambian la Order', async () => {
   let fail = true
-  const {store, service} = setup({process: async input => {
+  const {store, service} = (await setup({process: async input => {
     if (fail) throw new Error('SECRET_INTERNAL_DETAIL')
     return {result:input.scenario}
-  }})
-  await assert.rejects(service.process('order-1', request()))
-  assert.deepEqual(store.findById('order-1'), fixture())
+  }}))
+  await assert.rejects(service.process('order-1', request(), 'test-user'))
+  assert.deepEqual((await store.findById('order-1')), fixture())
   fail = false
-  assert.equal((await service.process('order-1', request())).order.paymentStatus, 'APPROVED')
-  const broken = setup({process:async () => ({result:'UNSUPPORTED'})})
-  await assert.rejects(broken.service.process('order-1', request()))
-  assert.deepEqual(broken.store.findById('order-1'), fixture())
-  const failedUpdate = setup({process:async input => ({result:input.scenario})})
+  assert.equal((await service.process('order-1', request(), 'test-user')).order.paymentStatus, 'APPROVED')
+  const broken = (await setup({process:async () => ({result:'UNSUPPORTED'})}))
+  await assert.rejects(broken.service.process('order-1', request(), 'test-user'))
+  assert.deepEqual((await broken.store.findById('order-1')), fixture())
+  const failedUpdate = (await setup({process:async input => ({result:input.scenario})}))
   const update = failedUpdate.store.update.bind(failedUpdate.store)
   failedUpdate.store.update = () => { throw new Error('update failure') }
-  await assert.rejects(failedUpdate.service.process('order-1', request()))
+  await assert.rejects(failedUpdate.service.process('order-1', request(), 'test-user'))
   failedUpdate.store.update = update
-  assert.equal((await failedUpdate.service.process('order-1', request())).order.paymentStatus, 'APPROVED')
+  assert.equal((await failedUpdate.service.process('order-1', request(), 'test-user')).order.paymentStatus, 'APPROVED')
 })
 
 test('valida request y orden sin ejecutar el Sandbox; APPROVED siempre impide nuevo pago', async () => {
-  const {store, service} = setup({process:async () => assert.fail('No debe procesar')})
+  const {store, service} = (await setup({process:async () => assert.fail('No debe procesar')}))
   for (const body of [undefined, null, [], {}, request('INVALID'), request(1), request('PAYMENT_APPROVED', ''), request('PAYMENT_APPROVED', '   '), request('PAYMENT_APPROVED', 1)]) {
-    await assert.rejects(service.process('order-1', body), error => error.status === 400)
+    await assert.rejects(service.process('order-1', body, 'test-user'), error => error.status === 400)
   }
-  await assert.rejects(service.process('missing', request()), error => error.status === 404 && error.code === 'ORDER_NOT_FOUND')
-  store.update({...fixture(), paymentStatus:'APPROVED'})
-  await assert.rejects(service.process('order-1', request()), error => error.code === 'ORDER_ALREADY_CONFIRMED')
+  await assert.rejects(service.process('missing', request(), 'test-user'), error => error.status === 404 && error.code === 'ORDER_NOT_FOUND')
+  await store.update({...fixture(), paymentStatus:'APPROVED'})
+  await assert.rejects(service.process('order-1', request(), 'test-user'), error => error.code === 'ORDER_ALREADY_CONFIRMED')
 })
 
-test('HTTP: tres resultados 200, GET actualizado, replay, concurrencia y errores del contrato', async () => {
+test('HTTP: tres resultados 200, GET actualizado, replay, concurrencia y errores del contrato', async t => {
+  mockUserDirectory(t)
   const originalLookup = orderService.lookup
   const originalSandbox = paymentService.sandbox
   orderService.lookup = async id => ({objectID:id, title:'Producto', price:10000, image_url:'', in_stock:true, stock_quantity:3})
@@ -147,7 +149,7 @@ test('HTTP: tres resultados 200, GET actualizado, replay, concurrencia y errores
   await new Promise(resolve => server.once('listening',resolve))
   const base = 'http://127.0.0.1:' + server.address().port + '/api/orders'
   /** Envía el cuerpo JSON indicado al endpoint del servidor local levantado por la prueba. */
-  const post = (url, body) => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+  const post = (url, body) => fetch(url, {method:'POST', headers:{'Content-Type':'application/json', ...testIdentityHeaders}, body:JSON.stringify(body)})
   /** Crea una Order de prueba por HTTP con la clave indicada y devuelve su respuesta JSON. */
   const create = async key => {
     const response = await post(base, {buyer:fixture().buyer, delivery:fixture().delivery, items:[{productId:'product-1',quantity:2}], idempotencyKey:key, termsAcceptance:{accepted:true,version:'2026-10-lab4-v1'}})
@@ -164,7 +166,7 @@ test('HTTP: tres resultados 200, GET actualizado, replay, concurrencia y errores
       assert.equal(result.result,scenario)
       assert.deepEqual(result.order.totals,order.totals)
       assert.deepEqual(result.order.termsAcceptance,order.termsAcceptance)
-      assert.deepEqual(await (await fetch(base + '/' + order.id)).json(),result.order)
+      assert.deepEqual(await (await fetch(base + '/' + order.id, { headers: testIdentityHeaders })).json(),result.order)
       assert.deepEqual(await (await post(url,request(scenario))).json(),result)
       if (scenario === 'PAYMENT_APPROVED') {
         const blocked = await post(url,request(scenario,'new-key'))
@@ -182,8 +184,8 @@ test('HTTP: tres resultados 200, GET actualizado, replay, concurrencia y errores
       [await post(base + '/missing/payment',request()),404,'ORDER_NOT_FOUND'],
       [await post(url,request('INVALID')),400,'INVALID_PAYMENT_SCENARIO'],
       [await post(url,request('PAYMENT_APPROVED','')),400,'CHECKOUT_VALIDATION_ERROR'],
-      [await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:'{'}),400,'CHECKOUT_VALIDATION_ERROR'],
-      [await fetch(url,{method:'POST'}),400,'CHECKOUT_VALIDATION_ERROR'],
+      [await fetch(url,{method:'POST',headers:{'Content-Type':'application/json', ...testIdentityHeaders},body:'{'}),400,'CHECKOUT_VALIDATION_ERROR'],
+      [await fetch(url,{ headers: testIdentityHeaders, method:'POST'}),400,'CHECKOUT_VALIDATION_ERROR'],
     ]) {
       assert.equal(response.status,status)
       const body = await response.json()

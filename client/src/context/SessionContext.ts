@@ -7,6 +7,8 @@ export type SessionDialogMode = 'login' | 'logout' | 'conflict' | null
 export interface SessionTransition {
   user: ResolvedUser | null
   cartRevision: number
+  cartOwnerId: string | null
+  cartItemCount: number
   kind: 'identity' | 'conflict'
 }
 export interface SessionState {

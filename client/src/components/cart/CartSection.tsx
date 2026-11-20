@@ -1,14 +1,19 @@
 /** Conecta la presentación del Cart con useCart y los cálculos financieros derivados. */
-import type { MouseEvent } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 
 import { useCart } from '../../hooks/useCart'
 import { useSession } from '../../hooks/useSession'
 import { calculateCartTotals, calculateLineSubtotal } from '../../utils/cartCalculations'
 import styles from '../../styles/cart/CartSection.module.css'
+import BranchSelector from '../catalog/BranchSelector'
+import { useBranch } from '../../hooks/useBranch'
+import { getProductsByIds } from '../../services/productApi'
+import type { Product } from '../../types/product'
 
 interface CartSectionProps {
   onContinueShopping: () => void
   onCheckoutRequested: () => void
+  onProductSelect: (product: Product) => void
 }
 
 const priceFormatter = new Intl.NumberFormat('es-CR', {
@@ -16,12 +21,63 @@ const priceFormatter = new Intl.NumberFormat('es-CR', {
   currency: 'CRC',
   maximumFractionDigits: 0,
 })
+const CART_PRODUCT_BATCH_SIZE = 10
 
 /** Presenta líneas, controles y resumen, o el Empty State cuando no hay items. */
-function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionProps) {
-  const { purchaseBlockReason, openLogin, user } = useSession()
-  const { items, incrementItem, decrementItem, removeItem, totalUnits } = useCart()
-  const { subtotal, tax, shipping, total } = calculateCartTotals(items)
+function CartSection({ onContinueShopping, onCheckoutRequested, onProductSelect }: CartSectionProps) {
+  const { purchaseBlockReason, openLogin, user, epoch } = useSession()
+  const { items, incrementItem, decrementItem, removeItem, totalUnits, ownerId, isActive, hasExternalConflict,
+    hasInvalidStorage, updateProductContext } = useCart()
+  const { selectedBranchId } = useBranch()
+  const [productContext, setProductContext] = useState<{ context: { key: string } | null; products: Map<string, Product>; error: string | null }>({ context: null, products: new Map(), error: null })
+  // Solo cambia si cambia el conjunto de IDs; cantidades/precios/lineage no provocan nuevas consultas.
+  const itemIdsKey = JSON.stringify([...new Set(items.map(item => item.productId))].sort())
+  const contextKey = JSON.stringify([user?.id ?? null, epoch, ownerId, isActive, selectedBranchId, itemIdsKey])
+  const [validationContext, setValidationContext] = useState({ key: contextKey })
+  // Una vuelta A → B → A también debe validar otra vez, sin reutilizar la respuesta anterior de A.
+  if (validationContext.key !== contextKey) setValidationContext({ key: contextKey })
+
+  useEffect(() => {
+    const itemIds = JSON.parse(itemIdsKey) as string[]
+    if (itemIds.length === 0 || !isActive) return
+    let cancelled = false
+    const batches: Promise<Product[]>[] = []
+    for (let start = 0; start < itemIds.length; start += CART_PRODUCT_BATCH_SIZE) {
+      batches.push(getProductsByIds(itemIds.slice(start, start + CART_PRODUCT_BATCH_SIZE), user?.id, selectedBranchId))
+    }
+    // El límite público de historial permanece intacto. Ningún lote parcial habilita Checkout.
+    void Promise.all(batches).then(results => {
+      if (cancelled) return
+      const products = results.flat()
+      const byId = new Map(products.map(product => [product.id, product]))
+      for (const product of products) updateProductContext(product.id, {
+        ...(product.price !== null ? { price: product.price } : {}), retailPrice: product.retailPrice,
+        pricingType: product.pricing.type, minimumOrderQuantity: product.pricing.minOrderQuantity ?? 1,
+        branchId: product.inventory.branchId, availableQuantity: product.inventory.quantity,
+        inventoryStatus: product.inventory.status, commercialEligible: product.pricing.eligible && product.price !== null,
+      })
+      setProductContext({ context: validationContext, products: byId, error: null })
+    }).catch(() => {
+      if (!cancelled) setProductContext({ context: validationContext, products: new Map(), error: 'No pudimos actualizar precios y existencias. Reintenta la validación antes de continuar.' })
+    })
+    return () => { cancelled = true }
+  }, [validationContext, itemIdsKey, user?.id, selectedBranchId, isActive, updateProductContext])
+
+  const contextReady = items.length === 0 || productContext.context === validationContext
+  const contextError = contextReady ? productContext.error : null
+  const contextualItems = items.map(item => ({ item, product: productContext.context === validationContext ? productContext.products.get(item.productId) : undefined }))
+  const unresolved = contextualItems.some(({ product }) => !product || product.price === null || !product.pricing.eligible)
+  const conflicts = contextualItems.some(({ item, product }) => !product || product.inventory.status !== 'available'
+    || product.inventory.quantity === null || item.quantity > product.inventory.quantity
+    || !product.inventory.canFulfillMinimum || item.quantity < (product.pricing.minOrderQuantity ?? 1))
+  const commercialItems = contextualItems.flatMap(({ item, product }) => product?.price !== null && product?.price !== undefined
+    ? [{ ...item, price: product.price }] : [])
+  const { subtotal, tax, shipping, total } = calculateCartTotals(commercialItems)
+  const checkoutBlock = purchaseBlockReason || (!isActive ? 'Este carrito está guardado para otra identidad. Selecciona su propietario para usarlo.'
+    : hasExternalConflict || hasInvalidStorage ? 'Resuelve el conflicto del carrito antes de continuar.'
+      : !selectedBranchId ? 'Selecciona una sucursal para validar disponibilidad.'
+        : contextError || (!contextReady ? 'Actualizando precios y existencias…' : unresolved ? 'Hay productos sin un precio comercial vigente.'
+          : conflicts ? 'Ajusta cantidades o selecciona una sucursal con disponibilidad suficiente.' : null))
 
   /** Delega el regreso al catálogo sin provocar la navegación nativa del ancla. */
   function handleContinueShopping(event: MouseEvent<HTMLAnchorElement>) {
@@ -32,6 +88,7 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
   return (
     <section className={styles.section} id="cart" aria-labelledby="cart-title">
       <div className={styles.container}>
+        <BranchSelector />
         <header className={styles.introduction}>
           <div>
             <p className={styles.eyebrow}>Tu selección</p>
@@ -42,7 +99,15 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
           </p>
         </header>
 
-        {items.length === 0 ? (
+        {!isActive && ownerId ? <p role="status">Este carrito pertenece a otra identidad. Selecciona ese usuario para reactivarlo; sus productos permanecen guardados.</p> : null}
+        {hasInvalidStorage ? <p role="alert">El carrito guardado no se pudo validar. Revísalo desde el selector de identidad antes de reemplazarlo.</p> : null}
+        {!isActive && ownerId ? (
+          <div className={styles.emptyState} role="status">
+            <h3>Carrito guardado</h3>
+            <p>Selecciona la identidad propietaria para volver a ver sus productos.</p>
+            <button className={styles.identityButton} type="button" onClick={openLogin}>Seleccionar identidad</button>
+          </div>
+        ) : items.length === 0 ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon} aria-hidden="true">
               <svg viewBox="0 0 48 48">
@@ -61,23 +126,29 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
           <div className={styles.cartLayout}>
             <div className={styles.itemList} role="list" aria-label="Productos en el carrito">
               {items.map((item) => {
-                const itemSubtotal = calculateLineSubtotal(item.price, item.quantity)
+                const product = productContext.context === validationContext ? productContext.products.get(item.productId) : undefined
+                const unitPrice = product?.price ?? null
+                const itemSubtotal = unitPrice === null ? null : calculateLineSubtotal(unitPrice, item.quantity)
+                const minimum = product?.pricing.minOrderQuantity ?? item.minimumOrderQuantity ?? 1
 
                 return (
                   <article className={styles.item} key={item.productId} role="listitem">
                     <div className={styles.imagePanel}>
-                      <img src={item.image} alt="" loading="lazy" />
+                      {product ? <button className={styles.productImageButton} type="button" aria-label={`Ver detalles de ${item.name}`} onClick={() => onProductSelect(product)}><img src={item.image} alt="" loading="lazy" /></button> : <img src={item.image} alt="" loading="lazy" />}
                     </div>
 
                     <div className={styles.itemDetails}>
                       <div className={styles.itemHeading}>
                         <div>
-                          <h3>
-                            {item.name}
-                          </h3>
+                          <h3>{product ? <button className={styles.productNameButton} type="button" onClick={() => onProductSelect(product)}>{item.name}</button> : item.name}</h3>
                           <p className={styles.unitPrice}>
-                            Precio unitario: {priceFormatter.format(item.price)}
+                            {unitPrice === null ? 'Validando precio…' : `Precio unitario ${product?.pricing.type === 'WHOLESALE' ? 'B2B' : 'público'}: ${priceFormatter.format(unitPrice)}`}
                           </p>
+                          {product?.pricing.type === 'WHOLESALE' ? <p className={styles.unitPrice}>Cantidad mínima: {minimum}</p> : null}
+                          {product ? <p className={styles.unitPrice} role="status">{product.inventory.message}</p> : null}
+                          {item.quantity < minimum ? <p className={styles.unitPrice} role="alert">Pedido mínimo: {minimum} unidades para este precio comercial.</p> : null}
+                          {product?.inventory.quantity !== null && product && item.quantity > product.inventory.quantity ? <p className={styles.unitPrice} role="alert">Solo hay {product.inventory.quantity} unidades disponibles en esta sucursal.</p> : null}
+                          {product?.pricing.message ? <p className={styles.unitPrice} role="status">{product.pricing.message}</p> : null}
                         </div>
                         <button
                           className={styles.removeButton}
@@ -101,7 +172,7 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
                           <button
                             type="button"
                             aria-label={`Disminuir cantidad de ${item.name}`}
-                            disabled={item.quantity <= 1}
+                            disabled={item.quantity <= minimum || !contextReady}
                             onClick={() => decrementItem(item.productId)}
                           >
                             <span aria-hidden="true">−</span>
@@ -110,6 +181,7 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
                           <button
                             type="button"
                             aria-label={`Aumentar cantidad de ${item.name}`}
+                            disabled={!contextReady || !product || product.inventory.quantity === null || item.quantity >= product.inventory.quantity}
                             onClick={() => incrementItem(item.productId)}
                           >
                             <span aria-hidden="true">+</span>
@@ -117,7 +189,7 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
                         </div>
                         <p className={styles.itemSubtotal}>
                           <span>Subtotal</span>
-                          <strong>{priceFormatter.format(itemSubtotal)}</strong>
+                          <strong>{itemSubtotal === null ? 'No disponible' : priceFormatter.format(itemSubtotal)}</strong>
                         </p>
                       </div>
                     </div>
@@ -128,24 +200,25 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
 
             <aside className={styles.summary} aria-labelledby="summary-title">
               <h3 id="summary-title">Resumen del carrito</h3>
+              <p className={styles.summaryUnits}>{user?.role === 'B2B' ? 'Precios B2B · condiciones comerciales vigentes' : 'Precios Retail'}</p>
               <p className={styles.summaryUnits}>
                 {totalUnits} {totalUnits === 1 ? 'producto' : 'productos'}
               </p>
               <div className={styles.summaryRow}>
                 <span>Subtotal</span>
-                <strong>{priceFormatter.format(subtotal)}</strong>
+                <strong>{unresolved || !contextReady ? '—' : priceFormatter.format(subtotal)}</strong>
               </div>
               <div className={styles.summaryRow}>
                 <span>IVA (13%)</span>
-                <strong>{priceFormatter.format(tax)}</strong>
+                <strong>{unresolved || !contextReady ? '—' : priceFormatter.format(tax)}</strong>
               </div>
               <div className={styles.summaryRow}>
                 <span>Envío</span>
-                <strong>{priceFormatter.format(shipping)}</strong>
+                <strong>{unresolved || !contextReady ? '—' : priceFormatter.format(shipping)}</strong>
               </div>
               <div className={styles.summaryTotal}>
                 <span>Total</span>
-                <strong>{priceFormatter.format(total)}</strong>
+                <strong>{unresolved || !contextReady ? '—' : priceFormatter.format(total)}</strong>
               </div>
               {purchaseBlockReason || !user ? <div className={styles.identityPrompt}>
                 <p className={styles.identityPromptTitle}>
@@ -158,8 +231,9 @@ function CartSection({ onContinueShopping, onCheckoutRequested }: CartSectionPro
                   <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
                 </button> : null}
               </div> : null}
-              <button className={styles.checkoutButton} type="button" disabled={Boolean(purchaseBlockReason)}
-                aria-describedby={purchaseBlockReason ? 'cart-checkout-restriction' : undefined} onClick={onCheckoutRequested}>
+              {checkoutBlock ? <p className={styles.identityPromptMessage} role="status" id="cart-checkout-restriction">{checkoutBlock}</p> : null}
+              <button className={styles.checkoutButton} type="button" disabled={Boolean(checkoutBlock)}
+                aria-describedby={checkoutBlock ? 'cart-checkout-restriction' : undefined} onClick={onCheckoutRequested}>
                 Finalizar compra
               </button>
               <a href="#catalog" onClick={handleContinueShopping}>

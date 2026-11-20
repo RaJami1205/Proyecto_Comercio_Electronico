@@ -1,0 +1,30 @@
+# E2E API Client HTTP -> Express -> PostgreSQL | 2026-11-18T15:34:33Z | commit base 0b90fe3 + cambios CN-69 | node v22.23.5
+▶ CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálogo QA
+  ✔ E2E-01 Simulated Login B2C resuelve identidad y rol desde el Server (49.91ms)
+  ✔ E2E-02 Simulated Login B2B incluye la empresa validada por el Server (9.915909ms)
+  ✔ E2E-03 Simulated Login ADMIN resuelve el rol administrativo (17.16935ms)
+  ✔ E2E-05 Catálogo con precios Retail para anónimo y B2C (11.745645ms)
+  ✔ E2E-06 Catálogo con precios Wholesale para B2B y bloqueo de productos sin condición B2B (3.986192ms)
+  ✔ E2E-08 Selección de sucursal y consulta de inventario por sucursal (13.415787ms)
+  ✔ E2E-07 MOQ B2B: bajo el mínimo se rechaza sin crear Order; en el mínimo se acepta (50.649474ms)
+  ✔ E2E-09 Inventario insuficiente en la sucursal elegida se rechaza sin crear Order (12.444124ms)
+  ✔ E2E-11 Compra B2C completa: Checkout V2 y Payment APPROVED con importes Retail (19.485572ms)
+  ✔ E2E-12 Compra B2B completa con Wholesale, MOQ y empresa histórica (14.446239ms)
+  ✔ E2E-13 Orders persistidas en PostgreSQL con propietario, sucursal y tipo de precio (2.017798ms)
+  ✔ E2E-14 Payment Sandbox DECLINED, ERROR y Retry APPROVED con Attempts persistidos (39.470471ms)
+  ✔ E2E-15 Idempotency, Retry y Replay sin duplicar Orders ni pagos (28.95158ms)
+  ✔ E2E-18 Requests concurrentes con la misma key crean una sola Order y un solo Attempt (44.92058ms)
+  ✔ E2E-04 RBAC: ADMIN no compra ni paga, compradores no ven Orders ajenas e identidades inválidas se rechazan (29.971175ms)
+  ✔ E2E-16 Order History: cada comprador ve solo sus Orders, recientes primero, con detalle autorizado (12.966549ms)
+  ✔ E2E-17 Recuperación después de reiniciar: historial, detalle y Replay salen de PostgreSQL (23.401608ms)
+  ✔ E2E-19 Regresión de búsqueda, filtros, ordenamiento y paginación del catálogo (6.172454ms)
+✔ CN-69 E2E Proyecto III: Client HTTP → Express → PostgreSQL con catálogo QA (826.9867ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1117.866335
+exit=0

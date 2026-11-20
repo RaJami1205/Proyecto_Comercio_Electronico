@@ -4,7 +4,7 @@
 
 ### E-Commerce de Tecnología, Computación y Electrónica
 
-**Una experiencia de compra moderna, responsive y orientada a búsqueda, construida con React, TypeScript, Node.js y Algolia.**
+**Una experiencia de compra moderna, responsive y multirrol, desarrollada con React, TypeScript, Node.js, Algolia y PostgreSQL.**
 
 <br>
 
@@ -12,6 +12,7 @@
 ![Vite](https://img.shields.io/badge/Vite-Build-646CFF?style=for-the-badge&logo=vite&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-Express-111827?style=for-the-badge&logo=node.js&logoColor=white)
 ![Algolia](https://img.shields.io/badge/Search-Algolia-5B5BF7?style=for-the-badge&logo=algolia&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/Orders-PostgreSQL-336791?style=for-the-badge&logo=postgresql&logoColor=white)
 
 <br>
 
@@ -25,11 +26,7 @@
 
 <div align="center">
 
-<img
-  src="docs/assets/cibernova-panel.png"
-  alt="Panel principal de CiberNova"
-  width="100%"
-/>
+<img src="docs/assets/cibernova-panel.png" alt="Panel principal de CiberNova" width="100%" />
 
 </div>
 
@@ -37,17 +34,17 @@
 
 # 🚀 CiberNova
 
-**CiberNova** es una aplicación web de comercio electrónico enfocada en la venta de productos de tecnología, computación y electrónica.
+**CiberNova** es una aplicación web de comercio electrónico enfocada en la venta de productos de tecnología, computación y electrónica. Su evolución incorpora experiencias de compra **B2C y B2B**, así como herramientas de consulta para **ADMIN**.
 
 El proyecto fue desarrollado como parte del curso de **Comercio Electrónico** del Tecnológico de Costa Rica y busca ofrecer una experiencia de compra moderna, intuitiva y adaptable a distintos dispositivos.
 
-La plataforma integra un catálogo conectado con **Algolia**, búsqueda predictiva, filtros, paginación, Product Quick View y un carrito de compras persistente, un Checkout de cuatro etapas, creación de Orders autoritativas, Payment Sandbox, resultados de pago, Purchase Confirmation y Safe Cart Cleanup.
+La plataforma integra un catálogo conectado con **Algolia**, búsqueda predictiva, filtros, paginación, Product Quick View y un carrito de compras persistente. El flujo comercial incorpora **Retail/Wholesale Pricing**, MOQ para B2B, disponibilidad en cuatro sucursales, Checkout de cuatro etapas, Orders autoritativas, Payment Sandbox, Purchase Confirmation y Safe Cart Cleanup.
 
-Integra Simulated Login, historial personalizado y Analytics en la misma aplicación. Las identidades B2C, B2B y ADMIN pueden explorar el catálogo. El Checkout está habilitado para B2C y el Dashboard de actividad local está reservado a ADMIN.
+Integra Simulated Login con identidades **B2C, B2B y ADMIN**, Order History por comprador y un panel administrativo para consultar Orders, Products e Inventory. **B2C y B2B** pueden realizar compras según sus condiciones comerciales; **ADMIN** tiene acceso de consulta y simulación, pero no puede comprar. El Dashboard de Analytics local está reservado a ADMIN.
 
-Además cuenta con políticas comerciales, FAQ y aceptación obligatoria de Términos y Condiciones durante Checkout. 
+Además cuenta con políticas comerciales, FAQ y aceptación obligatoria de Términos y Condiciones durante Checkout.
 
-La arquitectura separa claramente el frontend y backend: el Server protege las credenciales de Algolia, valida disponibilidad y calcula los importes definitivos. El Payment Sandbox simula los pagos sin realizar transacciones bancarias reales.
+La arquitectura separa claramente el frontend y backend: el Server protege las credenciales de Algolia, verifica identidad y permisos, valida disponibilidad y calcula los importes definitivos. **PostgreSQL** almacena Orders y Payment Attempts cuando se habilita explícitamente el modo persistente; Algolia proporciona búsqueda y una proyección derivada de Orders. El **Payment Sandbox** simula los pagos sin realizar transacciones bancarias reales.
 
 ---
 
@@ -82,15 +79,16 @@ La arquitectura separa claramente el frontend y backend: el Server protege las c
 
 # ✨ Características principales
 
-CiberNova incorpora las principales funcionalidades de un E-Commerce B2C, desarrolladas de manera incremental entre el catálogo, el carrito y el Checkout.
+CiberNova combina un E-Commerce **B2C/B2B** con un entorno administrativo **ADMIN**. Sus funcionalidades se desarrollaron de forma incremental, conservando las capacidades de catálogo, búsqueda, carrito y Checkout de las primeras etapas.
 
 ### Catálogo
 
 - Catálogo dinámico conectado con Algolia.
 - Productos de computación, hardware, gaming, conectividad y electrónica.
-- Imágenes, precio, disponibilidad y datos principales por producto.
+- Imágenes, precios contextuales, disponibilidad por sucursal y datos principales por producto.
 - Diseño mediante cards reutilizables.
 - Paginación adaptada a desktop, tablet y mobile.
+- Precios Retail/Wholesale según la identidad comercial; validación definitiva en Server.
 
 ### Búsqueda
 
@@ -115,14 +113,28 @@ CiberNova incorpora las principales funcionalidades de un E-Commerce B2C, desarr
 - Vista detallada sin abandonar el catálogo.
 - Imagen principal.
 - Precio.
-- Stock.
+- Stock contextual para la sucursal seleccionada.
 - Descripción.
 - Especificaciones.
 - Acción directa para agregar al carrito.
 
 ### Simulated Login
 
-El selector obtiene las identidades mediante `GET /api/users`. Al elegir una, `POST /api/session/resolve` devuelve el usuario validado por el Server desde el índice de usuarios de Algolia. `SessionContext` conserva la identidad en memoria hasta Logout, cambio de usuario o reload.
+El selector obtiene las identidades mediante `GET /api/users`. Al elegir una, `POST /api/session/resolve` devuelve el usuario validado por el Server desde el índice de usuarios de Algolia. `SessionContext` conserva la identidad en memoria hasta Logout, cambio de usuario o reload. El Server valida roles, estado habilitado y datos obligatorios, y vuelve a resolver la identidad en operaciones protegidas. Se trata de **identidades simuladas**, no de autenticación real mediante contraseña.
+
+### Roles y Pricing contextual
+
+- **B2C:** catálogo con precios Retail, Cart, Checkout y consulta de su Order History.
+- **B2B:** precios Wholesale, identificación de Company y **MOQ específico de cada producto** para compras comerciales.
+- **ADMIN:** consulta de Orders, Products e Inventory, simulaciones administrativas y Analytics Dashboard; sin autorización para Checkout o Payment.
+- Validaciones de rol, identidad, precios, MOQ y disponibilidad ejecutadas por el Server antes de crear una Order.
+
+### Inventario multiesucursal
+
+- Cuatro sucursales: **San José, Alajuela, Cartago y Heredia**.
+- Selección de Branch para consultar stock y determinar la disponibilidad de compra.
+- La Order conserva la sucursal elegida y el contexto comercial de la transacción.
+- Rechazo de cantidades que exceden el inventario o incumplen el MOQ B2B.
 
 ### Analytics y experiencia personalizada
 
@@ -135,7 +147,7 @@ Seis eventos registran interacciones del catálogo y del flujo de compra. El cat
 - Agregar productos desde catálogo o Quick View.
 - Incrementar, disminuir y eliminar unidades.
 - Contador de productos, Empty State y Cart Preview.
-- Persistencia local y sincronización mediante eventos `storage`.
+- Persistencia local aislada por identidad y sincronización mediante eventos `storage`.
 - Resumen financiero y diseño responsive.
 - Seguimiento de incorporaciones para preservar productos ajenos durante Safe Cart Cleanup.
 
@@ -146,16 +158,32 @@ Seis eventos registran interacciones del catálogo y del flujo de compra. El cat
 - Revisión de productos, cantidades y totales antes de crear la Order.
 - Detección y aceptación explícita de diferencias entre importes preliminares y autoritativos.
 - Recuperación de solicitudes de creación inciertas mediante Idempotency.
+- Checkout habilitado para identidades B2C y B2B válidas; se conserva la sucursal seleccionada y se aplica el MOQ cuando corresponde.
 
 ### Orders y Payment Sandbox
 
-- Creación y consulta de Orders mediante REST API.
+- Creación y consulta de Orders mediante REST API, con snapshots históricos de identidad, rol, Company (B2B), Branch y condiciones comerciales.
 - Validación de productos, disponibilidad y cantidades en Server.
 - Precios y totales definitivos calculados por Server a partir del catálogo.
 - Payment Sandbox con escenarios APPROVED, DECLINED y ERROR.
 - Campos de tarjeta exclusivamente demostrativos, sin envío ni almacenamiento de sus valores.
 - Protección contra Double Submit, intentos duplicados y reintentos inconsistentes.
+- Persistencia autoritativa de Orders y Payment Attempts en PostgreSQL cuando se selecciona ese Store; modo In-Memory disponible para ejecución alternativa.
+- Idempotency, Retry, Replay histórico y recuperación tras reiniciar el Server en modo PostgreSQL.
 - Resultados de pago con feedback y Retry sobre la misma Order cuando corresponde.
+
+### Order History
+
+- Historial y detalle de Orders asociados a la identidad del comprador.
+- Lectura paginada con protección de **Ownership** y snapshots comerciales históricos.
+- Recuperación de Orders históricas desde PostgreSQL cuando el Store persistente está activo.
+
+### Panel administrativo
+
+- **Admin Orders:** listado global de consulta, Search, Filters, Pagination y Order Detail con acceso restringido a ADMIN.
+- **Admin Products:** consulta de catálogo y disponibilidad por sucursal.
+- **Inventory Simulation:** simulación local de cambios de stock con confirmación y **Reset**, sin modificar el inventario autoritativo.
+- **Analytics Dashboard:** métricas agregadas únicamente de la actividad local disponible en el navegador/origen.
 
 ### Purchase Confirmation
 
@@ -177,7 +205,7 @@ Seis eventos registran interacciones del catálogo y del flujo de compra. El cat
 
 # 🛒 Experiencia de compra
 
-El catálogo admite visitantes. Para continuar desde el Cart a Checkout, selecciona una identidad B2C válida. B2B y ADMIN pueden consultar el catálogo a precios Retail.
+El catálogo admite visitantes. Para continuar desde el Cart a Checkout, se selecciona una identidad **B2C o B2B válida** y una sucursal. B2C utiliza precios Retail; B2B utiliza Wholesale Pricing y respeta el MOQ específico de cada producto. ADMIN puede explorar el catálogo y consultar herramientas administrativas, pero no completar compras.
 
 El flujo principal de usuario es:
 
@@ -188,11 +216,15 @@ Buscar / filtrar productos
       ↓
 Consultar Product Quick View
       ↓
+Seleccionar identidad B2C / B2B y sucursal
+      ↓
 Agregar productos al carrito
       ↓
 Modificar cantidades y revisar el resumen
       ↓
 Checkout: Comprador → Entrega → Revisión
+      ↓
+Validar stock, Pricing y MOQ según la identidad
       ↓
 Consulta de Términos y Condiciones
       ↓
@@ -213,7 +245,7 @@ Volver al catálogo tras la confirmación
 
 Una nueva Order requiere aceptación válida. Client administra el Checkbox y permite consultar TermsDialog sin abandonar Checkout; abrir el diálogo no registra consentimiento ni es una condición técnica adicional. Server valida la declaración antes de construir el snapshot.
 
-El carrito muestra cálculos preliminares; el Server calcula los importes definitivos de cada Order utilizando los precios vigentes del catálogo.
+El carrito muestra cálculos preliminares; el Server calcula los importes definitivos de cada Order utilizando los precios vigentes del catálogo, el **Pricing** aplicable a B2C/B2B y la disponibilidad de la sucursal seleccionada.
 
 La política financiera aprobada es:
 
@@ -221,24 +253,26 @@ La política financiera aprobada es:
 Subtotal por producto = Precio unitario × Cantidad
 Subtotal general = Σ subtotales sin redondeo previo
 IVA (13 %) = Math.round(Subtotal × 100 × 0.13) / 100
-
 Subtotal para elegibilidad de envío = Math.round(Subtotal)
 Envío:
   Subtotal <= 0                              → ₡0
   Subtotal > 0 y elegibilidad < ₡100 000     → ₡3 500
   Elegibilidad >= ₡100 000                   → ₡0
-
 Total = Subtotal original + IVA + Envío
 ```
 
 El redondeo del subtotal completo se utiliza **únicamente para evaluar el envío gratuito**, antes del IVA. No se redondean los precios ni los subtotales de cada producto para acumular la compra. Por ejemplo, un subtotal de ₡99 999,50 obtiene envío gratuito, mientras que ₡99 999,49 mantiene el costo de envío.
 
-En **Review**, si el Server devuelve precios o importes diferentes, el usuario debe aceptar los valores autoritativos antes de continuar. Una Order se crea con estado `PENDING / PENDING`; el Payment Sandbox permite estos resultados:
+En **Review**, si el Server devuelve precios o importes diferentes, el usuario debe aceptar los valores autoritativos antes de continuar. Una Order se crea con estado `PENDING / PENDING`; su snapshot conserva el contexto de usuario, Company cuando aplica, Branch, Pricing, cantidades, totales y consentimiento. El Payment Sandbox permite estos resultados:
 
 | Escenario | Order Status | Payment Status | Acción disponible |
+
 |---|---|---|---|
+
 | `PAYMENT_APPROVED` | `CONFIRMED` | `APPROVED` | Purchase Confirmation y Safe Cart Cleanup |
+
 | `PAYMENT_DECLINED` | `PENDING` | `DECLINED` | Retry sobre la misma Order |
+
 | `PAYMENT_ERROR` | `PENDING` | `ERROR` | Retry sobre la misma Order |
 
 Los errores técnicos de comunicación se distinguen de los escenarios simulados. Los intentos inciertos conservan su identidad (`orderId`, `scenario` e `idempotencyKey`) mientras el Checkout permanezca activo. No se procesan pagos reales.
@@ -252,10 +286,15 @@ Los errores técnicos de comunicación se distinguen de los escenarios simulados
 CiberNova incorpora cuatro páginas informativas originales que describen las condiciones comerciales simuladas y el alcance académico de la plataforma:
 
 | Página | Destino en la aplicación |
+
 |---|---|
+
 | Términos y Condiciones | `#terms` |
+
 | Política de Devoluciones | `#returns-policy` |
+
 | Política de Envíos | `#shipping-policy` |
+
 | Política de Privacidad | `#privacy-policy` |
 
 Reutilizan `PolicyLayout` y `PolicySection`, con navegación hash y la identidad responsive del sitio. Estas políticas no representan procesamiento de devoluciones ni entregas reales y no sustituyen los derechos aplicables de los consumidores.
@@ -287,7 +326,7 @@ Una declaración inválida produce HTTP 400; reutilizar una key con otra identid
 
 ## Limitaciones del entorno académico
 
-No existen pagos bancarios reales ni procesamiento automatizado real de devoluciones. Orders y consentimiento residen en `InMemoryOrderStore`: no hay persistencia transaccional entre reinicios del Server. `acceptedAt` registra el instante del snapshot; no constituye firma digital ni prueba permanente de identidad.
+No existen pagos bancarios reales ni procesamiento automatizado real de devoluciones. CiberNova admite dos composiciones: **In-Memory**, cuyos datos transaccionales no sobreviven al reinicio del proceso, y **PostgreSQL**, que conserva Orders, Payment Attempts y snapshots, incluida la aceptación de términos. `acceptedAt` registra el instante del snapshot, pero no constituye una firma digital ni acredita una identidad real.
 
 ---
 
@@ -315,11 +354,14 @@ No existen pagos bancarios reales ni procesamiento automatizado real de devoluci
 ![Node.js](https://img.shields.io/badge/Node.js-Runtime-339933?style=flat-square&logo=node.js&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-API-111827?style=flat-square&logo=express&logoColor=white)
 ![Algolia](https://img.shields.io/badge/Algolia-Search-5468FF?style=flat-square&logo=algolia&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Persistence-336791?style=flat-square&logo=postgresql&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?style=flat-square&logo=supabase&logoColor=white)
 
 - Node.js
 - TypeScript
 - Express
 - Algolia JavaScript API Client
+- PostgreSQL (driver `pg`) y Supabase como servicio de base de datos para la composición persistente.
 - CORS
 - dotenv
 
@@ -342,7 +384,7 @@ No existen pagos bancarios reales ni procesamiento automatizado real de devoluci
 
 # 🏗️ Arquitectura
 
-CiberNova utiliza una arquitectura separada entre cliente y servidor.
+CiberNova utiliza una arquitectura separada entre cliente y servidor. El Server valida las reglas comerciales y centraliza el acceso a los servicios externos. **Algolia** permite consultar Products/Users y buscar proyecciones de Orders; **PostgreSQL**, cuando está habilitado, es la fuente autoritativa de Orders y Payments.
 
 ```text
 ┌──────────────────────┐
@@ -392,29 +434,31 @@ JSON Response
 React
 ```
 
-Este diagrama representa la consulta de catálogo. Para el flujo de compra, Express incorpora servicios de Order y Payment con almacenamiento temporal en memoria:
+El diagrama anterior representa la consulta del catálogo. Para el flujo de compra, Express incorpora servicios de Order y Payment con un Store seleccionable: **PostgreSQL** o **In-Memory**. Cuando se usa PostgreSQL, la indexación de Orders en Algolia se realiza como proyección derivada posterior al COMMIT:
 
 ```text
 React Checkout
       ↓
 POST /api/orders
       ↓
-OrderService ← Algolia (precios y stock)
+OrderService ← Algolia (Products y condiciones comerciales)
       ↓
-InMemoryOrderStore
+Commerce Store: PostgreSQL / In-Memory
       ↓
-Order autoritativa
+Order V2 y snapshot autoritativo
       ↓
 POST /api/orders/:orderId/payment
       ↓
 PaymentService → Payment Sandbox
       ↓
-PaymentResult → Purchase Confirmation / Retry
+Payment Attempt y estado de Order
+      ├──→ Purchase Confirmation / Retry / Replay
+      └──→ OrderIndexSyncService → Algolia (orders, proyección)
 ```
 
-También está disponible `GET /api/orders/:orderId` para consultar una Order existente. Orders, Idempotency y locks del Sandbox residen en memoria del proceso Server; no existe una base de datos transaccional persistente.
+También está disponible `GET /api/orders/:orderId` para consultar una Order existente. En modo **PostgreSQL**, las transacciones, Creation Requests, Orders y Payment Attempts se mantienen en la base de datos, permitiendo Retry, Replay y recuperación entre procesos. En modo **In-Memory**, esos datos permanecen en memoria durante la vida del Server. El modo se selecciona explícitamente con `COMMERCE_STORE_MODE`; declarar `DATABASE_URL` por sí sola no activa PostgreSQL.
 
-Esta separación evita que el frontend tenga acceso directo a credenciales privadas de Algolia o a controles autoritativos de la transacción.
+Esta separación evita que el frontend tenga acceso directo a credenciales privadas de Algolia, conexiones PostgreSQL o controles autoritativos de la transacción. Admin Orders obtiene candidatos de Algolia cuando aplica y recupera el detalle desde el Store autoritativo; la búsqueda es eventualmente consistente y no reemplaza los datos de PostgreSQL.
 
 El flujo de identidad y Analytics tiene su propio recorrido. Los componentes observan resultados comerciales, mientras los servicios de Order y Payment conservan la autoridad sobre la transacción.
 
@@ -436,15 +480,17 @@ El directorio `client/` contiene:
 - componentes;
 - navegación de interfaz;
 - estado del catálogo;
-- Session Management, Navigation Guards, Hybrid Storage, personalización y Dashboard ADMIN;
+- Session Management, Navigation Guards, vistas B2C/B2B/ADMIN, Hybrid Storage, personalización y Dashboard ADMIN;
 - búsqueda;
 - filtros;
 - paginación;
 - estado global y persistencia del carrito;
 - cálculos derivados y vistas preliminares;
 - formularios de Buyer y Delivery;
-- Checkout, Review y comunicación con las APIs de Order y Payment;
+- Checkout B2C/B2B, Branch Selection, Review y comunicación con las APIs de Order y Payment;
 - estados visuales Approved, Declined y Error;
+- Order History y consultas administrativas de Orders, Products e Inventory;
+- Inventory Simulation y Reset exclusivamente locales, sin escrituras autoritativas;
 - Purchase Confirmation y coordinación de Safe Cart Cleanup;
 - presentación de Policies, FAQ y TermsDialog;
 - validación local y captura de Terms Acceptance, serialización del request y validación de respuestas de Order y Payment;
@@ -462,13 +508,17 @@ El directorio `server/` contiene:
 - services;
 - mappers;
 - procesamiento de categorías;
-- resolución de identidad con UserService y recuperación de productos por ID para el historial;
-- validación de stock y cálculo de importes autoritativos;
+- resolución de identidad con UserService, controles RBAC y recuperación de productos por ID para el historial;
+- validación de stock por sucursal, Wholesale/Retail Pricing y MOQ B2B;
+- cálculo de importes autoritativos;
 - creación, consulta e Idempotency de Orders;
 - Payment Sandbox, estados y guards de concurrencia;
-- InMemoryOrderStore y manejo de errores;
+- Stores In-Memory y PostgreSQL, Idempotency, snapshots y recuperación transaccional;
+- indexación derivada de Orders hacia Algolia, Versioning y Reconciliation;
+- consultas Read-Only de Admin Orders con hidratación autoritativa;
+- manejo de errores;
 - validación autoritativa de consentimiento y Terms Version Management;
-- metadata de aceptación preservada en InMemoryOrderStore, fingerprint de consentimiento y Replay histórico compatible;
+- metadata de aceptación preservada en el Store comercial seleccionado, fingerprint de consentimiento y Replay histórico compatible;
 - herramientas administrativas como el seed de Algolia.
 
 ---
@@ -477,7 +527,7 @@ El directorio `server/` contiene:
 
 El Shopping Cart mantiene una única fuente de verdad para sus productos.
 
-El Cart persistido aún carece de ownership definitivo por usuario. Ante un cambio de identidad con productos, la interfaz pide confirmar su descarte para la revisión vigente del Cart. Checkout y los intentos de resultado incierto bloquean la transición.
+El Cart mantiene **ownership por identidad** y su persistencia local se separa por usuario. Los cambios de Session preservan el aislamiento entre identidades y evitan mezclar productos de compradores diferentes. Checkout y los intentos con resultado incierto mantienen las guardas correspondientes para proteger el flujo de compra.
 
 ```text
 React Components
@@ -533,7 +583,7 @@ Después de una confirmación autoritativa `CONFIRMED / APPROVED`, Checkout soli
 
 ## Persistencia del carrito
 
-El carrito utiliza almacenamiento local para conservar los productos entre recargas del navegador. La persistencia se mantiene separada de la lógica pura del reducer.
+El carrito utiliza almacenamiento local por identidad para conservar los productos entre recargas del navegador. La persistencia se mantiene separada de la lógica pura del reducer; restaurar el Cart requiere respetar su propietario.
 
 ```text
 CartState
@@ -545,13 +595,13 @@ localStorage
 
 La sincronización disponible mediante eventos `storage` permite reflejar cambios de otras pestañas, pero **no garantiza transacciones atómicas entre pestañas**. Ante metadatos antiguos o ambiguos, la limpieza adopta una estrategia conservadora para evitar eliminar productos incorrectos.
 
-La persistencia es exclusiva del carrito. Los datos personales de Buyer/Delivery, los intentos de Payment, **Predictive Search** y **Recent Searches** no se almacenan mediante esta persistencia y permanecen temporales según su correspondiente flujo.
+Esta persistencia corresponde al carrito, separada del almacenamiento local de Analytics. Los datos personales de Buyer/Delivery, los intentos de Payment, **Predictive Search** y **Recent Searches** no se guardan como parte del Cart y permanecen temporales según sus flujos. La persistencia de Orders/Payments en PostgreSQL es exclusiva del Server cuando está habilitada.
 
 ---
 
 # 🔍 Búsqueda y catálogo
 
-El catálogo utiliza Algolia como motor de búsqueda.
+El catálogo utiliza Algolia como motor de búsqueda. Las consultas y los filtros se procesan desde el Server, que aplica el contexto comercial: **precios Retail para B2C** y **Wholesale para B2B**, con ordenamiento y paginación coherentes con el precio correspondiente.
 
 La aplicación permite:
 
@@ -576,9 +626,9 @@ Client
   ↓
 /api/products
   ↓
-Express
+Express / ProductService
   ↓
-Algolia
+Algolia (products y réplicas)
 ```
 
 ## Recent Searches
@@ -595,7 +645,7 @@ No utilizan:
 
 Al recargar o cerrar la aplicación, el historial se reinicia.
 
-El cambio de identidad también reinicia el componente de búsqueda. Al seleccionar una consulta reciente, el catálogo reutiliza el flujo de búsqueda y Analytics registra únicamente su origen.
+El cambio de identidad también reinicia el componente de búsqueda. Al seleccionar una consulta reciente, el catálogo reutiliza el flujo de búsqueda y Analytics registra únicamente su origen. Las condiciones comerciales y la Branch seleccionada determinan los precios y la disponibilidad finalmente mostrados y validados por el Server.
 
 ---
 
@@ -604,27 +654,40 @@ El cambio de identidad también reinicia el componente de búsqueda. Al seleccio
 ## Eventos de Analytics
 
 | Evento | Interacción que lo produce |
+
 |---|---|
+
 | `SESSION_STARTED` | React aplica una transición a la identidad resuelta por Server. |
+
 | `SEARCH_PERFORMED` | El catálogo ejecuta una consulta nueva y no vacía. Cambiar de página o recibir sugerencias para el mismo texto no incrementa el contador. |
+
 | `PRODUCT_VIEWED` | Una interacción abre el detalle de un producto en Quick View. |
+
 | `CART_ITEM_ADDED` | El Cart acepta una adición. Cada acción cuenta una vez, independientemente de las unidades. |
+
 | `CHECKOUT_STARTED` | La navegación entra a Checkout. Los cambios de etapa pertenecen al mismo flujo. |
+
 | `PURCHASE_COMPLETED` | Payment devuelve `PAYMENT_APPROVED` con Order `CONFIRMED` y pago `APPROVED`. El Order ID permite reconocer la misma compra en Retry y Replay. Los intentos fallidos quedan fuera del contador. |
 
 ## Hybrid Storage
 
 | Dato | Ubicación | Duración y alcance |
+
 |---|---|---|
+
 | Identidad simulada | React SessionContext | En memoria de la pestaña. Tras reload se debe seleccionar una identidad de nuevo. |
+
 | Recent Searches y Predictive Search | Estado de React | En memoria de la experiencia de búsqueda activa. |
+
 | Eventos, contadores y referencias de compras | `localStorage`, Schema v2 | Un snapshot por userId y otro para Anonymous. El log conserva los últimos 500 eventos por scope. Los acumulados y Order IDs permanecen al truncarse el log. |
+
 | Recently Viewed Products | En el snapshot del scope | Hasta diez Product IDs únicos en orden de recencia. |
-| Cart | Clave propia de `localStorage` | Se restaura independientemente de la sesión y de Analytics. |
+
+| Cart | `localStorage` aislado por usuario | Se restaura respetando la identidad propietaria, independientemente de Analytics. |
 
 El snapshot separa Anonymous de cada usuario, incluso después del Login. Cada evento incluye ID, instante, scope, versión y metadata específica. Una búsqueda conserva su origen (`catalog` o `recent`). Los términos de búsqueda, los datos personales de Buyer/Delivery y los datos bancarios quedan fuera del evento.
 
-Con Web Locks, el Core relee el snapshot bajo un lock exclusivo por scope y aplica los eventos pendientes antes de escribir. Si falta Web Locks o falla la escritura, la actividad nueva puede quedar solo en memoria de esa pestaña. Esta política *fail-open* permite continuar la compra. Analytics se ejecuta en el Client, sin API de Analytics ni tablas PostgreSQL. Borrar el almacenamiento del sitio elimina su historial persistido.
+Con Web Locks, el Core relee el snapshot bajo un lock exclusivo por scope y aplica los eventos pendientes antes de escribir. Si falta Web Locks o falla la escritura, la actividad nueva puede quedar solo en memoria de esa pestaña. Esta política **fail-open** permite continuar la compra. Analytics se ejecuta en el Client, sin API de Analytics ni tablas PostgreSQL. Borrar el almacenamiento del sitio elimina su historial persistido.
 
 ## Historial por identidad
 
@@ -642,7 +705,7 @@ El Dashboard se actualiza ante eventos locales y cambios de storage de otras pes
 
 # 📱 Diseño responsive
 
-CiberNova fue diseñada para adaptarse a:
+CiberNova fue diseñada para adaptarse a las vistas de catálogo, Cart, Checkout, Order History y panel ADMIN en:
 
 - Desktop
 - Tablet
@@ -653,12 +716,16 @@ El catálogo utiliza distintas densidades dependiendo del viewport.
 Las tarjetas de métricas del Dashboard también reorganizan sus columnas para mobile, tablet y desktop.
 
 | Vista | Columnas | Productos por página |
+
 |---|---:|---:|
+
 | Desktop | 3 | 9 |
+
 | Tablet | 3 | 6 |
+
 | Mobile | 2 | 6 |
 
-El carrito, el Checkout multi-step, el Payment Sandbox y Purchase Confirmation también adaptan su composición y sus controles al viewport.
+El carrito, el Checkout multi-step, el Payment Sandbox, Purchase Confirmation, Order History y las pantallas administrativas también adaptan su composición y sus controles al viewport.
 
 ### Desktop / Tablet
 
@@ -707,7 +774,8 @@ E_Commerce/
 ├── .github/
 │   └── workflows/
 │       ├── client-ci.yml
-│       └── deploy-pages.yml
+│       ├── deploy-pages.yml
+│       └── server-postgresql-ci.yml
 │
 ├── client/
 │   ├── src/
@@ -773,16 +841,24 @@ E_Commerce/
 │   │   │   └── seedUsers.ts
 │   │   ├── services/
 │   │   │   ├── userService.ts
-│   │   │   └── orderService.ts
+│   │   │   ├── productService.ts
+│   │   │   ├── orderService.ts
+│   │   │   ├── orderIndexSyncService.ts
+│   │   │   └── adminOrderService.ts
 │   │   ├── stores/
 │   │   ├── types/
 │   │   ├── app.ts
 │   │   └── index.ts
 │   │
 │   ├── tests/
+│   │   ├── helpers/
+│   │   │   └── postgresIntegrationHarness.mjs
+│   │   └── e2e.integration.test.mjs
 │   └── package.json
 │
 ├── docs/
+│   ├── qa/
+│   │   └── herramientas/
 │   └── assets/
 │       └── cibernova-panel.png
 │
@@ -790,7 +866,7 @@ E_Commerce/
 └── README.md
 ```
 
-`client/` y `server/` son aplicaciones independientes y administran sus dependencias mediante sus respectivos archivos `package.json`. Los contratos de Order y Payment se mantienen en ambos proyectos con compatibilidad Client/Server, sin imports directos entre sus fuentes.s.
+`client/` y `server/` son aplicaciones independientes y administran sus dependencias mediante sus respectivos archivos `package.json`. Los contratos de Order y Payment se mantienen en ambos proyectos con compatibilidad Client/Server, sin imports directos entre sus fuentes. El repositorio también contiene pruebas de integración PostgreSQL y herramientas de Browser QA aislado.
 
 ---
 
@@ -803,6 +879,7 @@ Antes de ejecutar el proyecto se requiere:
 - npm
 - navegador web moderno
 - acceso a Algolia para ejecutar el backend completo
+- una base PostgreSQL configurada y con esquema preparado **solo si se elige** el modo de persistencia PostgreSQL
 
 Verificar las herramientas:
 
@@ -896,9 +973,12 @@ El backend requiere las variables de configuración correspondientes a:
 
 - aplicación de Algolia;
 - índice de productos (`ALGOLIA_INDEX_NAME`) e índice independiente de usuarios (`ALGOLIA_USERS_INDEX_NAME`);
+- índice de Orders (`ALGOLIA_ORDERS_INDEX_NAME`) con su clave restringida (`ALGOLIA_ORDERS_API_KEY`), descritos en `server/docs/orders-search-index.md`;
 - credencial autorizada del servidor;
 - puerto de ejecución;
-- configuración permitida por el entorno.
+- configuración permitida por el entorno;
+- `COMMERCE_STORE_MODE` para elegir explícitamente entre `memory` y `postgresql`;
+- `DATABASE_URL` y permisos PostgreSQL adecuados cuando se utilice el modo persistente.
 
 Los nombres y validaciones deben mantenerse consistentes con la configuración definida en:
 
@@ -907,6 +987,21 @@ server/src/config/env.ts
 ```
 
 Las credenciales privadas nunca deben utilizarse directamente desde `client/`.
+
+El modo comercial predeterminado es **In-Memory**. Para habilitar persistencia PostgreSQL es necesario seleccionar explícitamente el Store y proporcionar una conexión válida al Server; la existencia de `DATABASE_URL` no cambia automáticamente el modo:
+
+```env
+# Modo por defecto para ejecución sin PostgreSQL
+COMMERCE_STORE_MODE=memory
+```
+
+```env
+# Alternativa persistente, una vez preparado el esquema y los permisos
+COMMERCE_STORE_MODE=postgresql
+DATABASE_URL=<URL privada de PostgreSQL>
+```
+
+Estos bloques describen **configuraciones alternativas**, no valores que deban usarse a la vez. La configuración de PostgreSQL, su esquema y sus permisos se administra por separado; el arranque normal no debe ejecutar Seeds ni Migrations de manera implícita. Para el detalle de opciones y validaciones, consultar `server/src/config/env.ts`.
 
 ---
 
@@ -921,7 +1016,7 @@ cd server
 npm run dev
 ```
 
-El backend utilizará el puerto configurado para el entorno local.
+El backend utilizará el puerto configurado para el entorno local. Con `COMMERCE_STORE_MODE=memory`, Orders y Payments utilizan almacenamiento temporal; con `COMMERCE_STORE_MODE=postgresql`, requieren una base PostgreSQL preparada y autorizada.
 
 Para probar Simulated Login, el Server necesita acceso de lectura al índice de usuarios configurado. Con ambos procesos activos, abre el selector de identidad en el Client y elige ADMIN para consultar Analytics.
 
@@ -949,7 +1044,7 @@ React / Vite (Catalog, Cart, Checkout)
    ↓
 Express API
    ├── Algolia (Catálogo, stock y precios)
-   └── Orders y Payment Sandbox (memoria del proceso)
+   └── Orders y Payment Sandbox (PostgreSQL o In-Memory)
 ```
 
 ---
@@ -959,28 +1054,40 @@ Express API
 ## Client
 
 | Comando | Descripción |
+
 |---|---|
+
 | `npm run dev` | Ejecuta Vite en modo desarrollo |
+
 | `npm run lint` | Ejecuta ESLint |
+
 | `npm run build` | Genera el build de producción |
+
 | `npm run preview` | Previsualiza localmente el build |
+
 | `node --test tests/*.test.mjs` | Ejecuta la suite completa del Client |
 
 ## Server
 
 | Comando | Descripción |
+
 |---|---|
+
 | `npm run dev` | Ejecuta el backend en desarrollo |
+
 | `npm run build` | Compila TypeScript |
+
 | `npm start` | Inicia el backend compilado |
+
 | `npm run seed:algolia` | Ejecuta la herramienta controlada de seed de Algolia |
+
 | `npm run seed:users` | Valida en `dry-run` los usuarios simulados; la carga al índice `users` está documentada en `server/README.md` |
 
 ---
 
 # 🧠 Algolia y dataset
 
-El catálogo de CiberNova utiliza Algolia como motor de búsqueda y faceting.
+El catálogo de CiberNova utiliza Algolia como motor de búsqueda y faceting. La arquitectura distingue los índices **products**, **users** y **orders**: los dos primeros aportan catálogo e identidades simuladas; `orders` contiene una proyección buscable y eventualmente consistente de datos autoritativos en PostgreSQL.
 
 UserService consulta un índice independiente de identidades simuladas. El seed de usuarios (`npm run seed:users` desde `server/`) valida en dry-run por defecto. Iniciar el Server no carga ni modifica esos registros.
 
@@ -1009,64 +1116,36 @@ El seed:
 - no se ejecuta automáticamente desde Render;
 - no modifica settings o replicas del índice de forma implícita.
 
-Debe utilizarse únicamente cuando sea necesario reconstruir o actualizar deliberadamente los productos del índice.
+Debe utilizarse únicamente cuando sea necesario reconstruir o actualizar deliberadamente los productos del índice. La sincronización derivada de Orders dispone de Versioning, Retry y Reconciliation controlada, y **no convierte Algolia en la fuente autoritativa** de una compra.
 
 ---
 
 # 🧪 Validaciones
 
-Antes de integrar cambios se deben ejecutar las validaciones correspondientes.
+CiberNova incorpora **Unit Tests, Regression Testing, Integration Testing y End-to-End Testing** para los flujos de compra, permisos, persistencia, administración y funcionalidades heredadas. También se comprueban **Responsive Design**, TypeScript Strict Mode, Build y Lint.
 
 ## Client
 
+Desde `client/`, los comandos principales de validación son:
+
 ```bash
-cd client
 npm run lint
 npm run build
 ```
 
-Para comprobar de forma focalizada desde `client/`, las siguientes suites cubren Analytics Core, concurrencia, Session, personalización, agregación, acceso ADMIN y Payment Integrity.
-
-```bash
-node --test tests/analytics.test.mjs tests/analyticsConcurrency.test.mjs tests/session.test.mjs tests/personalizationSession.test.mjs tests/analyticsAggregation.test.mjs tests/analyticsDashboard.test.mjs tests/paymentIntegrity.test.mjs
-```
-
-El último baseline validado de la suite completa del Client para CN-75 fue de **332 tests aprobados**.
-
-Para ejecutar la suite de regresión del carrito, Checkout, Orders y Payment desde `client/`:
-
-```bash
-node --test tests/cartCalculations.test.mjs tests/cartCleanup.test.mjs tests/orderApi.test.mjs tests/checkoutCorrections.test.mjs tests/paymentIntegrity.test.mjs tests/safeCartCleanup.test.mjs tests/confirmation.test.mjs
-```
+Las pruebas automatizadas del Client cubren catálogo, Session, Cart, Checkout, Order APIs, Analytics y personalización.
 
 ## Server
 
+Desde `server/`, la compilación se verifica mediante:
+
 ```bash
-cd server
 npm run build
 ```
 
-Después del build, comprueba identidad, contratos de dominio y Product Resolution desde `server/` con fixtures aislados.
+Las pruebas del Server cubren reglas comerciales, identidad, Orders, Payment Sandbox, Idempotency, Retry, Replay y controles administrativos. **GitHub Actions** ejecuta suites de integración con un servicio **PostgreSQL 17 efímero y aislado**, además de los checks de Client. Las pruebas de Browser QA utilizan React y Express con datos sintéticos, junto con verificaciones Responsive automatizadas.
 
-```bash
-node --test tests/users.test.mjs tests/domainContracts.test.mjs tests/productController.test.mjs
-```
-
-Para verificar las reglas de Order y stock con pruebas aisladas desde `server/`:
-
-```bash
-node --test tests/orderCorrections.test.mjs
-```
-
-Para ejecutar todas las suites, incluidas políticas y Terms Acceptance, utilizar este comando desde `client/` y desde `server/`, respectivamente. En Server se requiere primero `npm run build`, porque las suites HTTP utilizan `dist`:
-
-```bash
-node --test tests/*.test.mjs
-```
-
-Las pruebas HTTP de Server deben ejecutarse con configuración de testing aislada, datos ficticios y catálogo simulado, evitando cargar credenciales privadas o conectar accidentalmente con producción. La integración local de contratos también utiliza TypeScript instalado en Client para cargar sus servicios reales.
-
-Todos los comandos deben finalizar correctamente antes de integrar cambios hacia las ramas principales.
+Las suites que utilizan recursos externos o scripts de mantenimiento requieren un entorno de Testing aislado y sus guardas correspondientes; no deben ejecutarse contra servicios productivos.
 
 ---
 
@@ -1148,7 +1227,7 @@ Sitio:
 
 **https://rajami1205.github.io/Proyecto_Comercio_Electronico/**
 
-Cada nuevo deployment actualiza el sitio existente y conserva la misma URL. El workflow publicado sigue la rama `main`; las features integradas únicamente en `dev` no se consideran desplegadas automáticamente.
+Cada nuevo deployment actualiza el sitio existente y conserva la misma URL. El workflow publicado sigue la rama `main`; las features integradas únicamente en `dev` no se consideran desplegadas automáticamente. **El despliegue público refleja la versión integrada en `main`, no implica por sí solo que las funcionalidades del Proyecto III ya estén publicadas.**
 
 ## Backend — Render
 
@@ -1172,7 +1251,7 @@ Auto-Deploy: On Commit
 
 Por tanto, los nuevos commits integrados en `main` actualizan automáticamente el backend.
 
-La URL del servicio permanece estable entre deployments. Las implementaciones de Checkout, Orders y Payment Sandbox deben llegar a `main` y superar el deployment correspondiente antes de darse por disponibles en producción.
+La URL del servicio permanece estable entre deployments. Las nuevas funcionalidades del Proyecto III —roles, Pricing contextual, multi-inventory, Orders PostgreSQL y panel administrativo— deben llegar a `main` y superar el deployment correspondiente antes de darse por disponibles en producción. Su preparación y validación final corresponden a la etapa de Release.
 
 > El plan gratuito de Render puede suspender temporalmente la instancia después de un periodo de inactividad, por lo que la primera solicitud puede presentar un tiempo de respuesta mayor.
 
@@ -1185,7 +1264,8 @@ Algolia funciona como servicio externo para:
 - autocomplete;
 - filtros;
 - faceting;
-- paginación.
+- paginación;
+- búsqueda de proyecciones de Orders para consultas administrativas, cuando se configure ese índice.
 
 El deployment del frontend o backend no ejecuta automáticamente el seed.
 
@@ -1193,7 +1273,7 @@ El deployment del frontend o backend no ejecuta automáticamente el seed.
 
 # 🛡️ Seguridad
 
-Simulated Login valida la identidad seleccionada en Server. La guarda ADMIN del Client limita el acceso al Dashboard desde la interfaz. Cualquier persona con acceso al navegador puede inspeccionar su `localStorage` en DevTools. Esta simulación académica carece de autenticación de producción y de RBAC completo en Server.
+Simulated Login valida la identidad seleccionada en Server, que también aplica controles de **rol y Ownership** en las operaciones protegidas. Las guardas de Client adaptan la navegación B2C/B2B/ADMIN. Se trata de una **simulación académica de identidades**, no de un mecanismo de autenticación de producción con credenciales reales. La actividad guardada en `localStorage` pertenece al origen local y puede inspeccionarse mediante DevTools.
 
 El proyecto sigue las siguientes prácticas:
 
@@ -1206,13 +1286,15 @@ El proyecto sigue las siguientes prácticas:
 - seed de Algolia protegido contra escrituras accidentales;
 - variables de producción administradas desde GitHub y Render;
 - validación mediante lint, build y suites de regresión antes de integrar cambios;
-- cálculo y validación autoritativa de Orders en Server;
+- cálculo y validación autoritativa de Orders, Pricing, MOQ y Branch Inventory en Server;
+- controles RBAC y Ownership para compradores y consultas ADMIN;
+- persistencia transaccional e Idempotency en PostgreSQL cuando el Store persistente está habilitado;
 - Idempotency y controles de concurrencia en Order y Payment;
 - Payment Sandbox sin cargos reales: los campos demostrativos de tarjeta no se envían al Server ni se guardan;
 - datos de Buyer/Delivery y estado transaccional temporal sin persistencia añadida en el navegador;
 - Safe Cart Cleanup condicionado a la confirmación autoritativa de compra.
 
-Para Terms Acceptance, Server separa la declaración enviada por Client de la metadata autoritativa: valida aceptación y versión y genera `acceptedAt`. El fingerprint incluye el consentimiento para impedir que una key válida se reutilice con una identidad diferente. El registro se conserva solo en memoria del proceso y no constituye una firma digital ni evidencia persistente entre reinicios.
+Para Terms Acceptance, Server separa la declaración enviada por Client de la metadata autoritativa: valida aceptación y versión y genera `acceptedAt`. El fingerprint incluye el consentimiento para impedir que una key válida se reutilice con una identidad diferente. El registro se conserva en el Store comercial seleccionado: es temporal en In-Memory y persistente en PostgreSQL. No constituye una firma digital ni autenticación de identidad real.
 
 ---
 
@@ -1225,26 +1307,6 @@ Para Terms Acceptance, Server separa la declaración enviada por Client de la me
 ![Deploy](https://img.shields.io/badge/Deployment-Activo-0EA5E9?style=for-the-badge)
 
 </div>
-
-La aplicación incorpora:
-
-- catálogo dinámico, Algolia, búsqueda predictiva, filtros y paginación;
-- Product Quick View y carrito global persistente;
-- Cart Preview, cálculo de subtotal, IVA del 13 %, Shipping y Total;
-- Checkout multi-step: Comprador, Entrega, Revisión y Pago;
-- creación y consulta de Orders con precios y disponibilidad autoritativos;
-- comparación y aceptación de diferencias financieras en Review;
-- Order y Payment Idempotency, Replay y Retry controlado;
-- Payment Sandbox con Approved, Declined y Error, sin procesamiento bancario real;
-- tarjetas de demostración locales, sin transmisión de datos bancarios;
-- Purchase Confirmation con información definitiva de la Order;
-- Safe Cart Cleanup que preserva productos y cantidades incorporados posteriormente;
-- políticas comerciales, FAQ y consulta de términos dentro de Checkout;
-- Terms Acceptance obligatorio, validación Client/Server y metadata autoritativa de consentimiento;
-- pruebas de regresión, diseño responsive y Focus Management;
-- integración Client–Server y configuración de deployment automatizado.
-
-La arquitectura se desarrolló de forma incremental y conserva la separación entre presentación, estado, lógica de negocio, servicios y acceso a datos.
 
 ---
 
@@ -1272,6 +1334,6 @@ Su contenido se utiliza como parte del proceso de aprendizaje y evaluación del 
 
 **Tecnología, computación y electrónica en una experiencia de compra moderna.**
 
-React · TypeScript · Vite · Node.js · Express · Algolia
+React · TypeScript · Vite · Node.js · Express · Algolia · PostgreSQL
 
 </div>

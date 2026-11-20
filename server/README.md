@@ -1,5 +1,13 @@
 # CiberNova — Seed de Algolia (CN-20)
 
+La infraestructura PostgreSQL de CN-57 y su procedimiento manual se documentan en [PostgreSQL Foundation](docs/postgresql.md). El comando opt-in `npm run db:smoke` comprueba conectividad READ-ONLY con el runtime `cibernova_app`; requiere configuración privada y autorización previa de la conexión real. No se ejecuta en builds ni al iniciar Express. Los Integration Tests realizan escrituras y no deben ejecutarse contra Production. Orders y Payment continúan utilizando almacenamiento In-Memory hasta CN-58/CN-59.
+
+La alternativa PostgreSQL de Orders/Idempotency CN-58, su selección explícita y las limitaciones de validación se documentan en [Orders Persistence](docs/orders-persistence.md). El flujo comercial activo permanece In-Memory hasta validar CN-59.
+
+CN-65 añade el índice Algolia `orders`, sincronizado desde PostgreSQL con revisiones persistentes, Retry y Reconciliation: ver [Orders Search Index](docs/orders-search-index.md). Requiere aplicar su migración antes de desplegar.
+
+CN-59 añade [Payment Persistence & Recovery](docs/payments-persistence.md): repositorios coordinados, Replay histórico, locking transaccional y un workflow aislado PostgreSQL 17. La validación real de CI sigue pendiente; la implementación no activa PostgreSQL ni cambia Render. `DATABASE_URL` no selecciona el almacenamiento.
+
 El seed valida y permite cargar el catálogo canonical desde `data/productos.json`.
 El dataset contiene 306 records en un array JSON UTF-8, normalizados desde la
 exportación NDJSON UTF-16 LE sin cambiar campos, valores ni objectID.
@@ -203,4 +211,91 @@ Verificación sin requests a Algolia:
 ```sh
 npm run build
 node --test tests/users.test.mjs
+```
+
+## Admin Products & Inventory (CN-67)
+
+Consulta administrativa **Read-Only** de productos, precios e inventario por sucursal. Solo ADMIN, mediante el permiso RBAC `catalog:read:admin`; la identidad se resuelve por request con `X-CiberNova-User-Id`.
+
+| Endpoint | Respuesta |
+| --- | --- |
+| `GET /api/v2/admin/products` | `{ products, page, pageSize, total, totalPages, facets: { categories, brands } }` |
+| `GET /api/v2/admin/products/:productId` | `AdminProductDto` |
+
+Query parameters del listado, validados en Server (un valor desconocido responde 400 `INVALID_PRODUCT_FILTER`):
+
+| Parámetro | Valores |
+| --- | --- |
+| `q` | Texto de búsqueda (máx. 120). Toda consulta no vacía también busca coincidencias literales parciales en `sku`, sin distinguir mayúsculas ni eliminar puntos, espacios internos o guiones. |
+| `categories`, `brands` | Facets de Algolia; admiten valores repetidos. |
+| `branchId` | `san_jose`, `alajuela`, `cartago`, `heredia` (inválido: 400 `INVALID_BRANCH_ID`). |
+| `availability` | Sin sucursal: `available`, `limited`, `out-of-stock`, `below-moq`, `invalid`. Con sucursal: `available`, `below-moq`, `out-of-stock`, `invalid`. |
+| `b2b` | `eligible`, `not-available`, `invalid`. |
+| `sort` | `relevance` (default), `title`, `retail_asc`, `retail_desc`, `stock_asc`, `stock_desc` (con sucursal ordena por sus unidades). |
+| `page`, `pageSize` | Enteros positivos; `pageSize` por defecto 12, máximo 48. Una página mayor que el total devuelve la última. |
+
+`AdminProductDto` conserva los valores originales:
+
+- **Precios:** `retailPrice` proviene de `price`; `wholesalePrice`, de `b2b.wholesale_price` aunque el producto no sea elegible para B2B. El mapper valida `b2b.available` sin coerción: `false` booleano es `not-available`; un valor ausente, `null` o de otro tipo es `invalid`, con `b2bAvailable: null` y `B2B_DATA_INVALID`. Con `true` booleano, `resolvePricing` determina la elegibilidad según Wholesale Price y MOQ. Los importes y MOQ válidos se conservan y no se aplican `discount_tiers`.
+- **Inventario:** `globalStock` es `stock_quantity`; `branchTotal` es la suma de `stock_by_branch`, y cada sucursal muestra solo sus unidades mediante `getBranchInventory`. Nunca se asigna el stock global a una sucursal.
+- **Estado por sucursal:** `available`, `below-moq` (unidades positivas menores al MOQ de un producto B2B elegible), `out-of-stock` o `invalid`.
+- **Disponibilidad del producto**, sin umbrales numéricos nuevos: `available` (stock en las cuatro sucursales), `limited` (stock en alguna y agotado en al menos una), `out-of-stock` (ninguna) o `invalid`. `insufficientForMoq` requiere un producto B2B elegible, MOQ válido, cuatro cantidades conocidas y stock positivo sin ninguna sucursal que alcance el mínimo. Con inventario desconocido permanece `false` y se conserva el aviso separado de inventario inválido; todas las cantidades en cero siguen representándose como agotado.
+- **Inconsistencias** (`issues`), informadas sin corregir el dataset: `RETAIL_PRICE_INVALID`, `B2B_DATA_INVALID`, `BRANCH_INVENTORY_INVALID`, `STOCK_TOTAL_MISMATCH`, `IN_STOCK_FLAG_MISMATCH`.
+
+Algolia resuelve `q`, categorías y marcas. `stock_by_branch` y `b2b` no son facets del índice y esta Story no modifica sus settings, por lo que sucursal, disponibilidad y B2B se filtran en Server sobre el conjunto completo verificado que entrega `getCompleteCatalog` (la misma recuperación del orden B2B). La paginación se aplica después de filtrar; el Client nunca recibe el catálogo completo.
+
+`getCompleteCatalog`, compartido por Admin y B2B, exige en cada página un `true` booleano explícito en `exhaustive.nbHits` o `exhaustiveNbHits` (legacy). Si ambos indicadores están presentes, ambos deben ser `true`. Un `false`, un valor mal formado, una contradicción o la ausencia de ambos producen 503 `CATALOG_RESULT_LIMIT`: la ausencia de metadatos no acredita completitud, aunque el SDK los declare opcionales. Una respuesta vacía se acepta con ese mismo requisito y paginación coherente. Se mantienen los límites de 100 páginas de 1000 hits y se rechazan IDs repetidos, páginas incompletas o metadatos incoherentes. No hay fallback parcial ni reintentos automáticos. Si la configuración remota oculta estos campos mediante `responseFields`, no podrá verificarse un catálogo completo; no se modifican settings automáticamente. Las consultas paginadas B2C no utilizan esta guarda.
+
+Los facets administrativos de categoría y marca se calculan sobre la unión de coincidencias textuales y SKU, deduplicada por Product ID y después de aplicar todos los filtros. Cuentan productos una sola vez por categoría/marca y abarcan todas las páginas del resultado filtrado; no se suman los conteos de Algolia ni se limitan a la página visible.
+
+Errores (`ApiErrorResponse`): 401 `IDENTITY_REQUIRED`, 403 `FORBIDDEN`/`USER_DISABLED`, 404 `USER_NOT_FOUND`/`PRODUCT_NOT_FOUND`, 400 `INVALID_PRODUCT_FILTER`/`INVALID_BRANCH_ID`, 503 `CATALOG_UNAVAILABLE` o `CATALOG_RESULT_LIMIT`. No hay rutas de escritura: POST/PUT/PATCH/DELETE responden 404.
+
+```sh
+npm run build
+node --test tests/adminProducts.test.mjs
+```
+
+## Admin Orders (CN-66)
+
+Consulta global **Read-Only** de las Orders de compradores B2C y B2B. Solo ADMIN, con el permiso RBAC `orders:read:all`; la identidad se resuelve por request con `X-CiberNova-User-Id`.
+
+| Endpoint | Uso |
+| --- | --- |
+| `GET /api/v2/admin/orders` | Listado paginado: `{ orders, page, pageSize, total, hasMore, source, pendingIndexOrders, missingFromStore? }` |
+| `GET /api/v2/orders/:orderId` | Detalle existente (CN-63), reutilizado por ADMIN: snapshot histórico completo del Store seleccionado |
+
+Cada fila (`AdminOrderSummary`) contiene número, fecha, `userId`, nombre visible, `customerRole`, empresa (solo B2B), sucursal (null en Orders V1), total, moneda y estados. No incluye Buyer, Delivery ni productos.
+
+**Sin `q`, listado del Store** (`source: "memory"` o `"postgresql"`): filtros exactos y combinables `userId`, `customerRole` (`B2C`/`B2B`), `branchId`, `orderStatus`, `paymentStatus`, `orderNumber` (sin distinguir mayúsculas) y `orderId`; `sort=newest` (default) u `oldest`; `page` y `pageSize` (default 20, máximo 50). Incluye Orders pendientes de indexar, y `pendingIndexOrders` informa cuántas hay (null con el almacenamiento In-Memory).
+
+`source` identifica el proveedor de coincidencias: `memory` corresponde a `InMemoryOrderStore`, `postgresql` a `PostgreSQLOrderStore` y `algolia` al índice usado en Search. El listado identifica el Repository utilizado, también mediante inyección; no infiere su origen de `DATABASE_URL`. La composición sigue seleccionándose explícitamente mediante `COMMERCE_STORE_MODE`, con Memory como default y sin fallback. Memory no ofrece persistencia duradera. En Search, `source: "algolia"` no identifica el motor de hidratación ni garantiza durabilidad: las Orders siempre se releen del Store seleccionado, y la UI lo describe sin atribuir PostgreSQL a Memory. No se añade otro metadato de origen.
+
+**Con `q`, búsqueda en el índice Algolia `orders`** (`source: "algolia"`), mediante Server y con la clave del índice: texto sobre número de orden y empresa, más los filtros indexados (usuario, rol, sucursal y estados). Se conserva el orden devuelto por el índice. Cada coincidencia se relee del store autoritativo:
+
+- Se reaplican usuario, rol, sucursal y estados sobre los datos persistidos. Una coincidencia que ya no cumple los filtros se excluye; el texto `q` sigue siendo responsabilidad de Algolia.
+- `indexOutdated: true` cuando el índice tenía otro estado; se muestra el actual del Store seleccionado.
+- `missingFromStore` cuenta solo las coincidencias que ya no existen; no cuenta las excluidas por filtros autoritativos.
+- La búsqueda puede omitir Orders aún no indexadas; el listado sin `q` siempre las incluye.
+
+**Límite de paginación de Search (F2-01):** `total` conserva el conteo de candidatos informado por Algolia; `hasMore` indica si quedan candidatos según ese conteo. Ninguno garantiza cuántas Orders cumplen actualmente los filtros en el Store seleccionado. `page` y `pageSize` identifican la página solicitada al índice; después de hidratar y filtrar puede contener menos Orders o estar vacía, incluso con `hasMore: true`. No se recorren otras páginas para rellenarla ni se recalculan totales globales.
+
+**Exhaustividad de Search (F2-02):** el adaptador requiere `nbHits` entero seguro no negativo y evidencia booleana explícita de exhaustividad mediante `exhaustive.nbHits` o `exhaustiveNbHits` (legacy). Acepta uno en `true` sin el otro, o ambos en `true`; rechaza indicadores `false`, contradictorios, mal formados o ausencia de ambas evidencias con HTTP 503 `ORDER_SEARCH_UNAVAILABLE`. Un objeto `exhaustive` válido sin `nbHits` no acredita el conteo por sí solo; puede acompañar al indicador legacy válido. No se inventa un total ni se convierte el error en listado vacío o fallback.
+
+En Search, el Dashboard etiqueta `total` como coincidencias indexadas y distingue cuántas Orders se muestran en la página tras la hidratación y F2-01. Las páginas y `hasMore` siguen refiriéndose a candidatos del índice, cuyo conteo exhaustivo no garantiza que todas las Orders persistidas estén indexadas ni que todos sus candidatos cumplan los filtros actuales. El listado sin `q` mantiene su conteo filtrado en el Store.
+
+**Páginas vacías (F2-03):** el resumen y la navegación no dependen de `orders.length`. Se permite avanzar cuando `hasMore` es true y retroceder cuando `page > 1`, aunque no haya Orders visibles. La UI distingue una búsqueda sin candidatos de una página sin Orders compatibles; las peticiones siguen siendo explícitas, sin saltos automáticos ni relleno de páginas descartadas por F2-01.
+
+`q` no se combina con `orderId`, `orderNumber` ni `sort=oldest`.
+
+**Orden durante Search (F3-02):** el Client no envía `sort` con `q`. El Server valida su default `newest`, pero Search no ejecuta un ordenamiento cronológico local: mantiene el ranking del índice. Los settings versionados incluyen `customRanking: ['desc(createdAtTimestamp)']`; ese criterio personalizado se aplica junto con los demás criterios de ranking y no acredita por sí solo un orden cronológico global. Los settings remotos no se verificaron durante este fix. Por ello, el selector deshabilitado muestra **Orden de búsqueda**, derivado de la consulta aplicada (`filters.q`), y no del texto pendiente de edición. Limpiar el texto y aplicar, o usar **Ver listado sin búsqueda**, recupera el orden previo del listado; **Limpiar filtros** mantiene su comportamiento de restablecer `newest`. El valor informativo `search` no forma parte del DTO ni se envía al Server.
+
+Errores (`ApiErrorResponse`): 401 `IDENTITY_REQUIRED`, 403 `FORBIDDEN`/`USER_DISABLED`, 404 `USER_NOT_FOUND`, 400 `INVALID_ORDER_FILTER`, 503 `ORDER_SEARCH_UNAVAILABLE` (índice no configurado o Algolia sin respuesta; el listado sin `q` sigue disponible) y 503 `ORDER_QUERY_UNAVAILABLE` (persistencia). Ninguna respuesta incluye detalles del SDK ni de PostgreSQL.
+
+El módulo no crea Orders, no procesa pagos, no cambia estados y no modifica Idempotency. POST/PUT/PATCH/DELETE sobre `/api/v2/admin/orders` responden 404.
+
+```sh
+npm run build
+node --test tests/adminOrders.test.mjs
+# PostgreSQL efímero local con las migrations aplicadas (ver docs/postgresql.md):
+node --test tests/adminOrders.integration.test.mjs
 ```

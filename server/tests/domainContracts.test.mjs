@@ -24,7 +24,8 @@ const business: B2BUser = { id, displayName: 'Empresa', role: 'B2B', company }
 const admin: AdminUser = { id, displayName: 'Administrador', role: 'ADMIN' }
 const users: ResolvedUser[] = [consumer, business, admin]
 const branchIds: BranchId[] = ['san_jose', 'alajuela', 'cartago', 'heredia']
-const branch: Branch = { id: 'san_jose', name: 'San José' }
+const branch: Branch = { id: 'san_jose', name: 'San José', available: true }
+const unavailableBranch: Branch = { id: 'heredia', name: 'Heredia', available: false }
 const pricingTypes: PricingType[] = ['RETAIL', 'WHOLESALE']
 const contexts: CommercialContext[] = [
   { user: consumer, pricingType: 'RETAIL', branchId: null },
@@ -41,7 +42,13 @@ const invalidRole: UserRole = 'GUEST'
 // @ts-expect-error Los nombres visibles no son identificadores de sucursal.
 const invalidBranch: BranchId = 'San José'
 // @ts-expect-error No existen sucursales fuera del conjunto aprobado.
-const unknownBranch: Branch = { id: 'limon', name: 'Limón' }
+const unknownBranch: Branch = { id: 'limon', name: 'Limón', available: true }
+// @ts-expect-error La disponibilidad es obligatoria; no se presume una sucursal disponible.
+const branchWithoutAvailability: Branch = { id: 'san_jose', name: 'San José' }
+// @ts-expect-error La disponibilidad exige un boolean, sin coerción desde texto.
+const invalidBranchAvailability: Branch = { id: 'san_jose', name: 'San José', available: 'true' }
+// @ts-expect-error Una disponibilidad presente tampoco puede ser undefined.
+const undefinedBranchAvailability: Branch = { id: 'san_jose', name: 'San José', available: undefined }
 // @ts-expect-error Solo se admiten los tipos de precio aprobados.
 const invalidPricing: PricingType = 'DISCOUNT'
 // @ts-expect-error La identidad exige displayName.

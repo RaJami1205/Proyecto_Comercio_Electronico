@@ -21,6 +21,7 @@ const runtimeUrl = dataUrl(`
     return [slots[index], value=>{slots[index]=typeof value==='function'?value(slots[index]):value}];
   }
   export function useRef(initial) { const [ref]=useState(()=>({current:initial})); return ref; }
+  export function useReducer(reducer, initial) { const [state,set]=useState(initial); return [state, action=>set(value=>reducer(value,action))]; }
   export function useCallback(callback) { return callback; }
   export function useId() { return 'test-id-'+ids++; }
   export function useEffect(effect,deps) {
@@ -32,7 +33,7 @@ const runtimeUrl = dataUrl(`
   }
   export function flush() { const pending=effects; effects=[]; pending.forEach(effect=>effect()); }
   export function useCart() { return {items:cart,totalUnits:cart.length}; }
-  const purchaseReason=()=>conflict?'Conflicto externo':!sessionUser?'Inicia sesión':sessionUser.role!=='B2C'?'Solo B2C':null;
+  const purchaseReason=()=>conflict?'Conflicto externo':!sessionUser?'Inicia sesión':sessionUser.role==='ADMIN'?'ADMIN no compra':null;
   export function useSession() { return {user:sessionUser,epoch:0,dialog:null,purchaseBlockReason:purchaseReason(),transitionBlockReason:null,resolving:false,
     getPurchaseBlockReason:purchaseReason,isTransactionBlocked:()=>transaction==='active'||transaction==='uncertain',
     setCheckoutMounted:()=>{},setTransactionState:state=>{transaction=state},openLogin:()=>{},requestLogout:()=>{}}; }
@@ -44,7 +45,8 @@ const runtimeUrl = dataUrl(`
 const runtime = await import(runtimeUrl)
 const modules = new Map()
 // Solo se sustituyen las vistas ajenas al alcance. Las rutas, Footer, Header y políticas son código real.
-for (const name of ['ProductListingPage', 'CartPage', 'CheckoutPage', 'AnalyticsDashboardPage']) {
+for (const name of ['ProductListingPage', 'CartPage', 'CheckoutPage', 'AnalyticsDashboardPage', 'MyOrdersPage', 'OrderDetailPage',
+  'AdminProductsPage', 'AdminProductDetailPage', 'AdminOrdersPage', 'AdminOrderDetailPage']) {
   modules.set(`pages/${name}`, dataUrl(`export default '${name}'`))
 }
 modules.set('components/cart/CartPreviewDrawer', dataUrl("export default 'CartPreviewDrawer'"))
@@ -247,7 +249,7 @@ test('entrada a Checkout sin productos mantiene reemplazo por Cart', t => {
   assert.equal(nodes(tree).some(n => n.type === 'CheckoutPage'), false)
 })
 
-for (const user of [null, {id:'b',displayName:'Empresa',role:'B2B',company:{id:'co',name:'Empresa'}}, {id:'a',displayName:'Admin',role:'ADMIN'}]) {
+for (const user of [null, {id:'a',displayName:'Admin',role:'ADMIN'}]) {
   test('CN-53 bloquea acceso directo, callbacks e historial de Checkout para ' + (user?.role ?? 'sin sesión'), t => {
     const app = environment(t, '#checkout')
     runtime.setSession(user)
@@ -275,6 +277,15 @@ for (const user of [null, {id:'b',displayName:'Empresa',role:'B2B',company:{id:'
     assert.equal(nodes(tree).some(node => node.type === 'CheckoutPage'), false)
   })
 }
+
+test('Checkout V2 permite acceso directo a B2B con carrito propio', t => {
+  const app = environment(t, '#checkout')
+  runtime.setSession({id:'b',displayName:'Empresa',role:'B2B',company:{id:'co',name:'Empresa'}})
+  app.render()
+  const tree = app.render()
+  assert.ok(nodes(tree).find(node => node.type === 'CheckoutPage'))
+  assert.equal(app.window.location.hash, '#checkout')
+})
 
 test('CN-53 incertidumbre bloquea callbacks, hash, Back y reload aunque navegación indique false', t => {
   const app = environment(t, '#cart-page')
@@ -379,11 +390,15 @@ test('Header informativo mantiene retorno al catálogo y respeta clicks modifica
   runtime.reset()
   let calls = 0
   const tree = Header({policyView:true, onCatalogClick:()=>calls++})
-  const links = nodes(tree).filter(n=>n.type === 'a' && n.props.href !== '#analytics')
+  // #analytics y #my-orders son hashes nativos que App resuelve; el resto vuelve al catálogo por callback.
+  const links = nodes(tree).filter(n=>n.type === 'a' && n.props.href !== '#analytics' && n.props.href !== '#my-orders')
   assert.ok(links.every(n=>n.props.href === '#catalog'))
-  // El usuario B2C de este caso no debe recibir acceso a Analytics.
+  // El usuario B2C de este caso no debe recibir acceso a Analytics, pero sí a su historial (CN-64).
   const activity = nodes(tree).filter(n=>n.type === 'a' && n.props.href === '#analytics')
   assert.equal(activity.length, 0)
+  const orders = nodes(tree).filter(n=>n.type === 'a' && n.props.href === '#my-orders')
+  assert.equal(orders.length, 1)
+  assert.equal(orders[0].props.onClick, undefined)
   for (const link of links) {
     assert.equal(click(link.props, {metaKey:true}).defaultPrevented, false)
     assert.equal(click(link.props).defaultPrevented, true)

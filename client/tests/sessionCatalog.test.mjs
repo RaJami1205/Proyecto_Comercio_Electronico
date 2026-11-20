@@ -15,6 +15,7 @@ const runtimeUrl = dataUrl(`
   export function useCallback(callback) {return callback;}
   export function useEffect() {}
   export function useSession() {return {epoch,user:null};}
+  export function useBranch() {return {selectedBranchId:null};}
   export function useCatalogPagination() {const [currentPage,setCurrentPage]=useState(1);return {currentPage,pageSize:20,setCurrentPage};}
   export function useProductCatalog(_page,_size,_filters,query) {queries.push(query);return {products:[],totalPages:1,nbHits:0,facets:{},isLoading:false,error:null};}
   export function jsx(type,props,key) {return {type,props,key};}export const jsxs=jsx; export const Fragment='Fragment';
@@ -22,12 +23,14 @@ const runtimeUrl = dataUrl(`
 const runtime = await import(runtimeUrl)
 const analyticsUrl = dataUrl('export function trackEvent() {}')
 const modules = new Map([['react', runtimeUrl], ['react/jsx-runtime', runtimeUrl], ['../hooks/useSession', runtimeUrl],
+  ['../hooks/useBranch', runtimeUrl],
   ['../hooks/useCatalogPagination', runtimeUrl], ['../hooks/useProductCatalog', runtimeUrl],
   ['../services/analytics', analyticsUrl],
   ['../utils/scrollToAnchor', dataUrl('export function scrollToElement() {}')]])
 for (const name of ['CartFeedbackToast', 'CatalogFilters', 'CatalogHero', 'CatalogToolbar', 'Pagination', 'ProductGrid', 'ProductQuickView', 'RecentlyViewedProducts']) {
   modules.set('../components/catalog/' + name, dataUrl(`export default '${name}'`))
 }
+modules.set('../components/catalog/BranchSelector', dataUrl("export default 'BranchSelector'"))
 for (const name of ['Header', 'Footer']) modules.set('../components/layout/' + name, dataUrl(`export default '${name}'`))
 function compile(file) {
   const source = readFileSync(new URL('../src/' + file, import.meta.url), 'utf8')

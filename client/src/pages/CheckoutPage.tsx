@@ -1,5 +1,5 @@
 /** Coordina las etapas de Checkout, la creación de Order, los intentos de pago y el cierre de compra. */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import CheckoutStepper, { type CheckoutStep } from '../components/checkout/CheckoutStepper'
 import BuyerStep from '../components/checkout/BuyerStep'
 import DeliveryStep from '../components/checkout/DeliveryStep'
@@ -14,11 +14,14 @@ import type { CreateOrderRequest, Order } from '../types/order'
 import type { PaymentResult, PaymentScenario, ProcessPaymentRequest } from '../types/payment'
 import type { CartItem } from '../types/cart'
 import type { TransactionState } from '../context/SessionContext'
+import type { BranchId } from '../types/branch'
 import { useCart } from '../hooks/useCart'
+import { useBranch } from '../hooks/useBranch'
 import { calculateCartTotals, calculateLineSubtotal } from '../utils/cartCalculations'
-import { normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
-import { orderApi, OrderApiError, orderErrorMessage } from '../services/orderApi'
-import { paymentApi, paymentErrorMessage } from '../services/paymentApi'
+import { commercialIssues, normalizeBuyer, normalizeDelivery, validateBuyer, validateDelivery } from '../utils/checkoutValidation'
+import { classifyOrderFailure, orderApi, OrderApiError, orderErrorMessage, type CheckoutRecovery } from '../services/orderApi'
+import { paymentApi, PaymentApiError, paymentErrorMessage } from '../services/paymentApi'
+import { orderHistoryApi } from '../services/orderHistoryApi'
 import { orderReviewDifferences } from '../utils/orderReviewDifferences'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
@@ -37,8 +40,8 @@ interface CheckoutPageProps {
   getPurchaseBlockReason?: () => string | null
 }
 /** Conserva payload, clave y productos revisados para repetir la misma intención tras una respuesta ambigua. */
-interface CreationAttempt { request: CreateOrderRequest; items: CartItem[] }
-type PaymentAttempt = Readonly<ProcessPaymentRequest & { orderId: string }>
+interface CreationAttempt { request: CreateOrderRequest; items: CartItem[]; userId: string }
+type PaymentAttempt = Readonly<ProcessPaymentRequest & { orderId: string; userId: string }>
 const stages: Record<CheckoutStep, { title: string; description: string }> = {
   buyer: { title: 'Comprador', description: 'Completa tus datos de contacto.' },
   delivery: { title: 'Entrega', description: 'Indica la dirección de entrega.' },
@@ -48,8 +51,18 @@ const stages: Record<CheckoutStep, { title: string; description: string }> = {
 
 /** Mantiene Buyer, Delivery, consentimiento e intentos en memoria local; al desmontarse se pierde este contexto. */
 function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationLockChange, onOrderCreated, onTransactionStateChange, purchaseBlockedReason, getPurchaseBlockReason }: CheckoutPageProps) {
-  const { items, cleanupPurchase } = useCart()
-  const { user } = useSession()
+  const { items, cleanupPurchase, ownerId: cartOwnerId } = useCart()
+  const { user, epoch } = useSession()
+  const { branches, selectedBranchId } = useBranch()
+  // ADMIN y la ausencia de Session nunca habilitan compras; el Server vuelve a validar el rol.
+  const purchaser = user && user.role !== 'ADMIN' ? user : undefined
+  const currentSession = useRef({ userId: user?.id, epoch })
+  useLayoutEffect(() => { currentSession.current = { userId: user?.id, epoch } }, [user?.id, epoch])
+  const originalSession = useRef({ userId: user?.id, epoch })
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const [authorizationRejected, setAuthorizationRejected] = useState(false)
+  const authorizationRejectedRef = useRef(false)
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('buyer')
   const [data, setData] = useState<CheckoutData>({ buyer: { fullName: '', email: '', phone: '' }, delivery: { province: '', canton: '', address: '', additionalInfo: '' } })
   const [order, setOrder] = useState<Order>()
@@ -62,10 +75,13 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const termsInputRef = useRef<HTMLInputElement>(null)
   const [attempt, setAttempt] = useState<CreationAttempt>()
   const [differences, setDifferences] = useState<string[]>([])
+  // Destino sugerido para corregir un rechazo concluyente sin reiniciar el Checkout.
+  const [recovery, setRecovery] = useState<CheckoutRecovery>()
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
   const [selectedPaymentScenario, setSelectedPaymentScenario] = useState<PaymentScenario | null>(null)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [hasPendingPayment, setHasPendingPayment] = useState(false)
+  const [confirmedOrderRecovery, setConfirmedOrderRecovery] = useState(false)
   const [paymentError, setPaymentError] = useState<string>()
   // Último PaymentResult validado por paymentApi; es la fuente para decidir qué pantalla de
   // resultado mostrar (CN-32). Se limpia al pedir un Retry, lo que vuelve a mostrar el form.
@@ -73,12 +89,13 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const attemptRef = useRef<CreationAttempt | undefined>(undefined)
   const submittingRef = useRef(false)
   const paymentAttemptRef = useRef<PaymentAttempt | undefined>(undefined)
+  const confirmedOrderRecoveryRef = useRef(false)
   const paymentSubmittingRef = useRef(false)
   const paymentResultRef = useRef<PaymentResult | undefined>(undefined)
   // Garantiza que el Cart se limpie una sola vez por confirmación (CN-33), incluso si
   // algo disparara un re-render extra del mismo resultado APPROVED.
   const cartClearedRef = useRef(false)
-  const purchaseBaselineRef = useRef<{ orderId: string; items: CartItem[] } | undefined>(undefined)
+  const purchaseBaselineRef = useRef<{ orderId: string; ownerId: string; items: CartItem[] } | undefined>(undefined)
   const pageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageHeadingRef = useRef<HTMLHeadingElement>(null)
   const stageChangedRef = useRef(false)
@@ -89,6 +106,12 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   const reviewItems = attempt?.items ?? items
   const invalid = Object.keys(validateBuyer(data.buyer)).length > 0 || Object.keys(validateDelivery(data.delivery)).length > 0
     || reviewItems.length === 0 || reviewItems.some(item => !Number.isSafeInteger(item.quantity) || item.quantity <= 0)
+
+  /** Impide aplicar respuestas de otra Session o de una instancia de Checkout desmontada. */
+  function isCurrentSession() {
+    return mounted.current && currentSession.current.userId === originalSession.current.userId
+      && currentSession.current.epoch === originalSession.current.epoch
+  }
 
     //Revisa si hay carrito vacío (EMPTY_CART)
   useEffect(() => {
@@ -122,11 +145,11 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
   /** Cambia a la etapa solicitada si las guardas del intento y del pago permiten navegar. */
   function changeStep(next: CheckoutStep) {
-    if (submittingRef.current || paymentSubmittingRef.current || confirmed) return
+    if (submittingRef.current || paymentSubmittingRef.current || confirmed || confirmedOrderRecoveryRef.current) return
     if (next === 'payment' && !order) return
     if (attemptRef.current && next !== 'review' && next !== 'payment') return
     stageChangedRef.current = true
-    setError(undefined)
+    if (!authorizationRejectedRef.current) setError(undefined)
     setCurrentStep(next)
   }
 
@@ -136,6 +159,8 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
    * al aceptar diferencias financieras, sin crear otra ni modificar su consentimiento.
    */
   async function confirmOrder() {
+    if (!isCurrentSession() || authorizationRejectedRef.current || confirmedOrderRecoveryRef.current || !purchaser) return
+    const retryingUncertain = Boolean(attemptRef.current)
     if (submittingRef.current || paymentSubmittingRef.current || confirmed || (!order && invalid)) return
     const blockedReason = getPurchaseBlockReason?.() ?? purchaseBlockedReason
     if (!order && !attemptRef.current && blockedReason) { setError(blockedReason); return }
@@ -152,30 +177,57 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       termsInputRef.current?.focus()
       return
     }
+    // Un intento existente conserva usuario, sucursal, payload y clave; solo un intento nuevo se prevalida.
+    let activeAttempt = attemptRef.current
+    if (!activeAttempt) {
+      if (cartOwnerId !== purchaser.id) {
+        setError('Este carrito pertenece a otra identidad. Selecciona su propietario antes de comprar.')
+        setRecovery('cart')
+        return
+      }
+      const branchId = selectedBranchId
+      if (!branchId || !branches.some(branch => branch.id === branchId && branch.available)) {
+        setError('Selecciona una sucursal válida en el carrito antes de confirmar la compra.')
+        setRecovery('cart')
+        return
+      }
+      const issues = commercialIssues(items, purchaser.role, branchId)
+      if (issues.length > 0) {
+        setError('Ajusta tu carrito antes de continuar. ' + issues.map(issue => issue.message).join(' '))
+        setRecovery('cart')
+        return
+      }
+      activeAttempt = {
+        userId: purchaser.id,
+        request: {
+          buyer: normalizeBuyer(data.buyer), delivery: normalizeDelivery(data.delivery),
+          items: items.map(({ productId, quantity }) => ({ productId, quantity })),
+          idempotencyKey: crypto.randomUUID(),
+          termsAcceptance: Object.freeze({ accepted: true, version: termsPolicy.version }),
+          branchId,
+          // Estimación del Client; el Server la compara y rechaza el intento si los importes cambiaron.
+          financialExpectation: Object.freeze(calculateCartTotals(items)),
+        },
+        items: items.map(item => ({ ...item })),
+      }
+    }
     // El ref protege incluso clicks ocurridos antes del siguiente render de React.
     submittingRef.current = true
     setIsCreatingOrder(true)
     onNavigationLockChange(true)
     onTransactionStateChange('active')
     setError(undefined)
+    setRecovery(undefined)
     let requiresAcceptance = false
     let receivedOrder = false
     try {
-      const activeAttempt = attemptRef.current ?? {
-        request: {
-          buyer: normalizeBuyer(data.buyer), delivery: normalizeDelivery(data.delivery),
-          items: items.map(({ productId, quantity }) => ({ productId, quantity })),
-          idempotencyKey: crypto.randomUUID(),
-          termsAcceptance: Object.freeze({ accepted: true, version: termsPolicy.version }),
-        },
-        items: items.map(item => ({ ...item })),
-      }
       attemptRef.current = activeAttempt
       setAttempt(activeAttempt)
-      const created = await orderApi.createOrder(activeAttempt.request)
+      const created = await orderApi.createOrder(activeAttempt.request, activeAttempt.userId)
+      if (!isCurrentSession()) return
       receivedOrder = true
       const alreadyConfirmed = created.orderStatus === 'CONFIRMED' && created.paymentStatus === 'APPROVED'
-      purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, items: activeAttempt.items }
+      purchaseBaselineRef.current = alreadyConfirmed ? undefined : { orderId: created.id, ownerId: activeAttempt.userId, items: activeAttempt.items }
       const changes = alreadyConfirmed ? [] : orderReviewDifferences(activeAttempt.items, created)
       requiresAcceptance = changes.length > 0
       setDifferences(changes)
@@ -193,8 +245,13 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
       setFieldErrors({}) // Descarta errores de campo tras recibir la Order.
       setTermsError(undefined)
     } catch (failure) {
+      if (!isCurrentSession()) return
       if (failure instanceof OrderApiError) {
-        if (failure.conclusive) {
+        if (failure.authorizationDenied && !retryingUncertain) {
+          authorizationRejectedRef.current = true
+          setAuthorizationRejected(true)
+        }
+        if (failure.conclusive && !(retryingUncertain && failure.authorizationDenied)) {
           attemptRef.current = undefined
           setAttempt(undefined)
         }
@@ -214,30 +271,59 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                : 'No se pudo confirmar la aceptación de términos. Reintentar conserva la misma solicitud y su versión original.')
              return
            }
-           setFieldErrors(failure.fieldErrors) // Conserva los errores por campo para mostrarlos en el formulario.
-           setCurrentStep('buyer') 
+           const target = classifyOrderFailure(failure).recovery
+           if (target === 'buyer' || target === 'delivery') {
+             setFieldErrors(failure.fieldErrors) // Conserva los errores por campo para mostrarlos en el formulario.
+             setCurrentStep(target)
+           }
         }
+        // Precio, MOQ, inventario o sucursal se corrigen en el carrito; el intento ya fue descartado.
+        if (failure.conclusive && !attemptRef.current && classifyOrderFailure(failure).recovery === 'cart') setRecovery('cart')
       }
-      setError(orderErrorMessage(failure))
+      setError(failure instanceof OrderApiError && failure.authorizationDenied && retryingUncertain
+        ? orderErrorMessage(failure) + ' El resultado anterior sigue incierto. Reintentar conserva la misma solicitud.'
+        : orderErrorMessage(failure))
     } finally {
-      submittingRef.current = false
-      setIsCreatingOrder(false)
-      onNavigationLockChange(Boolean(attemptRef.current) || requiresAcceptance)
-      onTransactionStateChange(attemptRef.current ? 'uncertain' : receivedOrder || order ? 'known' : 'idle')
+      if (isCurrentSession()) {
+        submittingRef.current = false
+        setIsCreatingOrder(false)
+        onNavigationLockChange(Boolean(attemptRef.current) || requiresAcceptance)
+        onTransactionStateChange(attemptRef.current ? 'uncertain' : receivedOrder || order ? 'known' : 'idle')
+      }
     }
   }
 
   /** Selecciona el escenario solicitado solo cuando no existe un intento pendiente ni un resultado cerrado. */
   function changePaymentScenario(scenario: PaymentScenario) {
-    if (paymentSubmittingRef.current || paymentAttemptRef.current || paymentResultRef.current || confirmed) return
+    if (paymentSubmittingRef.current || paymentAttemptRef.current || paymentResultRef.current || confirmed || confirmedOrderRecoveryRef.current) return
     setSelectedPaymentScenario(scenario)
+  }
+
+  /** Recupera solo el estado de la misma Order propia; una consulta nunca constituye un PaymentResult. */
+  async function recoverConfirmedOrder(activeAttempt: PaymentAttempt) {
+    try {
+      const recovered = await orderHistoryApi.getOrder(activeAttempt.userId, activeAttempt.orderId, AbortSignal.timeout(20000))
+      if (!isCurrentSession()) return
+      if (recovered.orderStatus !== 'CONFIRMED' || recovered.paymentStatus !== 'APPROVED'
+        || recovered.commercial?.branchId !== order?.commercial?.branchId) throw new Error('Estado de Order insuficiente.')
+      setOrder(recovered)
+      paymentAttemptRef.current = undefined
+      setHasPendingPayment(false)
+      setDifferences([])
+    } catch {
+      if (isCurrentSession()) setPaymentError('El servidor indicó que la orden ya estaba confirmada, pero no pudimos verificar su estado. Reintenta la consulta; no se enviará otro pago.')
+    }
   }
 
   /** Procesa el escenario con una identidad estable; actualiza la Order y limpia unidades originales solo ante aprobación válida. */
   async function handleProcessPayment() {
+    if (!isCurrentSession() || authorizationRejectedRef.current || !purchaser) return
+    const retryingUncertain = Boolean(paymentAttemptRef.current)
     // Guarda de doble-submit / múltiples Retry concurrentes: el ref cubre clicks antes
     // del siguiente render; isProcessingPayment refleja el bloqueo en la UI.
     if (paymentSubmittingRef.current || submittingRef.current || paymentResultRef.current || confirmed || !order || !selectedPaymentScenario) return
+    // Incluso un callback anterior a la recuperación no puede iniciar otro Payment.
+    if (confirmedOrderRecoveryRef.current && !paymentAttemptRef.current) return
 
     paymentSubmittingRef.current = true
     setIsProcessingPayment(true)
@@ -247,11 +333,16 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
 
     try {
       const activeAttempt = paymentAttemptRef.current ?? Object.freeze({
-        orderId: order.id, scenario: selectedPaymentScenario, idempotencyKey: crypto.randomUUID(),
+        orderId: order.id, scenario: selectedPaymentScenario, idempotencyKey: crypto.randomUUID(), userId: purchaser.id,
       })
       paymentAttemptRef.current = activeAttempt
       setHasPendingPayment(true)
-      const result = await paymentApi.processPayment(activeAttempt.orderId, activeAttempt)
+      if (confirmedOrderRecoveryRef.current) {
+        await recoverConfirmedOrder(activeAttempt)
+        return
+      }
+      const result = await paymentApi.processPayment(activeAttempt.orderId, activeAttempt, activeAttempt.userId)
+      if (!isCurrentSession()) return
       // Resultado concluyente (APPROVED/DECLINED/ERROR): el intento queda cerrado,
       // así que el próximo "Procesar pago"/Retry debe generar una idempotencyKey nueva.
       paymentAttemptRef.current = undefined
@@ -274,15 +365,35 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
         && result.order.paymentStatus === 'APPROVED' && baseline?.orderId === result.order.id
         && !cartClearedRef.current) {
         cartClearedRef.current = true
-        cleanupPurchase({ baseline: baseline.items, purchased: result.order.items })
+        cleanupPurchase({ baseline: baseline.items, purchased: result.order.items, ownerId: baseline.ownerId })
       }
     } catch (failure) {
-      setPaymentError(paymentErrorMessage(failure))
+      if (!isCurrentSession()) return
+      if (failure instanceof PaymentApiError && failure.conclusive && failure.code === 'ORDER_ALREADY_CONFIRMED'
+        && paymentAttemptRef.current) {
+        confirmedOrderRecoveryRef.current = true
+        setConfirmedOrderRecovery(true)
+        setCurrentStep('payment')
+        await recoverConfirmedOrder(paymentAttemptRef.current)
+        return
+      }
+      if (failure instanceof PaymentApiError && failure.authorizationDenied && !retryingUncertain) {
+        paymentAttemptRef.current = undefined
+        setHasPendingPayment(false)
+        authorizationRejectedRef.current = true
+        setAuthorizationRejected(true)
+        setError(paymentErrorMessage(failure))
+      }
+      setPaymentError(failure instanceof PaymentApiError && failure.authorizationDenied && retryingUncertain
+        ? paymentErrorMessage(failure) + ' El resultado anterior sigue incierto. Reintentar conserva la misma solicitud.'
+        : paymentErrorMessage(failure))
     } finally {
-      paymentSubmittingRef.current = false
-      setIsProcessingPayment(false)
-      onNavigationLockChange(false)
-      onTransactionStateChange(paymentAttemptRef.current ? 'uncertain' : 'known')
+      if (isCurrentSession()) {
+        paymentSubmittingRef.current = false
+        setIsProcessingPayment(false)
+        onNavigationLockChange(false)
+        onTransactionStateChange(paymentAttemptRef.current ? 'uncertain' : 'known')
+      }
     }
   }
 
@@ -317,10 +428,19 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
   // de edición. La Order sigue viva en este mismo state, independiente del Cart (que
   // pudo conservar nuevas incorporaciones): Confirmation nunca depende de CartState para renderizarse.
   if (confirmed && order) {
-    return <OrderConfirmationPage order={order} onCatalogClick={onCatalogClick} onCartClick={onCartClick} />
+    return <OrderConfirmationPage order={order} recovered={confirmedOrderRecovery} onCatalogClick={onCatalogClick} onCartClick={onCartClick} />
   }
 
-  const displayItems = order?.items ?? reviewItems.map(item => ({ productId: item.productId, name: item.name, image: item.image, unitPrice: item.price, quantity: item.quantity, lineSubtotal: calculateLineSubtotal(item.price, item.quantity) }))
+  const displayItems = order?.items ?? reviewItems.map(item => ({ productId: item.productId, name: item.name, image: item.image, unitPrice: item.price, quantity: item.quantity, lineSubtotal: calculateLineSubtotal(item.price, item.quantity), minOrderQuantity: item.minimumOrderQuantity }))
+  // Tras crear la Order se presenta su contexto comercial confirmado; antes, la identidad y sucursal vigentes.
+  const reviewBranchId: BranchId | null = order?.commercial?.branchId ?? attempt?.request.branchId ?? selectedBranchId
+  const commercialSummary = purchaser ? {
+    displayName: purchaser.displayName,
+    customerRole: order?.commercial?.customerRole ?? purchaser.role,
+    companyName: order?.commercial ? order.commercial.company?.name : purchaser.role === 'B2B' ? purchaser.company.name : undefined,
+    branchName: reviewBranchId ? branches.find(branch => branch.id === reviewBranchId)?.name ?? reviewBranchId : undefined,
+    confirmedByServer: Boolean(order?.commercial),
+  } : undefined
   const lockNavigation = isCreatingOrder || isProcessingPayment || Boolean(attempt) || differences.length > 0
   return (
     <div className={styles.page}>
@@ -346,7 +466,14 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                 errors={fieldErrors} />
             ) : currentStep === 'payment' && order ? (
               <>
-                {paymentResult ? (
+                {confirmedOrderRecovery ? (
+                  <div>
+                    <p role={paymentError ? 'alert' : 'status'}>{paymentError ?? 'Consultando el estado de la orden ya confirmada…'}</p>
+                    <button type="button" className={styles.back} disabled={isProcessingPayment} onClick={handleProcessPayment}>
+                      {isProcessingPayment ? 'Consultando orden…' : 'Recuperar estado de la orden'}
+                    </button>
+                  </div>
+                ) : paymentResult ? (
                   <PaymentResultPanel
                     result={paymentResult.result}
                     order={order}
@@ -359,21 +486,22 @@ function CheckoutPage({ onBackToCart, onCatalogClick, onCartClick, onNavigationL
                     onScenarioChange={changePaymentScenario}
                     onProcessPayment={handleProcessPayment}
                     isProcessingPayment={isProcessingPayment}
-                    locked={confirmed}
+                    locked={confirmed || authorizationRejected}
                     scenarioLocked={hasPendingPayment}
                     error={paymentError}
                   />
                 )}
                 <div className={styles.actions}>
-                  <button type="button" className={styles.back} disabled={isProcessingPayment} onClick={() => changeStep('review')}>Revisar orden</button>
+                  <button type="button" className={styles.back} disabled={isProcessingPayment || confirmedOrderRecovery} onClick={() => changeStep('review')}>Revisar orden</button>
                 </div>
               </>
             ) : (
               <>
                 <ReviewStep buyer={order?.buyer ?? data.buyer} delivery={order?.delivery ?? data.delivery}
                   items={displayItems} totals={order?.totals ?? calculateCartTotals(reviewItems)} order={order}
-                  busy={isCreatingOrder} retryPending={Boolean(attempt)} invalid={!order && invalid} error={error}
-                  differences={differences}
+                  busy={isCreatingOrder} retryPending={Boolean(attempt)} invalid={!order && invalid} authorizationRejected={authorizationRejected} error={error}
+                  differences={differences} commercial={commercialSummary}
+                  onAdjustCart={recovery === 'cart' && !order && !attempt && !isCreatingOrder ? onBackToCart : undefined}
                   termsAccepted={attempt?.request.termsAcceptance.accepted ?? termsAccepted}
                   termsError={termsError} termsVersionRejected={termsVersionRejected} termsInputRef={termsInputRef}
                   onTermsAcceptedChange={changeTermsAccepted} onOpenTerms={() => setIsTermsOpen(true)}

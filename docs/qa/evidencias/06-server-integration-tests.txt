@@ -1,0 +1,34 @@
+# Server integration tests PostgreSQL aislado | 2026-11-18T15:34:32Z | commit base 0b90fe3 + cambios CN-69 | node v22.23.5
+▶ CN-58/CN-59/CN-61 PostgreSQL aislado: Orders + Payment + Recovery
+  ✔ CN-58 concurrencia real, key global, ownership, payload y Replay desde otro Pool (100.007419ms)
+  ✔ CN-58 rollback elimina claim/Order; Retry explícito conserva la key (15.020189ms)
+  ✔ CN-61 schema V2 conserva tipos, defaults y round-trip de Orders V1 (26.494732ms)
+  ✔ CN-61 B2C/B2B persisten role, Company, branch, Pricing, MOQ, Terms y NUMERIC exacto (16.50022ms)
+  ✔ CN-61 Replay desde otra instancia conserva snapshot histórico sin reconstrucción comercial (11.515892ms)
+  ✔ CN-61 cambio de sucursal o payload conserva 409 sin catálogo y ownership conserva 404 (13.744425ms)
+  ✔ CN-64 Order History paginado en PostgreSQL: dueño, orden estable y persistencia tras reinicio (68.835949ms)
+  ✔ CN-63 Order Ownership con PostgreSQL autoritativo: propietario, ajeno, ADMIN, Payment y Replay (32.848003ms)
+  ✔ CN-61 fallo comercial y COMMIT diferido revierten Order V2 e Idempotency juntos (15.24388ms)
+  ✔ CN-61 concurrencia entre Pools comparte una sola Order V2 y construcción comercial (45.532461ms)
+  ✔ Payment histórico, Retry y nuevas instancias: PAYMENT_APPROVED (31.828971ms)
+  ✔ Payment histórico, Retry y nuevas instancias: PAYMENT_DECLINED (43.315619ms)
+  ✔ Payment histórico, Retry y nuevas instancias: PAYMENT_ERROR (37.923582ms)
+  ✔ NOWAIT real entre Pools: misma key, distinta key, propietario ajeno y Order independiente (32.016311ms)
+  ✔ fallo INSERT real y fallo COMMIT diferido revierten estados y Attempt juntos (31.258662ms)
+  ✔ COMMIT real seguido de ack perdido se reconcilia por otra conexión; rollback vacío sigue unknown (35.778239ms)
+  ✔ sesión interrumpida antes de COMMIT libera lock y permite Retry explícito con misma key (20.630465ms)
+  ✔ login runtime real: FOR UPDATE permitido y snapshots/Attempts inmutables (15.819127ms)
+✔ CN-58/CN-59/CN-61 PostgreSQL aislado: Orders + Payment + Recovery (601.715036ms)
+▶ CN-57 PostgreSQL real aislado
+  ✔ COMMIT/ROLLBACK reales y conexiones concurrentes (15.60044ms)
+  ✔ snapshots, precisión histórica, FKs, keys y permisos runtime (27.283287ms)
+✔ CN-57 PostgreSQL real aislado (72.305514ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 872.70917
+exit=0
