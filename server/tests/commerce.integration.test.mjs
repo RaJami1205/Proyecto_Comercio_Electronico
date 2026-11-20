@@ -1,4 +1,8 @@
-/** PostgreSQL real EFÍMERO. Opt-in/loopback; jamás Production. Las pruebas confirman fixtures y cortan sesiones de test. */
+import './helpers/postgresIntegrationIsolation.mjs'
+/**
+ * PostgreSQL real EFÍMERO: atomicidad, concurrencia entre Pools, snapshots y Recovery con fixtures sintéticos.
+ * Incluye COMMIT y terminación de backends de test; requiere el recurso verificado y nunca debe apuntar a Production.
+ */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -12,6 +16,7 @@ import { PaymentService } from '../dist/services/paymentService.js'
 import { OrderService } from '../dist/services/orderService.js'
 import { CURRENT_TERMS_VERSION } from '../dist/domain/termsPolicy.js'
 import { orderFixture, owner, paymentRequest, creationContext } from './helpers/commerceFixtures.mjs'
+import { guardIntegrationDatabase, verifyIntegrationDatabases } from './helpers/postgresIntegrationHarness.mjs'
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION_TESTS === '1'
 test('CN-58/CN-59/CN-61 PostgreSQL aislado: Orders + Payment + Recovery', {
@@ -24,10 +29,12 @@ test('CN-58/CN-59/CN-61 PostgreSQL aislado: Orders + Payment + Recovery', {
   assert.equal(runtimeConfig.host, adminConfig.host); assert.equal(runtimeConfig.port, adminConfig.port)
   assert.equal(runtimeConfig.database, adminConfig.database); assert.equal(runtimeConfig.user, 'cibernova_app')
   assert.notEqual(adminConfig.user, runtimeConfig.user)
-  const admin = new Database(() => ({ ...adminConfig, max: 2 }))
-  const runtime = () => new Database(() => ({ ...runtimeConfig, max: 4 }))
+  const admin = guardIntegrationDatabase(new Database(() => ({ ...adminConfig, max: 2 })), 'admin')
+  const runtime = () => guardIntegrationDatabase(new Database(() => ({ ...runtimeConfig, max: 4 })), 'runtime')
   const db = runtime(), secondDb = runtime()
+  // Se cierran todos los Pools propios; los fixtures confirmados se descartan con el Service Container al terminar el Job.
   t.after(async () => { await Promise.all([admin.close(), db.close(), secondDb.close()]) })
+  await verifyIntegrationDatabases(admin, db, secondDb)
   const orders = new PostgreSQLOrderStore(db), otherOrders = new PostgreSQLOrderStore(secondDb)
   const pair = (connection = db, sandbox = { process: async input => ({ result: input.scenario }) }) => {
     const store = new PostgreSQLOrderStore(connection), persistence = new PostgreSQLPaymentStore(store, connection)
@@ -164,7 +171,7 @@ test('CN-58/CN-59/CN-61 PostgreSQL aislado: Orders + Payment + Recovery', {
       return ids
     }
     assert.deepEqual(await readAll(orders), expected)
-    // Un Pool y un Store nuevos simulan el reinicio de Node.js: el historial sale de PostgreSQL.
+    // Reconstruye Pool/Store dentro del mismo proceso; el reinicio real de Node.js se comprueba en E2E-20.
     const restartedDb = runtime()
     try {
       const restarted = new PostgreSQLOrderStore(restartedDb)

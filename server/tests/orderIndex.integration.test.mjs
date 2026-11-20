@@ -1,3 +1,4 @@
+import './helpers/postgresIntegrationIsolation.mjs'
 /** CN-65 con PostgreSQL real EFÍMERO: revisiones, leases y Payment; Algolia se sustituye por un escritor en memoria. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -10,6 +11,7 @@ import { PostgreSQLOrderIndexStore } from '../dist/stores/postgreSQLOrderIndexSt
 import { PaymentService } from '../dist/services/paymentService.js'
 import { OrderIndexSyncService } from '../dist/services/orderIndexSyncService.js'
 import { orderFixture, owner, paymentRequest, creationContext } from './helpers/commerceFixtures.mjs'
+import { guardIntegrationDatabase, verifyIntegrationDatabases } from './helpers/postgresIntegrationHarness.mjs'
 
 const business = { id: 'owner-cn65-b2b', displayName: 'Compras ficticias', role: 'B2B', company: { id: 'company-cn65', name: 'Empresa ficticia' } }
 /** Order V2 B2B sintética con contexto comercial completo. */
@@ -20,7 +22,10 @@ function businessOrder(id) {
       pricingType: 'WHOLESALE', policyVersion: 'CIBERNOVA-COMMERCIAL-V1' } }
 }
 
-/** Escritor en memoria con la semántica de addOrUpdateObject: reemplaza por objectID. */
+/**
+ * Doble que reemplaza proyecciones por objectID y permite inyectar fallos; no reproduce tareas remotas ni IncrementSet.
+ * Esta suite valida revisiones/leases en PostgreSQL, no el comportamiento del motor de Algolia.
+ */
 function memoryWriter() {
   const records = new Map()
   let failures = 0
@@ -46,9 +51,10 @@ test('CN-65 PostgreSQL aislado: proyección orders, revisiones y Recovery', {
   assert.equal(adminConfig.database, 'cibernova_test', 'Solo la base efímera cibernova_test.')
   const runtimeConfig = getDatabaseTestConfig({ ...process.env, DATABASE_TEST_URL: process.env.DATABASE_RUNTIME_TEST_URL })
   assert.equal(runtimeConfig.user, 'cibernova_app')
-  const admin = new Database(() => ({ ...adminConfig, max: 2 }))
-  const db = new Database(() => ({ ...runtimeConfig, max: 4 }))
+  const admin = guardIntegrationDatabase(new Database(() => ({ ...adminConfig, max: 2 })), 'admin')
+  const db = guardIntegrationDatabase(new Database(() => ({ ...runtimeConfig, max: 4 })), 'runtime')
   t.after(async () => { await Promise.all([admin.close(), db.close()]) })
+  await verifyIntegrationDatabases(admin, db)
 
   const orders = new PostgreSQLOrderStore(db)
   const indexStore = new PostgreSQLOrderIndexStore(db)
@@ -123,7 +129,7 @@ test('CN-65 PostgreSQL aislado: proyección orders, revisiones y Recovery', {
     assert.equal(records.size, 0)
     assert.equal((await state(order.id)).indexed_version, 0)
 
-    // Un servicio nuevo simula el reinicio del Server: el estado pendiente vive en PostgreSQL.
+    // Un servicio nuevo recupera pendientes en el mismo proceso; no equivale al reinicio Node A/B de E2E-20.
     const report = await service(writer).reconcile({ limit: 100000, dryRun: false })
     assert.ok(report.synced >= 1)
     assert.equal(records.get(order.id).indexVersion, 1)

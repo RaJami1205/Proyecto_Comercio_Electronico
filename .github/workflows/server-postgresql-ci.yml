@@ -12,6 +12,7 @@ jobs:
   postgres-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Recurso descartable por Job. La identidad de esta instancia se comprueba antes de aplicar SQL de preparación.
     services:
       postgres:
         image: postgres:17
@@ -28,6 +29,7 @@ jobs:
     defaults:
       run:
         working-directory: server
+    # Las Unit Tests no habilitan PostgreSQL; el opt-in se limita al step de integración tras verificar el recurso.
     env:
       DOTENV_CONFIG_PATH: .env.database.example
       CLIENT_ORIGIN: http://localhost:5173
@@ -46,6 +48,7 @@ jobs:
         working-directory: client
         run: npm ci
       - run: npm run build
+      # El filtro por nombre evita ejecutar el Seed sin excluir las demás regresiones del directorio users.
       - name: Unit Tests sin integraciones ni servicios externos
         shell: bash
         run: |
@@ -54,7 +57,9 @@ jobs:
             [[ "$file" == *.integration.test.mjs ]] || files+=("$file")
           done
           node --test --test-skip-pattern='^el seed usa dry-run por defecto y sus guardas abortan sin escribir$' "${files[@]}"
+      # El administrador prepara las cuatro migrations; la aplicación de prueba usa después un login runtime distinto.
       - name: Preparar exclusivamente PostgreSQL efímero del Runner
+        id: prepare-postgresql
         env:
           PGHOST: 127.0.0.1
           PGPORT: '5432'
@@ -62,21 +67,73 @@ jobs:
           PGUSER: cn_test_admin
           PGPASSWORD: ci-admin-ephemeral-only
           CN59_RUNTIME_PASSWORD: ci-runtime-ephemeral-only
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
         shell: bash
         run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = 'true'
+          test "$RUNNER_ENVIRONMENT" = 'github-hosted'
           test "$PGHOST" = '127.0.0.1'
+          test "$PGPORT" = '5432'
           test "$PGDATABASE" = 'cibernova_test'
-          psql --no-psqlrc --set ON_ERROR_STOP=1 --single-transaction \
+          test "$PGUSER" = 'cn_test_admin'
+          [[ "$POSTGRES_CONTAINER_ID" =~ ^[a-f0-9]{64}$ ]]
+          test "$(docker inspect --format '{{.Id}} {{.Config.Image}} {{.State.Running}}' "$POSTGRES_CONTAINER_ID")" = "$POSTGRES_CONTAINER_ID postgres:17 true"
+          read -r resource_ip extra_ip <<< "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$POSTGRES_CONTAINER_ID")"
+          test -z "$extra_ip"
+          [[ "$resource_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          # No heredar PGSERVICE/PGHOSTADDR/.psqlrc ni un destino alternativo del Runner.
+          psql_test() {
+            env -i PATH="$PATH" PGHOST="$PGHOST" PGPORT="$PGPORT" \
+              PGDATABASE="$PGDATABASE" PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" \
+              psql --no-psqlrc --no-password --set ON_ERROR_STOP=1 "$@"
+          }
+          # Solo lectura antes de cualquier migration: identidad, versión y base recién provisionada.
+          resource_ok="$(psql_test --tuples-only --no-align --set "expected_address=$resource_ip" <<'SQL'
+          SELECT current_database() = 'cibernova_test' AND current_user = 'cn_test_admin'
+            AND session_user = 'cn_test_admin'
+            AND current_setting('server_version_num')::integer BETWEEN 170000 AND 179999
+            AND inet_server_addr() = :'expected_address'::inet AND inet_server_port() = 5432
+            AND to_regnamespace('commerce') IS NULL
+            AND NOT EXISTS (SELECT FROM pg_roles WHERE rolname IN ('commerce_runtime', 'cibernova_app'))
+            AND NOT EXISTS (SELECT FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema'))
+            AS verified_fresh_resource;
+          SQL
+          )"
+          test "$resource_ok" = 't' || { echo 'CN69_POSTGRES_UNEXPECTED_RESOURCE'; exit 1; }
+          psql_test --single-transaction \
             --file supabase/migrations/20261109000100_commerce_foundation.sql \
             --file supabase/migrations/20261110025043_cibernova_runtime_login.sql \
             --file supabase/migrations/20261117000100_order_creation_v2.sql \
             --file supabase/migrations/20261118000100_order_search_index.sql
-          psql --no-psqlrc --set ON_ERROR_STOP=1 --set "runtime_password=$CN59_RUNTIME_PASSWORD" <<'SQL'
+          psql_test --set "runtime_password=$CN59_RUNTIME_PASSWORD" <<'SQL'
           ALTER ROLE cibernova_app PASSWORD :'runtime_password';
           SQL
+          printf 'server_address=%s\ncontainer_id=%s\n' "$resource_ip" "$POSTGRES_CONTAINER_ID" >> "$GITHUB_OUTPUT"
+      # Los archivos comparten la base efímera: se serializan entre sí y mantienen su concurrencia interna.
+      # El TAP debe acreditar ejecución sin FAIL/CANCELLED/SKIPPED; un exit 0 con omisiones no basta.
       - name: Integration y E2E Tests CN-57 / CN-58 / CN-59 / CN-65 / CN-66 / CN-69 con Runtime separado
         env:
           RUN_DATABASE_INTEGRATION_TESTS: '1'
           DATABASE_TEST_URL: postgresql://cn_test_admin:ci-admin-ephemeral-only@127.0.0.1:5432/cibernova_test
           DATABASE_RUNTIME_TEST_URL: postgresql://cibernova_app:ci-runtime-ephemeral-only@127.0.0.1:5432/cibernova_test
-        run: node --test tests/database.integration.test.mjs tests/commerce.integration.test.mjs tests/e2e.integration.test.mjs tests/orderIndex.integration.test.mjs tests/adminOrders.integration.test.mjs
+          CN69_POSTGRES_SERVER_ADDRESS: ${{ steps.prepare-postgresql.outputs.server_address }}
+          CN69_POSTGRES_CONTAINER_ID: ${{ steps.prepare-postgresql.outputs.container_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUN_DATABASE_INTEGRATION_TESTS" = '1'
+          report="$RUNNER_TEMP/cn69-postgresql.tap"
+          # Solo serializa archivos; Promise.all, múltiples Pools y NOWAIT siguen concurrentes dentro de cada suite.
+          env -i PATH="$PATH" RUN_DATABASE_INTEGRATION_TESTS="$RUN_DATABASE_INTEGRATION_TESTS" \
+            DATABASE_TEST_URL="$DATABASE_TEST_URL" DATABASE_RUNTIME_TEST_URL="$DATABASE_RUNTIME_TEST_URL" \
+            CN69_POSTGRES_SERVER_ADDRESS="$CN69_POSTGRES_SERVER_ADDRESS" CN69_POSTGRES_CONTAINER_ID="$CN69_POSTGRES_CONTAINER_ID" \
+            node --test --test-concurrency=1 --test-reporter=tap \
+              tests/database.integration.test.mjs tests/commerce.integration.test.mjs tests/e2e.integration.test.mjs \
+              tests/orderIndex.integration.test.mjs tests/adminOrders.integration.test.mjs | tee "$report"
+          # Un exit code 0 con suites omitidas no es evidencia de integración.
+          for counter in fail cancelled skipped todo; do
+            grep -qx "# $counter 0" "$report"
+          done
+          test "$(sed -n 's/^# tests //p' "$report")" -ge 5
+          # GitHub Actions descarta el Service Container completo al finalizar el Job, incluso si falla.
